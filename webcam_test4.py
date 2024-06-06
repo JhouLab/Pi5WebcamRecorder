@@ -2,8 +2,22 @@ import time
 import datetime
 import os
 import subprocess
+import platform
 
-os.environ["OPENCV_LOG_LEVEL"]="FATAL"
+os.environ["OPENCV_LOG_LEVEL"]="FATAL"   # Suppress warnings when camera id not found
+# On Pi5, instructions for installing OpenCV are here:
+#   https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
+#
+# The following two lines worked for me on Pi5:
+#   sudo apt-get install libopencv-dev
+#   sudo apt-get install python3-opencv
+# 
+# In Pycharm, install the following from Settings/<ProjectName>/Python interpreter:
+#   opencv-python (github.com/opencv/opencv-python)
+#
+# In VSCode, install from terminal using py -m pip install opencv-python.
+#   Warning: MUST select correct python installation if there is more than one, e.g.:
+#   c:/users/<user>/AppData/Local/Microsoft/WindowsApps/python3.11.exe -m pip install opencv-python 
 import cv2
 
 # Highest camera ID to search when first connecting
@@ -138,7 +152,10 @@ class CamObj:
 
 # Set up a single camera based on ID. Returns a VideoCapture object
 def setup_cam(id):
-    tmp = cv2.VideoCapture(id)
+    if platform.system() == "Windows":
+        tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW) # On Windows, this is extremely show unless you specify DSHOW
+    else:
+        tmp = cv2.VideoCapture(id)
     if tmp.isOpened():
         tmp.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -159,8 +176,11 @@ cam_array = []
 # Scan IDs to find cameras
 for cam_id in range(MAX_ID):
     tmp = setup_cam(cam_id)
+    print(".", end="", flush=True)
     if tmp.isOpened():
         cam_array.append(CamObj(tmp, cam_id))
+
+print()
 
 if len(cam_array) == 0:
     print("NO CAMERAS FOUND")
@@ -260,7 +280,7 @@ while True:
         next_frame = time.time() + FRAME_INTERVAL
     else:
         advance_ms = (next_frame - time.time()) * 1000
-        print("CPU is ahead by " + f"{advance_ms:.2f}" + " ms")
+        # print("CPU is ahead by " + f"{advance_ms:.2f}" + " ms")
         # Wait until next frame interval has elapsed
         while time.time() < next_frame:
             pass
