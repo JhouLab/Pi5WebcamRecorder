@@ -3,32 +3,55 @@ import datetime
 import os
 import subprocess
 import platform
+import numpy as np
+
+MODE = 1   # Mode 1 is is standard. Mode 2 gives higher frame rate, but 10x larger file sizes
+
+if MODE == 1:
+    # Smallest file sizes (about 100MB/hour), but also lower frame rate (10fps)
+    FRAME_RATE_PER_SECOND = 10
+    FOURCC = 'h264'  # Very efficient compression, but also CPU intensive
+elif MODE == 2:
+    # Higher frame rate, but also much larger files sizes
+    FRAME_RATE_PER_SECOND = 24
+    FOURCC = 'mp4v'  # Uses MPEG-4 compression, which is faster, but achieves less compression
+
+# Resolution from all cameras.
+WIDTH = 640
+HEIGHT = 480
+
 
 os.environ["OPENCV_LOG_LEVEL"]="FATAL"   # Suppress warnings when camera id not found
+
+# Must install OpenCV.
+#
 # On Pi5, instructions for installing OpenCV are here:
 #   https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
 #
-# The following two lines worked for me on Pi5:
-#   sudo apt-get install libopencv-dev
-#   sudo apt-get install python3-opencv
+#   The following two lines worked for me on Pi5:
+#     sudo apt-get install libopencv-dev
+#     sudo apt-get install python3-opencv
 # 
 # In Pycharm, install the following from Settings/<ProjectName>/Python interpreter:
 #   opencv-python (github.com/opencv/opencv-python)
 #
-# In VSCode, install from terminal using py -m pip install opencv-python.
-#   Warning: MUST select correct python installation if there is more than one, e.g.:
+# In VSCode, install from terminal. If you have only one version of
+#   python on your machine, you can use: py -m pip install opencv-python.
+#   If multiple installations, must pick the correct one, e.g.:
 #   c:/users/<user>/AppData/Local/Microsoft/WindowsApps/python3.11.exe -m pip install opencv-python 
 import cv2
 
 # Highest camera ID to search when first connecting
 MAX_ID = 15
 
-# If True, then attempt to show all active cameras, each in a separate window. This typically does not go well.
+# If True, then attempt to show all active cameras, each in a separate window. This does not work well.
 # If False, then show only a single active camera, and use left-right cursor keys to cycle through cameras.
 SHOW_ALL = False
 
-# How often to request frames. This must be less than 29.6 (which is apparently the max frame rate USB webcam can deliver)
-FRAME_RATE_PER_SECOND = 24
+# Frame to show for disabled cameras
+BLACK_FRAME = np.zeros((HEIGHT, WIDTH, 1), dtype = "uint8")
+
+BLACK_FRAME_SMALL = np.zeros((HEIGHT>>1, WIDTH>>1, 1), dtype = "uint8")
 
 
 def get_date_string():
@@ -78,10 +101,9 @@ class CamObj:
         
         self.filename = get_date_string() + "_Video" + str(id_num) + ".avi"
         self.filename_timestamp = get_date_string() + "_Timestamp" + str(id_num) + ".txt"
-        codec = cv2.VideoWriter_fourcc(*'mp4v')
-        frame_rate = 30
-        resolution = (640, 480)
-        self.Writer = cv2.VideoWriter(self.filename, codec, frame_rate, resolution)
+        codec = cv2.VideoWriter_fourcc(*FOURCC)
+        resolution = (WIDTH, HEIGHT)
+        self.Writer = cv2.VideoWriter(self.filename, codec, FRAME_RATE_PER_SECOND, resolution)
         
         self.fid = open(self.filename_timestamp, 'w')
         self.fid.write('Relative timestamps\n')
@@ -164,6 +186,15 @@ def setup_cam(id):
 
 # Print update if user changes which camera is displaying to screen
 def print_current_display_id():
+    if which_display == -1:
+        print("TURNING OFF CAMERA DISPLAY.")
+        cv2.imshow("Out", BLACK_FRAME)
+        return
+    
+    if which_display == -2:
+        print("Multi-frame display")
+        return
+    
     cam = cam_array[which_display]
     if cam.cam is None:
         print("Camera with ID #" + str(cam_array[which_display].id_num) + " is disconnected")
@@ -172,6 +203,11 @@ def print_current_display_id():
 
 # Array of camera objects, one for each discovered camera
 cam_array = []
+
+# Array of subframes for 4x1 display
+subframes = [None] * 4
+
+print("Scanning for all available cameras. Please wait ...")
 
 # Scan IDs to find cameras
 for cam_id in range(MAX_ID):
@@ -216,9 +252,26 @@ while True:
             if cam_obj.status:
                 cv2.imshow("Out" + str(cam_obj.id_num), cam_obj.frame)
     else:
-        cam_obj = cam_array[which_display]
-        if cam_obj.status:
-            cv2.imshow("Out", cam_obj.frame)
+        if which_display >= 0:
+            cam_obj = cam_array[which_display]
+            if cam_obj.status:
+                cv2.imshow("Out", cam_obj.frame)
+            else:
+                cv2.imshow("Out", BLACK_FRAME)
+        elif which_display == -2:
+            # Concatenate
+            try:
+                for index, elt in enumerate(cam_array):
+                    if elt.frame is not None:
+                        subframes[index] = cv2.resize(elt.frame, (320, 240))
+                    else:
+                        subframes[index] = BLACK_FRAME_SMALL
+                im_top = cv2.hconcat([subframes[0], subframes[1]])
+                im_bot = cv2.hconcat([subframes[2], subframes[3]])
+                cv2.imshow("Out", cv2.vconcat([im_top, im_bot]))
+            except:
+                pass
+                                 
 
     frame_count = frame_count + 1
 
@@ -248,14 +301,14 @@ while True:
         break
     
     if key == 81:   # Left arrow key
-        which_display = which_display - 1
-        if which_display < 0:
+        which_display -= 1  # which_display - 1
+        if which_display < -2:
             which_display = len(cam_array) - 1
         print_current_display_id()
     elif key == 83:   # Right arrow key
         which_display = which_display + 1
         if which_display >= len(cam_array):
-            which_display = 0
+            which_display = -2
         print_current_display_id()
     elif key == ord("w"):
         # Write JPG images for each camera
