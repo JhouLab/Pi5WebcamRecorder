@@ -9,7 +9,7 @@ import cv2
 
 # If the following is True, then camera number is USB port position.
 # If False, camera number is operating system ID, which is unpredictable.
-IDENTIFY_CAMERA_BY_USB_PORT = False
+IDENTIFY_CAMERA_BY_USB_PORT = True
 
 # Highest camera ID to search when first connecting. Some sources
 # recommend searching up to 99, but that takes too long and is usually
@@ -73,10 +73,10 @@ def print_current_display_id():
 # Figure out which USB port this camera is plugged into.
 def get_cam_usb_port(cam_id):
     
-    # Prepare the external command to extract DEVPATCH variable, which
-    # encodes a string that seems to correspond to USB port position.
-    # However, the mapping is somewhat odd, and makes me worry it will
-    # act unpredictable in the future. Please keep an eye on this function
+    # Prepare external command to extract DEVPATCH variable, which
+    # encodes a string that seems to indicate USB port position.
+    # Mapping of string to position is odd, making me worry it will
+    # act unpredictably in the future. Please keep an eye on this function
     # to make sure it is working as expected.
     p = subprocess.Popen('udevadm info --name=/dev/video{} | grep DEVPATH= | grep -E -o "/usb[0-9]+/[0-9]+-[0-9]+/[0-9]+-[.0-9]+"'.format(cam_id),
                          stdout=subprocess.PIPE, shell=True)
@@ -91,7 +91,8 @@ def get_cam_usb_port(cam_id):
     response = output.decode('utf-8')
     # For some reason, decoded variables always end in newline, so we remove it.
     response = response.replace('\n', '')
-    
+
+    # Optional: print the detected string
 #    print("DEVPATH: \"" + response + "\"")
   
     # As noted above, the mapping from USB port position to DEVPATH string
@@ -102,6 +103,10 @@ def get_cam_usb_port(cam_id):
                "/usb3/3-2"]   # Bottom right USB port    (USB3)
     
     for idx, s in enumerate(s_table):
+        # We actually detect slightly more of the string than necessary, so
+        # we use "startswith()" to match only the beginning part. The remainder
+        # might be used in the future to detect if multiple cameras are plugged into
+        # a single port via a hub device.
         if response.startswith(s):
             return idx
 
@@ -121,7 +126,7 @@ else:
 subframes = [None] * 4
 for x in range(4):
     tmp = make_blank_frame(str(x) + " no camera found")
-    subframes[x] = cv2.resize(tmp, (320,240))
+    subframes[x] = cv2.resize(tmp, (WIDTH>>1, HEIGHT>>1))
 
 
 if IDENTIFY_CAMERA_BY_USB_PORT:
@@ -140,7 +145,7 @@ for cam_id in range(MAX_ID):
             # But it does. For now. I hope.
             port = get_cam_usb_port(cam_id)
             if port < 0:
-                print("Unable to identify USB port. Won't show camera.")
+                print("Unable to identify USB port. Won't show camera. Please contact developer.")
                 continue
             if port > 3:
                 print("Can only show 4 cameras")
@@ -214,7 +219,7 @@ while True:
         for index, elt in enumerate(cam_array):
             if elt is not None and elt.frame is not None:
                 # Downsize
-                subframes[index] = cv2.resize(elt.frame, (320, 240))
+                subframes[index] = cv2.resize(elt.frame, (WIDTH>>1, HEIGHT>>1))
 
         im_top = cv2.hconcat([subframes[0], subframes[1]])
         im_bot = cv2.hconcat([subframes[2], subframes[3]])
@@ -289,10 +294,10 @@ while True:
         else:
             cam_obj.stop_record()
             print("Stopped recording camera " + str(cam_num))
-        
+
     elif key != 255:
         print("You pressed: " + str(key))
-        
+
     if frame_count % 100 == 0:
         # Print status (frame # and frames per second) every 100 frames
         elapsed = time.time() - start
@@ -315,7 +320,7 @@ while True:
         
         # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
         next_frame += FRAME_INTERVAL
-        
+
 
     
 # All done. Close up windows and files
