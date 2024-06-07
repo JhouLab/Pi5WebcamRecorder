@@ -1,15 +1,18 @@
-import time
-import os
 import subprocess
 import platform
-import numpy as np
+import sys
+
 from CamObj import *
 import cv2
 
 
-# If the following is True, then camera number is USB port position.
-# If False, camera number is operating system ID, which is unpredictable.
-IDENTIFY_CAMERA_BY_USB_PORT = True
+# If IDENTIFY_CAMERA_BY_USB_PORT is True, will try to identify camera via USB port position.
+# This currently only works on the Raspberry Pi, and is not likely to work on any other platform.
+if platform.system() == "Linux":
+    IDENTIFY_CAMERA_BY_USB_PORT = True
+else:
+    # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
+    IDENTIFY_CAMERA_BY_USB_PORT = False
 
 # Highest camera ID to search when first connecting. Some sources
 # recommend searching up to 99, but that takes too long and is usually
@@ -18,9 +21,10 @@ IDENTIFY_CAMERA_BY_USB_PORT = True
 MAX_ID = 15
 
 
-# Set up a single camera based on ID. Returns a VideoCapture object
-# If this ID does not exist, will throw exception, which unfortunately is the only way to enumerate
-# what devices are connected. The caller needs to catch the exception and handle it.
+# Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
+# If not successful (i.e. if there is no camera plugged in with that ID), will throw exception,
+# which unfortunately is the only way to enumerate what devices are connected. The caller needs
+# to catch the exception and handle it by excluding that ID from further consideration.
 def setup_cam(id):
     if platform.system() == "Windows":
         tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW) # On Windows, this is extremely show unless you specify DSHOW
@@ -48,12 +52,14 @@ def make_instruction_frame():
 
 INSTRUCTION_FRAME = make_instruction_frame()
 
+DISPLAY_WINDOW_NAME = "Camera output"
+
 # Print update if user changes which camera is displaying to screen
 # If user has switched to a non-working camera, show the appropriate blank frame
 def print_current_display_id():
     if which_display == -1:
         print("TURNING OFF CAMERA DISPLAY.")
-        cv2.imshow("Out", INSTRUCTION_FRAME)
+        cv2.imshow(DISPLAY_WINDOW_NAME, INSTRUCTION_FRAME)
         return
     
     if which_display == -2:
@@ -66,7 +72,7 @@ def print_current_display_id():
         if cam is not None:
             # Show the blank frame now, since it will not be updated in timer loop.
             # Otherwise we will see leftover image from last good camera
-            cv2.imshow("Out", cam.frame)
+            cv2.imshow(DISPLAY_WINDOW_NAME, cam.frame)
     else:
         print("Showing camera " + str(cam_array[which_display].order))
 
@@ -213,7 +219,7 @@ while True:
     if which_display >= 0:
         cam_obj = cam_array[which_display]
         if cam_obj.status:
-            cv2.imshow("Out", cam_obj.frame)
+            cv2.imshow(DISPLAY_WINDOW_NAME, cam_obj.frame)
     elif which_display == -2:
         # Merge 4 frames into one, after downsizing 2x
         for index, elt in enumerate(cam_array):
@@ -223,7 +229,7 @@ while True:
 
         im_top = cv2.hconcat([subframes[0], subframes[1]])
         im_bot = cv2.hconcat([subframes[2], subframes[3]])
-        cv2.imshow("Out", cv2.vconcat([im_top, im_bot]))
+        cv2.imshow(DISPLAY_WINDOW_NAME, cv2.vconcat([im_top, im_bot]))
 
     frame_count = frame_count + 1
 
@@ -244,59 +250,74 @@ while True:
         next_frame = start + FRAME_INTERVAL
         continue
     
-    key = cv2.waitKey(1) & 0xFF
-    # check for 'q' key-press
-    if key == ord("q"):
-        #if 'q' key-pressed break out
-        break
-    
-    if key == 81:   # Left arrow key
-        while True:
-            which_display -= 1  # which_display - 1
-            if which_display < -2:
-                which_display = len(cam_array) - 1
-            if which_display >= 0 and cam_array[which_display] is None:
-                # If camera invalid, keep looking
-                continue
-            else:
-                # Camera valid or we have negative number
-                break
-        print_current_display_id()
-    elif key == 83:   # Right arrow key
-        while True:
-            which_display = which_display + 1
-            if which_display >= len(cam_array):
-                which_display = -2
-                break
-            if which_display >= 0 and cam_array[which_display] is None:
-                # If camera is invalid, keep looking
-                continue
-            else:
-                # Camera is valid, or we have negative value
-                break
-        print_current_display_id()
-    elif key == ord("w"):
-        # Write JPG images for each camera
-        for cam_obj in cam_array:
-            if cam_obj.cam.isOpened():
-                cv2.imwrite("Image-" + str(cam_obj.id_num) + ".jpg", cam_obj.frame)
-    elif key >= ord("0") and key <= ord("9"):
-        cam_num = key - ord("0")
-        if cam_num >= len(cam_array):
-            print("Camera selected exceeds max value " + str(len(cam_array) - 1))
-            continue
-        cam_obj = cam_array[cam_num]
-        if not cam_obj.IsRecording:
-            if cam_obj.start_record():
-                print("Started recording camera " + str(cam_num))
-            else:
-                print("Unable to start recording camera " + str(cam_num))
-        else:
-            cam_obj.stop_record()
-            print("Stopped recording camera " + str(cam_num))
+    key = cv2.waitKeyEx(1) # & 0xFF
 
-    elif key != 255:
-        print("You pressed: " + str(key))
+    if (key & 0xFF) != 255:
+        key2 = key >> 16  # On Windows, arrow keys are encoded here
+        key1 = (key >> 8) & 0xFF  # This always seems to be 0
+        key = key & 0xFF          # On pi, arrow keys are coded here
+        # check for 'q' key-press
+        if key == ord("q"):
+            #if 'q' key-pressed break out
+            break
+
+        if platform.system() == "Linux":
+            isLeftArrow = key == 81
+            isRightArrow = key == 83
+        elif platform.system() == "Windows":
+            isLeftArrow = key2 == 37
+            isRightArrow = key2 == 39
+        else:
+            isLeftArrow = False
+            isRightArrow = False
+
+        if isLeftArrow:   # Left arrow key
+            while True:
+                which_display -= 1  # which_display - 1
+                if which_display < -2:
+                    which_display = len(cam_array) - 1
+                if which_display >= 0 and cam_array[which_display] is None:
+                    # If camera invalid, keep looking
+                    continue
+                else:
+                    # Camera valid or we have negative number
+                    break
+            print_current_display_id()
+        elif isRightArrow:   # Right arrow key
+            while True:
+                which_display = which_display + 1
+                if which_display >= len(cam_array):
+                    which_display = -2
+                    break
+                if which_display >= 0 and cam_array[which_display] is None:
+                    # If camera is invalid, keep looking
+                    continue
+                else:
+                    # Camera is valid, or we have negative value
+                    break
+            print_current_display_id()
+        elif key == ord("w"):
+            # Write JPG images for each camera
+            for cam_obj in cam_array:
+                if cam_obj.cam.isOpened():
+                    cv2.imwrite("Image-" + str(cam_obj.id_num) + ".jpg", cam_obj.frame)
+        elif key >= ord("0") and key <= ord("9"):
+            cam_num = key - ord("0")
+            if cam_num >= len(cam_array):
+                print("Camera selected exceeds max value " + str(len(cam_array) - 1))
+                continue
+            cam_obj = cam_array[cam_num]
+            if not cam_obj.IsRecording:
+                if cam_obj.start_record():
+                    print("Started recording camera " + str(cam_num))
+                else:
+                    print("Unable to start recording camera " + str(cam_num))
+            else:
+                cam_obj.stop_record()
+                print("Stopped recording camera " + str(cam_num))
+
+        elif key != 255:
+            print("You pressed: " + str(key))
 
     if frame_count % 100 == 0:
         # Print status (frame # and frames per second) every 100 frames

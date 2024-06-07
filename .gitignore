@@ -1,3 +1,7 @@
+# Ignore recordings
 *.avi
 *.txt
+
+# Ignore PyCharm folders
+__pycache__
 .idea
