@@ -5,11 +5,17 @@ from get_hardware_info import *
 import cv2
 
 if platform.system() == "Linux":
-    # Will try to identify camera via USB port position.
-    # This currently only works on the Raspberry Pi, and is not likely to work on any other platform
-    # since it accesses linux-based files to infer USB port info. This is slightly tricky, and doesn't
-    # even work the same way on Pi4 versus Pi5.
+    # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
+
+    # Identify camera via USB port position, rather than ID number which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = True
+
+    import RPi.GPIO as GPIO
+
+    GPIO.setmode(GPIO.BCM)  # Set's GPIO pins to BCM GPIO numbering
+    INPUT_PIN_LIST = [4, 5, 6, 7]   # List of input pins for the four cameras
+    for p in INPUT_PIN_LIST:
+        GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set to be input, with internal pull-up but not pull-down
 else:
     # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = False
@@ -59,6 +65,7 @@ DISPLAY_WINDOW_NAME = "Camera output"
 
 if IDENTIFY_CAMERA_BY_USB_PORT:
     # Array of subframes for 4x1 display
+    # Each "None" will be replaced with an actual CamObj object if camera detected.
     cam_array = [None] * 4
 else:
     # Array of camera objects, one for each discovered camera
@@ -116,7 +123,12 @@ for cam_id in range(MAX_ID):
             if port > 3:
                 print("Can only show 4 cameras")
                 continue
-            cam_array[port] = CamObj(tmp, cam_id, port)
+
+            if cam_array[port] is not None:
+                # If we already found a camera in this position ...
+                print("Auto-detected more than one camera in USB port " + str(port) + ", will only use first one")
+                continue
+            cam_array[port] = CamObj(tmp, cam_id, port, GPIO_pin=INPUT_PIN_LIST[port])
         else:
             # If not using USB port number, then cameras are put into array
             # in the order they are discovered. This could be unpredictable.
@@ -127,6 +139,8 @@ print()
 if len(cam_array) == 0:
     print("NO CAMERAS FOUND")
     quit()
+else:
+    print("Found " + str(len(cam_array)) + " cameras")
 
 # Which camera to display initially. User can change this later with arrow keys.
 #
@@ -141,6 +155,9 @@ which_display = -2
 # Report what was discovered
 for idx, cam_obj in enumerate(cam_array):
     if cam_obj is None:
+        # No camera was found for this USB port position.
+        # Create dummy camera object as placeholder, allowing a blank frame
+        # to show.
         cam_array[idx] = CamObj(None, -1, idx)
         continue
 
@@ -151,41 +168,40 @@ for idx, cam_obj in enumerate(cam_array):
 
 print_current_display_id()
 
-# Negative numbers allows a few frames to collect before fps calculations begin. This is
-# done because first few frames take longer.
-frame_count = -5
+frame_count = 0
 
 FRAME_INTERVAL = 1.0 / FRAME_RATE_PER_SECOND
 
 # infinite loop
 # Camera frame is read at the very beginning of loop. At the end of the loop, is a timer
-# that waits until 1/24 of a second after previous frame target. This forces all frames to
-# synchronize together at 1/24 second intervals.
+# that waits until 1/FRAME_RATE_PER_SECOND seconds after previous frame target, forcing all
+# cameras to sync up at this interval.
 while True:
 
     for idx, cam_obj in enumerate(cam_array):
-        if cam_obj is None:
-            continue
+        # Read camera frame
         cam_obj.read()
 
         if cam_obj.status:
-            # Show camera number in top left corner
+            # Add text to top left to show camera number
             cv2.putText(cam_obj.frame, str(idx), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
             if cam_obj.IsRecording:
                 # Add red circle if recording
                 cv2.circle(cam_obj.frame, (20, 50), 8, (0, 0, 255), -1)   # -1 thickness fills circle
 
     if which_display >= 0:
+        # Show just one of the 4 cameras
         cam_obj = cam_array[which_display]
         if cam_obj.status:
             cv2.imshow(DISPLAY_WINDOW_NAME, cam_obj.frame)
     elif which_display == -2:
-        # Merge 4 frames into one, after downsizing 2x
+        # Show all 4 cameras on one screen (downsized 2x)
         for index, elt in enumerate(cam_array):
             if elt is not None and elt.frame is not None:
                 # Downsize
                 subframes[index] = cv2.resize(elt.frame, (WIDTH >> 1, HEIGHT >> 1))
 
+        # Concatenate 4 images into 1
         im_top = cv2.hconcat([subframes[0], subframes[1]])
         im_bot = cv2.hconcat([subframes[2], subframes[3]])
         cv2.imshow(DISPLAY_WINDOW_NAME, cv2.vconcat([im_top, im_bot]))
@@ -194,8 +210,8 @@ while True:
 
     if frame_count < 0:
         # First couple of frames are slow due to launching of display window, so skip fps calculation.
-        # Short 40ms sleep to force camera frames to sync up (camera requires 33ms to generate a new
-        # frame, so this guarantees frame will be present when we next request it.)
+        # Short 40ms sleep to force camera frames to sync up. Camera requires 33ms to generate new
+        # frame, so this guarantees frame will be present when we next request it.
         time.sleep(.04)
         continue
 
@@ -209,21 +225,26 @@ while True:
         next_frame = start + FRAME_INTERVAL
         continue
 
-    key = cv2.waitKeyEx(1)  # & 0xFF
+    # Check if any key has been pressed. Note use of waitKeyEx(), which
+    # is compatible with cursor keys on Windows whereas waitKey() is not.
+    key = cv2.waitKeyEx(1)
 
     if (key & 0xFF) != 255:
         key2 = key >> 16  # On Windows, arrow keys are encoded here
         key1 = (key >> 8) & 0xFF  # This always seems to be 0
-        key = key & 0xFF  # On pi, arrow keys are coded here
+        key = key & 0xFF  # On Raspberry Pi, arrow keys are coded here along with all other keys
+
         # check for 'q' key-press
         if key == ord("q"):
             # if 'q' key-pressed break out
             break
 
         if platform.system() == "Linux":
+            # Raspberry Pi encodes arrow keys in lowest byte
             isLeftArrow = key == 81
             isRightArrow = key == 83
         elif platform.system() == "Windows":
+            # Windows encodes arrow keys in highest byte
             isLeftArrow = key2 == 37
             isRightArrow = key2 == 39
         else:
@@ -231,12 +252,12 @@ while True:
             isRightArrow = False
 
         if isLeftArrow:  # Left arrow key
-            which_display -= 1  # which_display - 1
+            which_display -= 1
             if which_display < -2:
                 which_display = len(cam_array) - 1
             print_current_display_id()
         elif isRightArrow:  # Right arrow key
-            which_display = which_display + 1
+            which_display += 1
             if which_display >= len(cam_array):
                 which_display = -2
             print_current_display_id()
@@ -244,8 +265,9 @@ while True:
             # Write JPG images for each camera
             for cam_obj in cam_array:
                 if cam_obj.cam.isOpened():
-                    cv2.imwrite("Image-" + str(cam_obj.id_num) + ".jpg", cam_obj.frame)
+                    cam_obj.take_shapshot()
         elif key >= ord("0") and key <= ord("9"):
+            # Start/stop recording for specified camera
             cam_num = key - ord("0")
             if cam_num >= len(cam_array):
                 print("Camera selected exceeds max value " + str(len(cam_array) - 1))
@@ -253,12 +275,14 @@ while True:
                 cam_obj = cam_array[cam_num]
                 if not cam_obj.IsRecording:
                     if cam_obj.start_record():
+                        # Successfully started recording.
                         print("Started recording camera " + str(cam_num))
                     else:
+                        # Recording was attempted, but did not succeed. Usually this is
+                        # because of file error, or missing codec.
                         print("Unable to start recording camera " + str(cam_num))
                 else:
                     cam_obj.stop_record()
-                    print("Stopped recording camera " + str(cam_num))
 
         elif key != 255:
             print("You pressed: " + str(key))
@@ -269,14 +293,10 @@ while True:
         fps = frame_count / elapsed
         print("Frame count: " + str(frame_count) + ", frames per second = " + str(fps))
         for x in cam_array:
+            # Print elapsed time for each camera that is actively recording.
             if x is not None and x.cam is not None:
                 if x.IsRecording:
-                    elapsed_sec = x.frame_num / FRAME_RATE_PER_SECOND
-                    if elapsed_sec < 120:
-                        print("   Camera " + str(x.order) + " elapsed recording time: " + f"{elapsed_sec:.0f} seconds")
-                    else:
-                        elapsed_min = elapsed_sec / 60
-                        print("   Camera " + str(x.order) + " elapsed recording time: " + f"{elapsed_min:.1f} minutes")
+                    x.print_elapsed()
 
 
     if time.time() > next_frame:
@@ -287,6 +307,7 @@ while True:
         # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
         next_frame = time.time() + FRAME_INTERVAL
     else:
+        # We are done with loop, but not ready to request next frame. Wait a bit.
         advance_ms = (next_frame - time.time()) * 1000
         # print("CPU is ahead by " + f"{advance_ms:.2f}" + " ms")
         # Wait until next frame interval has elapsed
