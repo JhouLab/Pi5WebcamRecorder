@@ -4,21 +4,21 @@
 First, make sure you are running this on a Raspberry Pi 5.
 While the code will (sort of) work on a Pi 4, performance will be noticeably worse.
 
-Hopefully you are working on a machine where someone has already installed all the
-files and libraries you need. If not, skip to the bottom "Installing on a new machine",
+Hopefully you are working on a machine where someone has already installed all needed
+files and libraries. If not, skip to the bottom "Installing on a new machine",
 then come back here when you are done.
 
 Locate the directory where the program resides. If not sure, look here first:
-/home/user/Documents/github/Pi5WebcamRecorder
+/home/jhoulab/Documents/github/Pi5WebcamRecorder
 
 Now launch the program. There are three ways to do this:
 
     Method 1: For beginners. From command line, cd to the program directory, then type:
-    python -m WEBCAM_RECORD.py
+    python -m WEBCAM_RECORD
 
-    Method 2: For intermediate users. Open Thonny (the Pi's built-in Python IDE). Open
-    WEBCAM_RECORD.py, then run it with the triangle "play" button. Thonny also has a debugger
-    which is helpful when coding new features or fixing bugs.
+    Method 2: For intermediate users. Open Thonny (Pi's built-in Python IDE). Open
+    WEBCAM_RECORD.py, then run it with the triangle "Run" button. Can also use the "Debug"
+    button, which is helpful when coding.
 
     Method 3: For advanced users. Install PyCharm CE by first installing Pi-Apps, and using
     Pi-Apps to install PyCharm CE. This gives you a much more powerful debugger, albeit with
@@ -93,29 +93,25 @@ distinguish which USB port is which, meaning camera position will be somewhat ra
 
 # KNOWN SHORTCOMINGS:
 
-1. This system has undergone a ton of bench-top testing, but virtually zero testing
-in real-world environments. Over the ensuing weeks, we are likely to find bugs and ergonomic
-issues that we did not anticipate from bench-top tests.
+1. There is currently no way to specify what folder to save files go. All files go to the
+same folder as the program itself.
 
-2. Currently, GPIO pins can remotely start a recording, but they cannot stop a recording. There is a way to do it,
-which I plan to test later. But for now, you have to manually stop the recording by typing the camera number.
+2. When launching, you will get a bunch of warnings: "libpng warning: iCCP: known incorrect sRGB profile".
+I have no idea how to get rid of them, and I definitely tried.
 
-3. Stopping a recording causes the system to spend ~200ms closing files and flushing data. During this 200ms, you
-may get about 2 dropped frames from any other cameras that are recording. There is a way around this, which I will
-likely implement later. For now, one workaround is to keep all recordings going until all sessions are done.
+3. Currently, GPIO pins can remotely start a recording, but they cannot stop it. You have to
+manually stop the recording by typing the camera number.
 
 4. The video frame timestamp is when the frame was READ by the Python code, but the actual pixel data was likely
 CAPTURED from the camera sensor up to 70ms earlier. It is then stored in an internal buffer until the Pi reads
-it. For more accurate timestamps, we need to explicitly measure the delay from capture to read (e.g. by blinking a
-LED from a square wave fed to the GPIO pin) and then subtract it from the recorded timestamp. This
-is straightforward, but requires time to implement.
+it. For more accurate timestamps, we need to subtract the delay from capture to read, but I haven't done this yet.
 
 
 #  INSTALLING ON A NEW MACHINE:
 
 
 Hopefully you are using a machine where someone has already installed everything for you. If not, please
-follow these three annoying steps:
+follow these three steps:
 
 ### STEP 1: Clone the github repository.
 

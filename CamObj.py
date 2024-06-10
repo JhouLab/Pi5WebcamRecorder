@@ -73,6 +73,18 @@ def make_blank_frame(txt):
     return tmp
 
 
+class closer(threading.Thread):
+    def __init__(self, cam_obj):
+        threading.Thread.__init__(self)
+        self.cam_obj = cam_obj
+
+    def run(self):
+        try:
+            self.cam_obj.stop_record_thread()
+        except:
+            pass
+
+
 class CamObj:
     cam = None
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
@@ -98,6 +110,8 @@ class CamObj:
 
     codec = cv2.VideoWriter_fourcc(*FOURCC)  # What codec to use. Usually h264
     resolution = (WIDTH, HEIGHT)
+    
+    helper_thread = None
 
     lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
 
@@ -222,15 +236,24 @@ class CamObj:
     def stop_record(self):
 
         # Close and release all file writers
+        # Do it on a separate thread to avoid dropping frames
+        self.helper_thread = closer(self)
+        self.helper_thread.start()
 
+    def stop_record_thread(self):
+
+        # Close and release all file writers
         with self.lock:
-            
+
+            # Acquire lock to avoid starting a new recording
+            # in the middle of stopping the old one.
+
             if self.IsRecording:
                 print(f"Stopping recording camera {self.order}")
                 self.print_elapsed()
 
                 self.IsRecording = False
-                
+
             if self.Writer is not None:
                 try:
                     # Close Video file
@@ -252,7 +275,9 @@ class CamObj:
                 except:
                     pass
                 self.fid_TTL = None
-
+                
+            self.helper_thread = None
+                
 
     # Reads a single frame from CamObj class
     def read(self):
@@ -338,7 +363,8 @@ class CamObj:
 
         # Only call this when exiting program. Will stop all recordings, and release camera resources
 
-        self.stop_record()
+        self.stop_record()  # This will run in a separate thread, and will close all files.
+        
         if self.cam is not None:
             try:
                 # Release camera resources
@@ -349,6 +375,15 @@ class CamObj:
 
         self.status = -1
         self.frame = None
+        
+        # Now wait for helper thread to finish
+        with self.lock:
+            # Acquiring lock will block while helper thread is running.
+            # So by the time we acquire it, the helper thread will have
+            # already ended, and the following is probably superfluous.
+            if self.helper_thread is not None:
+                # Wait for helper thread to stop
+                self.helper_thread.join()
         
 if __name__ == '__main__':
     print("CamObj.py is a helper file, intended to be imported from WEBCAM_RECORD.py, not run by itself")

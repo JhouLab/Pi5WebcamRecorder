@@ -1,5 +1,6 @@
 import time
 import numpy as np
+import math
 from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame
 from get_hardware_info import *
 import cv2
@@ -342,7 +343,7 @@ while True:
         # We are already too late for next frame. Oops. Report warning if any recording is ongoing, as there might be missed frames
         lag_ms = (time.time() - next_frame) * 1000
         if any_camera_recording(cam_array):
-            print(f"Warning: CPU is lagging at frame {frame_count} by {lag_ms:.2f} ms")
+            print(f"Warning: CPU is lagging at frame {frame_count} by {lag_ms:.2f} ms. Might experience up to {int(math.ceil(lag_ms/100))} dropped frame(s).")
 
         # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
         next_frame = time.time() + FRAME_INTERVAL
@@ -352,6 +353,10 @@ while True:
         # print("CPU is ahead by " + f"{advance_ms:.2f}" + " ms")
         # Wait until next frame interval has elapsed
         while time.time() < next_frame:
+            if next_frame - time.time() > 0.005:
+                # Sleep in 5ms increments to reduce CPU usage. Otherwise this
+                # loop will hog close to 100% CPU
+                time.sleep(0.005)
             pass
 
         # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
@@ -363,8 +368,12 @@ cv2.destroyAllWindows()
 for cam_obj in cam_array:
     if cam_obj is None:
         continue
+    cam_obj.stop_record()
+
+for cam_obj in cam_array:
+    if cam_obj is None:
+        continue
     cam_obj.close()
-    # print("Closed camera " + str(cam_obj.order))
-    
+
 print("Exiting")
 
