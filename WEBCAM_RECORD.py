@@ -20,7 +20,7 @@ if platform.system() == "Linux":
     # drop-in replacement:
     #
     # sudo apt remove python3-rpi.gpio
-    # apt install python3-rpi-lgpio
+    # sudo apt install python3-rpi-lgpio
     #
     import RPi.GPIO as GPIO
 
