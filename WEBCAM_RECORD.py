@@ -4,6 +4,8 @@ from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_fram
 from get_hardware_info import *
 import cv2
 
+# If true, will print extra diagnostics, such as a running frame count and FPS calculations
+VERBOSE = False
 
 if platform.system() == "Linux":
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
@@ -49,10 +51,10 @@ def setup_cam(id):
 
 def any_camera_recording(cam_list):
     # Returns true if any camera has an active recording in progress
-    for x in cam_list:
-        if x is None:
-            next
-        if x.IsRecording:
+    for c in cam_list:
+        if c is None:
+            continue
+        if c.IsRecording:
             return True
     return False
 
@@ -70,7 +72,6 @@ def make_instruction_frame():
                 (10, 110),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
     return f
-
 
 
 # Print message indicating which camera is displaying to screen.
@@ -94,7 +95,6 @@ def print_current_display_id():
             cv2.imshow(DISPLAY_WINDOW_NAME, cam.frame)
     else:
         print(f"Showing camera {cam_position}")
-
 
 
 # Highest camera ID to search when first connecting. Some sources
@@ -197,6 +197,9 @@ print_current_display_id()
 frame_count = -1
 
 FRAME_INTERVAL = 1.0 / FRAME_RATE_PER_SECOND
+
+# Report status every 30 seconds
+STATUS_REPORT_INTERVAL = FRAME_RATE_PER_SECOND * 30
 
 # infinite loop
 # Camera frame is read at the very beginning of loop. At the end of the loop, is a timer
@@ -313,17 +316,21 @@ while True:
         elif key != 255:
             print(f"You pressed: {key}")
 
-    if frame_count % 100 == 0:
-        # Print status (frame # and frames per second) every 100 frames
-        elapsed = time.time() - start
-        fps = frame_count / elapsed
-        print(f"Frame count: {frame_count}, frames per second = {fps}")
-        for x in cam_array:
-            # Print elapsed time for each camera that is actively recording.
-            if x is not None and x.cam is not None:
-                if x.IsRecording:
-                    x.print_elapsed()
+    if frame_count % STATUS_REPORT_INTERVAL == 0:
+        # Print status periodically (frame # and frames per second)
+        if VERBOSE:
+            elapsed = time.time() - start
+            fps = frame_count / elapsed
+            print(f"Frame count: {frame_count}, frames per second = {fps}")
 
+        if any_camera_recording(cam_array):
+            if not VERBOSE:
+                print("Camera recording status:")
+            for x in cam_array:
+                # Print elapsed time for each camera that is actively recording.
+                if x is not None and x.cam is not None:
+                    if x.IsRecording:
+                        x.print_elapsed()
 
     if time.time() > next_frame:
         # We are already too late for next frame. Oops. Report warning if any recording is ongoing, as there might be missed frames

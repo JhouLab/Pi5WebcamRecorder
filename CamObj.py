@@ -325,7 +325,7 @@ class CamObj:
             print(f"   Camera {self.order} elapsed: {elapsed_sec:.0f} seconds, {self.frame_num} frames")
         else:
             elapsed_min = elapsed_sec / 60
-            print(f"   Camera {self.order} elapsed: {elapsed_min:.1f} minutes, {self.frame_num} frames")
+            print(f"   Camera {self.order} elapsed: {elapsed_min:.2f} minutes, {self.frame_num} frames")
 
     def take_shapeshot(self):
         if self.cam is None or self.frame is None:
