@@ -4,12 +4,22 @@ from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_fram
 from get_hardware_info import *
 import cv2
 
+
 if platform.system() == "Linux":
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
 
     # Identify camera via USB port position, rather than ID number which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = True
 
+
+    #
+    # Note that the standard RPi.GPIO library does NOT work on Pi5 (only Pi4).
+    # On Pi5, please uninstall the standard library and install the following
+    # drop-in replacement:
+    #
+    # sudo apt remove python3-rpi.gpio
+    # apt install python3-rpi-lgpio
+    #
     import RPi.GPIO as GPIO
 
     GPIO.setmode(GPIO.BCM)  # Set's GPIO pins to BCM GPIO numbering
@@ -19,13 +29,6 @@ if platform.system() == "Linux":
 else:
     # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = False
-
-# Highest camera ID to search when first connecting. Some sources
-# recommend searching up to 99, but that takes too long and is usually
-# unnecessary. So far, I have not needed to search above about 8, but we
-# go to 15 just in case. Actually Pi4 freezes when we reach 15, so we now
-# limit to 14.
-MAX_ID = 14
 
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
@@ -44,6 +47,16 @@ def setup_cam(id):
     return tmp
 
 
+def any_camera_recording(cam_list):
+    # Returns true if any camera has an active recording in progress
+    for x in cam_list:
+        if x is None:
+            next
+        if x.IsRecording:
+            return True
+    return False
+
+
 def make_instruction_frame():
     # Frame with brief user-friendly instructions
     f = np.zeros((HEIGHT, WIDTH, 1), dtype="uint8")
@@ -58,18 +71,6 @@ def make_instruction_frame():
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
     return f
 
-
-INSTRUCTION_FRAME = make_instruction_frame()
-
-DISPLAY_WINDOW_NAME = "Camera output"
-
-if IDENTIFY_CAMERA_BY_USB_PORT:
-    # Array of subframes for 4x1 display
-    # Each "None" will be replaced with an actual CamObj object if camera detected.
-    cam_array = [None] * 4
-else:
-    # Array of camera objects, one for each discovered camera
-    cam_array = []
 
 
 # Print message indicating which camera is displaying to screen.
@@ -86,26 +87,49 @@ def print_current_display_id():
     cam = cam_array[which_display]
     cam_position = cam.order
     if cam is None or cam.cam is None:
-        print("Camera in position " + str(cam_position) + " is disconnected")
+        print(f"Camera in position {cam_position} is disconnected")
         if cam is not None:
             # Show the blank frame now, since it will not be updated in timer loop.
             # Otherwise we will see leftover image from last good camera
             cv2.imshow(DISPLAY_WINDOW_NAME, cam.frame)
     else:
-        print("Showing camera " + str(cam_position))
+        print(f"Showing camera {cam_position}")
+
+
+
+# Highest camera ID to search when first connecting. Some sources
+# recommend searching up to 99, but that takes too long and is usually
+# unnecessary. So far, I have not needed to search above about 8, but we
+# go to 15 just in case. Actually Pi4 freezes when we reach 15, so we now
+# limit to 14.
+MAX_ID = 14
+
+INSTRUCTION_FRAME = make_instruction_frame()
+
+DISPLAY_WINDOW_NAME = "Camera output"
+
+if IDENTIFY_CAMERA_BY_USB_PORT:
+    # Array of subframes for 4x1 display
+    # Each "None" will be replaced with an actual CamObj object if camera detected.
+    cam_array = [None] * 4
+else:
+    # Array of camera objects, one for each discovered camera
+    cam_array = []
 
 
 # Make subframes that are blank. These are used for 2x2 grid display.
 # Blank frames will be replaced by real ones if camera is found.
 subframes = [None] * 4
 for x in range(4):
-    tmp = make_blank_frame(str(x) + " no camera found")
+    tmp = make_blank_frame(f"{x} no camera found")
     subframes[x] = cv2.resize(tmp, (WIDTH >> 1, HEIGHT >> 1))
 
 if IDENTIFY_CAMERA_BY_USB_PORT:
     print("Scanning for all available cameras by USB port. Please wait ...")
 else:
     print("Scanning for all available cameras. Please wait ...")
+
+num_cameras_found = 0
 
 # Scan IDs to find cameras
 for cam_id in range(MAX_ID):
@@ -121,18 +145,20 @@ for cam_id in range(MAX_ID):
                 print("Unable to identify USB port. Won't show camera. Please contact developer.")
                 continue
             if port > 3:
-                print("Can only show 4 cameras")
+                print(f"Invalid USB port number (should be 0-3): {port}")
                 continue
 
             if cam_array[port] is not None:
                 # If we already found a camera in this position ...
-                print("Auto-detected more than one camera in USB port " + str(port) + ", will only use first one")
+                print(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
                 continue
             cam_array[port] = CamObj(tmp, cam_id, port, GPIO_pin=INPUT_PIN_LIST[port])
+            num_cameras_found += 1
         else:
             # If not using USB port number, then cameras are put into array
             # in the order they are discovered. This could be unpredictable.
             cam_array.append(CamObj(tmp, cam_id, len(cam_array)))
+            num_cameras_found += 1
 
 print()
 
@@ -140,7 +166,7 @@ if len(cam_array) == 0:
     print("NO CAMERAS FOUND")
     quit()
 else:
-    print("Found " + str(len(cam_array)) + " cameras")
+    print(f"Found {num_cameras_found} cameras")
 
 # Which camera to display initially. User can change this later with arrow keys.
 #
@@ -162,13 +188,13 @@ for idx, cam_obj in enumerate(cam_array):
         continue
 
     if IDENTIFY_CAMERA_BY_USB_PORT:
-        print("Camera in USB port position " + str(idx) + " has ID " + str(cam_obj.id_num))
+        print(f"Camera in USB port position {idx} has ID {cam_obj.id_num}")
     else:
-        print("Camera " + str(idx) + " has ID " + str(cam_obj.id_num))
+        print(f"Camera {idx} has ID {cam_obj.id_num}")
 
 print_current_display_id()
 
-frame_count = 0
+frame_count = -1
 
 FRAME_INTERVAL = 1.0 / FRAME_RATE_PER_SECOND
 
@@ -270,28 +296,28 @@ while True:
             # Start/stop recording for specified camera
             cam_num = key - ord("0")
             if cam_num >= len(cam_array):
-                print("Camera selected exceeds max value " + str(len(cam_array) - 1))
+                print(f"Camera number {cam_num} does not exist (must be in range 0-3), won't record.")
             else:
                 cam_obj = cam_array[cam_num]
                 if not cam_obj.IsRecording:
                     if cam_obj.start_record():
                         # Successfully started recording.
-                        print("Started recording camera " + str(cam_num))
+                        print(f"Started recording camera {cam_num}")
                     else:
                         # Recording was attempted, but did not succeed. Usually this is
                         # because of file error, or missing codec.
-                        print("Unable to start recording camera " + str(cam_num))
+                        print(f"Unable to start recording camera {cam_num}.")
                 else:
                     cam_obj.stop_record()
 
         elif key != 255:
-            print("You pressed: " + str(key))
+            print(f"You pressed: {key}")
 
     if frame_count % 100 == 0:
         # Print status (frame # and frames per second) every 100 frames
         elapsed = time.time() - start
         fps = frame_count / elapsed
-        print("Frame count: " + str(frame_count) + ", frames per second = " + str(fps))
+        print(f"Frame count: {frame_count}, frames per second = {fps}")
         for x in cam_array:
             # Print elapsed time for each camera that is actively recording.
             if x is not None and x.cam is not None:
@@ -300,9 +326,10 @@ while True:
 
 
     if time.time() > next_frame:
-        # We are already too late for next frame. Oops. Report warning.
+        # We are already too late for next frame. Oops. Report warning if any recording is ongoing, as there might be missed frames
         lag_ms = (time.time() - next_frame) * 1000
-        print("Warning: CPU is lagging at frame " + str(frame_count) + " by " + f"{lag_ms:.2f}" + " ms")
+        if any_camera_recording(cam_array):
+            print(f"Warning: CPU is lagging at frame {frame_count} by {lag_ms:.2f} ms")
 
         # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
         next_frame = time.time() + FRAME_INTERVAL
@@ -316,6 +343,7 @@ while True:
 
         # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
         next_frame += FRAME_INTERVAL
+        
 
 # All done. Close up windows and files
 cv2.destroyAllWindows()
@@ -323,3 +351,7 @@ for cam_obj in cam_array:
     if cam_obj is None:
         continue
     cam_obj.close()
+    # print("Closed camera " + str(cam_obj.order))
+    
+print("Exiting")
+

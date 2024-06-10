@@ -94,11 +94,12 @@ class CamObj:
 
     frame_num = -1   # Number of frames recorded so far.
     TTL_num = -1
+    most_recent_gpio_time = -1
 
     codec = cv2.VideoWriter_fourcc(*FOURCC)  # What codec to use. Usually h264
     resolution = (WIDTH, HEIGHT)
 
-    lock = threading.Lock()
+    lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
 
     def __init__(self, cam, id_num, order, GPIO_pin=-1):
         self.cam = cam
@@ -107,29 +108,44 @@ class CamObj:
         self.GPIO_pin = GPIO_pin
         if cam is None:
             # Use blank frame for this object if no camera object is specified
-            self.frame = make_blank_frame(str(order) + " - No camera found")
+            self.frame = make_blank_frame(f"{order} - No camera found")
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
             GPIO.add_event_detect(GPIO_pin, GPIO.RISING, callback=self.GPIO_callback)
 
-    def GPIO_callback(self):
+    def GPIO_callback(self, param):
 
         # Detected rising edge of GPIO
 
         # Record timestamp now, in case there are delays acquirig lock
         gpio_time = time.time()
+        if gpio_time - self.most_recent_gpio_time < 0.001:
+            # Ignore GPIOs that are less than 1ms apart. These are usually mechanical switch bounces
+            return
+        
+        self.most_recent_gpio_time = gpio_time
 
-        with self.lock:  # Use lock to avoid race conditions, e.g. if we enter callback while in the middle of some other function
+        # Because this function is called from the GPIO callback thread, we need to
+        # acquire lock to make sure there aren't any main thread functions that are
+        # also accessing the same variables being accessed here.
+        with self.lock:
 
             if not self.IsRecording:
                 # If not recording, then first TTL starts recording.
                 if not self.start_record():
                     # Start recording failed, so don't record TTLs
+                    print(f"Unable to start recording camera {self.order} in response to GPIO input")
                     return
+                else:
+                    print(f"Started recording camera {self.order} in response to GPIO input")
 
-            if self.start_time <= 0 or not self.IsRecording:
-                # Not recording video, so don't save TTL timestamps
+                if not self.IsRecording:
+                    # Not recording video, so don't save TTL timestamps
+                    print("Hmmm, something seems wrong, GPIO recording didn't start after all. Please contact developer.")
+
+                # If we just started recording, don't record very first TTL timestamp, since it is superfluous
+                # and will actually have a slightly negative value anyway
                 return
 
             gpio_time_relative = gpio_time - self.start_time
@@ -137,20 +153,24 @@ class CamObj:
             self.TTL_num += 1
             if self.fid_TTL is not None:
                 try:
-                    self.fid.write(str(self.TTL_num) + "\t" + str(gpio_time_relative) + "\n")
+                    self.fid_TTL.write(f"{self.TTL_num}\t{gpio_time_relative}\n")
                 except:
-                    print("Unable to write TTL file for camera " + str(self.order))
+                    print(f"Unable to write TTL file for camera {self.order}")
+            else:
+                print(f"Unable to write TTL timestamp for camera {self.order}")
 
     def get_filename_prefix(self):
-        return get_date_string() + "_Cam" + str(self.order)
+        return get_date_string() + f"_Cam{self.order}"
 
     def start_record(self):
 
         if self.cam is None or not self.cam.isOpened():
-            print("Camera " + str(self.order) + " is not available for recording.")
+            print(f"Camera {self.order} is not available for recording.")
             return False
 
-        with self.lock:
+        # Because this function might be called from the GPIO callback thread, we need to
+        # acquire lock to make sure it isn't also being called from the main thread.
+        with self.lock: 
             if not self.IsRecording:
                 self.frame_num = 0
                 self.TTL_num = 0
@@ -175,18 +195,22 @@ class CamObj:
                 try:
                     # Create text file for frame timestamps
                     self.fid = open(self.filename_timestamp, 'w')
-                    self.fid.write('Frame_number\tTime_in_seconds\tInterval\n')
+                    self.fid.write('Frame_number\tTime_in_seconds\n')
                 except:
                     print("Warning: unable to create text file for frame timestamps")
+                    
+                    # Close the previously-created writer objects
                     self.Writer.release()
                     return False
 
                 try:
                     # Create text file for TTL timestamps
                     self.fid_TTL = open(self.filename_timestamp_TTL, 'w')
-                    self.fid_TTL.write('Event_number\tTime_in_seconds\tInterval\n')
+                    self.fid_TTL.write('TTL_event_number\tTime_in_seconds\n')
                 except:
                     print("Warning: unable to create text file for TTL timestamps")
+                    
+                    # Close the previously-created writer objects
                     self.fid.close()
                     self.Writer.release()
                     return False
@@ -200,7 +224,13 @@ class CamObj:
         # Close and release all file writers
 
         with self.lock:
-            self.IsRecording = False
+            
+            if self.IsRecording:
+                print(f"Stopping recording camera {self.order}")
+                self.print_elapsed()
+
+                self.IsRecording = False
+                
             if self.Writer is not None:
                 try:
                     # Close Video file
@@ -215,9 +245,14 @@ class CamObj:
                 except:
                     pass
                 self.fid = None
+            if self.fid_TTL is not None:
+                try:
+                    # Close text timestamp file
+                    self.fid_TTL.close()
+                except:
+                    pass
+                self.fid_TTL = None
 
-            print("Stopped recording camera " + str(self.order))
-            self.print_elapsed()
 
     # Reads a single frame from CamObj class
     def read(self):
@@ -232,8 +267,8 @@ class CamObj:
                     if self.IsRecording:
                         self.stop_record()  # Close file writers
 
-                    self.frame = make_blank_frame(str(self.order) + " Camera lost connection")
-                    print("Unable to read video from camera with ID " + str(self.order) + ". Will remove this camera.")
+                    self.frame = make_blank_frame(f"{self.order} Camera lost connection")
+                    print(f"Unable to read video from camera with ID {self.order}. Will remove camera from available list.")
 
                     # Remove camera resources
                     self.cam.release()
@@ -247,14 +282,14 @@ class CamObj:
 
                 self.cam = None
                 self.status = 0
-                self.frame = make_blank_frame(str(self.order) + " Camera lost connection")
+                self.frame = make_blank_frame(f"{self.order} Camera lost connection")
 
                 # Warn user that something is wrong.
                 print(
-                    "Unable to read frames from camera ID #" + str(self.id_num) + ". Will stop recording and display.")
+                    f"Unable to read frames from camera ID #{self.id_num}. Will stop recording and display.")
 
                 # Warn user that something is wrong.
-                print("Unable to read camera " + str(self.order) + ". Will stop recording and display.")
+                print(f"Unable to read camera {self.order}. Will stop recording and display.")
 
                 return
 
@@ -265,9 +300,9 @@ class CamObj:
                     # ensures most accurate possible timestamp.
                     try:
                         time_elapsed = time.time() - self.start_time
-                        self.fid.write(str(self.frame_num) + "\t" + str(time_elapsed) + "\n")
+                        self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
                     except:
-                        print("Unable to write text file for camera " + str(self.order) + ". Will stop recording")
+                        print(f"Unable to write text file for camera f{self.order}. Will stop recording")
                         self.stop_record()
 
                 self.frame_num += 1
@@ -276,7 +311,7 @@ class CamObj:
                     # Write frame to AVI video file if possible
                     self.Writer.write(self.frame)
                 except:
-                    print("Unable to write video file for camera " + str(self.order) + ". Will stop recording")
+                    print(f"Unable to write video file for camera {self.order}. Will stop recording")
                     self.stop_record()
 
             return self.status, self.frame
@@ -287,10 +322,10 @@ class CamObj:
     def print_elapsed(self):
         elapsed_sec = self.frame_num / FRAME_RATE_PER_SECOND
         if elapsed_sec < 120:
-            print("   Camera " + str(self.order) + " elapsed recording time: " + f"{elapsed_sec:.0f} seconds")
+            print(f"   Camera {self.order} elapsed: {elapsed_sec:.0f} seconds, {self.frame_num} frames")
         else:
             elapsed_min = elapsed_sec / 60
-            print("   Camera " + str(self.order) + " elapsed recording time: " + f"{elapsed_min:.1f} minutes")
+            print(f"   Camera {self.order} elapsed: {elapsed_min:.1f} minutes, {self.frame_num} frames")
 
     def take_shapeshot(self):
         if self.cam is None or self.frame is None:
@@ -314,3 +349,6 @@ class CamObj:
 
         self.status = -1
         self.frame = None
+        
+if __name__ == '__main__':
+    print("CamObj.py is a helper file, intended to be imported from WEBCAM_RECORD.py, not run by itself")
