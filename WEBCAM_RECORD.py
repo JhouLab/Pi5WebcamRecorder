@@ -27,7 +27,13 @@ if platform.system() == "Linux":
     GPIO.setmode(GPIO.BCM)  # Set's GPIO pins to BCM GPIO numbering
     INPUT_PIN_LIST = [4, 5, 6, 7]   # List of input pins for the four cameras
     for p in INPUT_PIN_LIST:
-        GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set to be input, with internal pull-up but not pull-down
+        try:
+            GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set to be input, with internal pull-up but not pull-down
+        except RuntimeError:
+            print("Unable to set up GPIO. If this is a Pi5, please replace the default gpio library as follows:")
+            print("    sudo apt remove python3-rpi.gpio")
+            print("    sudo apt install python3-rpi-lgpio")
+            exit()
 else:
     # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = False
