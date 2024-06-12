@@ -320,7 +320,7 @@ while True:
                 if cam_obj is None:
                     print(f"Camera number {cam_num} not found, won't record.")
                 else:
-                    if cam_obj.IsRecording:
+                    if not cam_obj.IsRecording:
                         if cam_obj.start_record():
                             # Successfully started recording.
                             print(f"Started recording camera {cam_num}")
