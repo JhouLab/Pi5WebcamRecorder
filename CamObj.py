@@ -21,6 +21,7 @@ FRAME_RATE_PER_SECOND = 10
 FOURCC = 'h264'  # Very efficient compression, but CPU intensive. Total frame rate across all cameras should not exceed about 50
 # FOURCC = 'mp4v' # MPEG-4 compression is faster, allowing higher frame rates (>200fps across all cameras), but files will be 5-10x larger
 
+
 #
 # Note: h264 codec comes with OpenCV on Linux/Pi, but not Windows
 # Under Windows, download .DLL file here: https://github.com/cisco/openh264/releases
@@ -135,26 +136,28 @@ class CamObj:
         # Record timestamp now, in case there are delays acquirig lock
         gpio_time = time.time()
 
+        # Calculate interval from previous pulse. This is used to detect double-pulses that indicate
+        # session start/stop
         interval = gpio_time - self.most_recent_gpio_time
 
-        if interval < 0.001:
-            # Ignore GPIOs that are less than 1ms apart. These are usually mechanical switch bounces
+        if interval <= 0.001:
+            # Ignore GPIOs less than 1ms apart. These are usually mechanical switch bounces, e.g. if
+            # triggering manually by jumpering the GPIO pins.
             return
         
         self.most_recent_gpio_time = gpio_time
 
         # Because this function is called from the GPIO callback thread, we need to
-        # acquire lock to make sure there aren't any main thread functions that are
-        # also accessing the same variables being accessed here. For example, if the main
-        # thread is in the midst of starting a recording, we need to wait for that to
-        # finish, or else we might inadvertently start the recording twice (with very
+        # acquire lock to make sure main thread isn't also accessing the same variables.
+        # For example, if the main thread is in the midst of starting a recording, we need to
+        # wait for that to finish, or else we might start the recording twice (with very
         # unpredictable results).
         with self.lock:
 
             if not self.IsRecording:
 
                 if interval < 2.0:
-                    # If not recording, then first double pulse (two pulses <2.0 sec apart) starts recording.
+                    # If not recording, then double pulse (two pulses <2.0 sec apart) starts recording.
                     if not self.start_record():
                         # Start recording failed, so don't record TTLs
                         print(f"Unable to start recording camera {self.order} in response to GPIO input")
@@ -166,10 +169,16 @@ class CamObj:
                         # Not recording video, so don't save TTL timestamps
                         print("Hmmm, something seems wrong, GPIO recording didn't start after all. Please contact developer.")
 
-                # If we just started recording, don't record very first TTL timestamp, since it is superfluous
-                # and will actually have a slightly negative value anyway
+                # At this point, we were not recording, and we either attempted to start a session
+                # or not, and we may or may not have succeeded.
+
+                # Either way, we now return. The reason is that if we are not recording,
+                # then there is no need to record timestamp. But if we did just start recording,
+                # the very first TTL timestamp is also superfluous, and will have a negative value,
+                # so we don't record that either.
                 return
 
+            # Calculate TTL timestamp relative to session start
             gpio_time_relative = gpio_time - self.start_time
 
             self.TTL_num += 1
@@ -292,46 +301,37 @@ class CamObj:
                 self.fid_TTL = None
                 
             self.helper_thread = None
-                
 
-    # Reads a single frame from CamObj class
+    def read_one_frame(self):
+        try:
+            # Read frame if camera is available and open
+            self.status, self.frame = self.cam.read()
+            return self.cam.isOpened() and self.status
+        except:
+            return False
+
+    # Reads a single frame from CamObj class and writes it to file
     def read(self):
 
         if self.cam is not None and self.cam.isOpened():
-            try:
-                # Read frame if camera is available and open
-                self.status, self.frame = self.cam.read()
 
-                if not self.cam.isOpened():
+            if not self.read_one_frame():
 
-                    if self.IsRecording:
-                        self.stop_record()  # Close file writers
-
-                    self.frame = make_blank_frame(f"{self.order} Camera lost connection")
-                    print(f"Unable to read video from camera with ID {self.order}. Will remove camera from available list.")
-
-                    # Remove camera resources
-                    self.cam.release()
-                    self.cam = None
-
-            except:
                 # Read failed. Remove this camera so we won't attempt to read it later.
                 # Should we set a flag to try to periodically reconnect?
 
-                self.stop_record()  # Close file writers
+                if self.IsRecording:
+                    self.stop_record()  # Close file writers
 
+                self.frame = make_blank_frame(f"{self.order} Camera lost connection")
+                # Warn user that something is wrong.
+                print(f"Unable to read video from camera with ID {self.order}. Will remove camera from available list, and stop any ongoing recordings.")
+
+                # Remove camera resources
+                self.cam.release()
                 self.cam = None
                 self.status = 0
-                self.frame = make_blank_frame(f"{self.order} Camera lost connection")
-
-                # Warn user that something is wrong.
-                print(
-                    f"Unable to read frames from camera ID #{self.id_num}. Will stop recording and display.")
-
-                # Warn user that something is wrong.
-                print(f"Unable to read camera {self.order}. Will stop recording and display.")
-
-                return
+                return 0, self.frame
 
             if self.Writer is not None and self.frame is not None and self.IsRecording:
                 if self.fid is not None and self.start_time > 0:
@@ -344,15 +344,17 @@ class CamObj:
                     except:
                         print(f"Unable to write text file for camera f{self.order}. Will stop recording")
                         self.stop_record()
+                        return 0, None
 
                 self.frame_num += 1
 
-                try:
-                    # Write frame to AVI video file if possible
-                    self.Writer.write(self.frame)
-                except:
-                    print(f"Unable to write video file for camera {self.order}. Will stop recording")
-                    self.stop_record()
+                if self.Writer is not None:
+                    try:
+                        # Write frame to AVI video file if possible
+                        self.Writer.write(self.frame)
+                    except:
+                        print(f"Unable to write video file for camera {self.order}. Will stop recording")
+                        self.stop_record()
 
             return self.status, self.frame
         else:
@@ -361,11 +363,12 @@ class CamObj:
 
     def print_elapsed(self):
         elapsed_sec = self.frame_num / FRAME_RATE_PER_SECOND
+        str1 = f"   Camera {self.order} elapsed: "
         if elapsed_sec < 120:
-            print(f"   Camera {self.order} elapsed: {elapsed_sec:.0f} seconds, {self.frame_num} frames")
+            print(str1 + f"{elapsed_sec:.0f} seconds, {self.frame_num} frames")
         else:
             elapsed_min = elapsed_sec / 60
-            print(f"   Camera {self.order} elapsed: {elapsed_min:.2f} minutes, {self.frame_num} frames")
+            print(str1 + f"{elapsed_min:.2f} minutes, {self.frame_num} frames")
 
     def take_shapeshot(self):
         if self.cam is None or self.frame is None:

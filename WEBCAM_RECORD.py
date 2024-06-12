@@ -8,12 +8,15 @@ import cv2
 # If true, will print extra diagnostics, such as a running frame count and FPS calculations
 VERBOSE = False
 
+# First camera ID number
+FIRST_CAMERA_ID = 1
+
+
 if platform.system() == "Linux":
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
 
     # Identify camera via USB port position, rather than ID number which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = True
-
 
     #
     # Note that the standard RPi.GPIO library does NOT work on Pi5 (only Pi4).
@@ -38,6 +41,7 @@ if platform.system() == "Linux":
 else:
     # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = False
+    INPUT_PIN_LIST = [None] * 4   # List of input pins for the four cameras
 
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
@@ -128,7 +132,7 @@ else:
 # Blank frames will be replaced by real ones if camera is found.
 subframes = [None] * 4
 for x in range(4):
-    tmp = make_blank_frame(f"{x} no camera found")
+    tmp = make_blank_frame(f"{FIRST_CAMERA_ID + x} no camera found")
     subframes[x] = cv2.resize(tmp, (WIDTH >> 1, HEIGHT >> 1))
 
 if IDENTIFY_CAMERA_BY_USB_PORT:
@@ -159,12 +163,15 @@ for cam_id in range(MAX_ID):
                 # If we already found a camera in this position ...
                 print(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
                 continue
-            cam_array[port] = CamObj(tmp, cam_id, port, GPIO_pin=INPUT_PIN_LIST[port])
+            cam_array[port] = CamObj(tmp, cam_id,
+                                     FIRST_CAMERA_ID + port, GPIO_pin=INPUT_PIN_LIST[port])
             num_cameras_found += 1
         else:
             # If not using USB port number, then cameras are put into array
-            # in the order they are discovered. This could be unpredictable.
-            cam_array.append(CamObj(tmp, cam_id, len(cam_array)))
+            # in the order they are discovered. This could be unpredictable, but at least
+            # it will work, and won't crash. In this case, we also ignore GPIO pin list, since
+            # recordings will need to be started and stopped manually.
+            cam_array.append(CamObj(tmp, cam_id, FIRST_CAMERA_ID + len(cam_array)))
             num_cameras_found += 1
 
 print()
@@ -191,13 +198,13 @@ for idx, cam_obj in enumerate(cam_array):
         # No camera was found for this USB port position.
         # Create dummy camera object as placeholder, allowing a blank frame
         # to show.
-        cam_array[idx] = CamObj(None, -1, idx)
+        cam_array[idx] = CamObj(None, -1, FIRST_CAMERA_ID + idx)
         continue
 
     if IDENTIFY_CAMERA_BY_USB_PORT:
-        print(f"Camera in USB port position {idx} has ID {cam_obj.id_num}")
+        print(f"Camera in USB port position {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}")
     else:
-        print(f"Camera {idx} has ID {cam_obj.id_num}")
+        print(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}")
 
 print_current_display_id()
 
@@ -220,7 +227,7 @@ while True:
 
         if cam_obj.status:
             # Add text to top left to show camera number
-            cv2.putText(cam_obj.frame, str(idx), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+            cv2.putText(cam_obj.frame, str(FIRST_CAMERA_ID + idx), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
             if cam_obj.IsRecording:
                 # Add red circle if recording
                 cv2.circle(cam_obj.frame, (20, 50), 8, (0, 0, 255), -1)   # -1 thickness fills circle
@@ -305,20 +312,24 @@ while True:
         elif key >= ord("0") and key <= ord("9"):
             # Start/stop recording for specified camera
             cam_num = key - ord("0")
-            if cam_num >= len(cam_array):
-                print(f"Camera number {cam_num} does not exist (must be in range 0-3), won't record.")
+            cam_idx = cam_num - FIRST_CAMERA_ID
+            if cam_idx >= len(cam_array):
+                print(f"Camera number {cam_num} does not exist, won't record.")
             else:
-                cam_obj = cam_array[cam_num]
-                if not cam_obj.IsRecording:
-                    if cam_obj.start_record():
-                        # Successfully started recording.
-                        print(f"Started recording camera {cam_num}")
-                    else:
-                        # Recording was attempted, but did not succeed. Usually this is
-                        # because of file error, or missing codec.
-                        print(f"Unable to start recording camera {cam_num}.")
+                cam_obj = cam_array[cam_idx]
+                if cam_obj is None:
+                    print(f"Camera number {cam_num} not found, won't record.")
                 else:
-                    cam_obj.stop_record()
+                    if cam_obj.IsRecording:
+                        if cam_obj.start_record():
+                            # Successfully started recording.
+                            print(f"Started recording camera {cam_num}")
+                        else:
+                            # Recording was attempted, but did not succeed. Usually this is
+                            # because of file error, or missing codec.
+                            print(f"Unable to start recording camera {cam_num}.")
+                    else:
+                        cam_obj.stop_record()
 
         elif key != 255:
             print(f"You pressed: {key}")
