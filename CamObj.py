@@ -134,7 +134,10 @@ class CamObj:
 
         # Record timestamp now, in case there are delays acquirig lock
         gpio_time = time.time()
-        if gpio_time - self.most_recent_gpio_time < 0.001:
+
+        interval = gpio_time - self.most_recent_gpio_time
+
+        if interval < 0.001:
             # Ignore GPIOs that are less than 1ms apart. These are usually mechanical switch bounces
             return
         
@@ -142,21 +145,26 @@ class CamObj:
 
         # Because this function is called from the GPIO callback thread, we need to
         # acquire lock to make sure there aren't any main thread functions that are
-        # also accessing the same variables being accessed here.
+        # also accessing the same variables being accessed here. For example, if the main
+        # thread is in the midst of starting a recording, we need to wait for that to
+        # finish, or else we might inadvertently start the recording twice (with very
+        # unpredictable results).
         with self.lock:
 
             if not self.IsRecording:
-                # If not recording, then first TTL starts recording.
-                if not self.start_record():
-                    # Start recording failed, so don't record TTLs
-                    print(f"Unable to start recording camera {self.order} in response to GPIO input")
-                    return
-                else:
-                    print(f"Started recording camera {self.order} in response to GPIO input")
 
-                if not self.IsRecording:
-                    # Not recording video, so don't save TTL timestamps
-                    print("Hmmm, something seems wrong, GPIO recording didn't start after all. Please contact developer.")
+                if interval < 2.0:
+                    # If not recording, then first double pulse (two pulses <2.0 sec apart) starts recording.
+                    if not self.start_record():
+                        # Start recording failed, so don't record TTLs
+                        print(f"Unable to start recording camera {self.order} in response to GPIO input")
+                        return
+                    else:
+                        print(f"Started recording camera {self.order} in response to GPIO input")
+
+                    if not self.IsRecording:
+                        # Not recording video, so don't save TTL timestamps
+                        print("Hmmm, something seems wrong, GPIO recording didn't start after all. Please contact developer.")
 
                 # If we just started recording, don't record very first TTL timestamp, since it is superfluous
                 # and will actually have a slightly negative value anyway
@@ -172,6 +180,13 @@ class CamObj:
                     print(f"Unable to write TTL file for camera {self.order}")
             else:
                 print(f"Unable to write TTL timestamp for camera {self.order}")
+
+        # By now lock has been released, and we are guaranteed to be recording.
+
+        if interval < 2.0 and gpio_time_relative > 10.0:
+            # Double pulses are pulses with about 1.0 seconds between rise times. They indicate
+            # start and stop of session.
+            self.stop_record()
 
     def get_filename_prefix(self):
         return get_date_string() + f"_Cam{self.order}"
