@@ -21,6 +21,10 @@ FRAME_RATE_PER_SECOND = 10
 FOURCC = 'h264'  # Very efficient compression, but CPU intensive. Total frame rate across all cameras should not exceed about 50
 # FOURCC = 'mp4v' # MPEG-4 compression is faster, allowing higher frame rates (>200fps across all cameras), but files will be 5-10x larger
 
+MAX_INTERVAL_IN_TTL_BURST = 1.5      # Max interval in seconds between consecutive TTLs in burst
+NUM_TTL_PULSES_TO_START_SESSION = 2  # Can change to 3 to avoid ambiguity between session start/stop
+NUM_TTL_PULSES_TO_STOP_SESSION = 2   # Can change to 3 to avoid ambiguity between session start/stop
+
 
 #
 # Note: h264 codec comes with OpenCV on Linux/Pi, but not Windows
@@ -108,6 +112,7 @@ class CamObj:
     frame_num = -1   # Number of frames recorded so far.
     TTL_num = -1
     most_recent_gpio_time = -1
+    num_consec_TTLs = 0   # Use this to track double and triple pulses
 
     codec = cv2.VideoWriter_fourcc(*FOURCC)  # What codec to use. Usually h264
     resolution = (WIDTH, HEIGHT)
@@ -131,9 +136,14 @@ class CamObj:
 
     def GPIO_callback(self, param):
 
+        self.handle_GPIO()
+
+    def handle_GPIO(self):
+
         # Detected rising edge of GPIO
 
-        # Record timestamp now, in case there are delays acquirig lock
+        # Record timestamp now, in case there are delays acquiring lock
+        # time.time() returns number of seconds since 1970.
         gpio_time = time.time()
 
         # Calculate interval from previous pulse. This is used to detect double-pulses that indicate
@@ -144,6 +154,13 @@ class CamObj:
             # Ignore GPIOs less than 1ms apart. These are usually mechanical switch bounces, e.g. if
             # triggering manually by jumpering the GPIO pins.
             return
+
+        if interval > MAX_INTERVAL_IN_TTL_BURST:
+            # Long interval resets count of consecutive TTLs
+            self.num_consec_TTLs = 1
+        else:
+            # Short interval increments count of consecutive TTLs
+            self.num_consec_TTLs += 1
         
         self.most_recent_gpio_time = gpio_time
 
@@ -156,7 +173,7 @@ class CamObj:
 
             if not self.IsRecording:
 
-                if interval < 2.0:
+                if self.num_consec_TTLs == NUM_TTL_PULSES_TO_START_SESSION:
                     # If not recording, then double pulse (two pulses <2.0 sec apart) starts recording.
                     if not self.start_record():
                         # Start recording failed, so don't record TTLs
@@ -169,7 +186,7 @@ class CamObj:
                         # Not recording video, so don't save TTL timestamps
                         print("Hmmm, something seems wrong, GPIO recording didn't start after all. Please contact developer.")
 
-                # At this point, we were not recording, and we either attempted to start a session
+                # At this point, we originally were not recording, and we either attempted to start a session
                 # or not, and we may or may not have succeeded.
 
                 # Either way, we now return. The reason is that if we are not recording,
@@ -192,7 +209,7 @@ class CamObj:
 
         # By now lock has been released, and we are guaranteed to be recording.
 
-        if interval < 2.0 and gpio_time_relative > 10.0:
+        if gpio_time_relative > 5.0 and self.num_consec_TTLs >= NUM_TTL_PULSES_TO_STOP_SESSION:
             # Double pulses are pulses with about 1.0 seconds between rise times. They indicate
             # start and stop of session.
             self.stop_record()

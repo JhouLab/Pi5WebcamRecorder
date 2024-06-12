@@ -4,6 +4,8 @@ import math
 from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame
 from get_hardware_info import *
 import cv2
+from sys import gettrace
+
 
 # If true, will print extra diagnostics, such as a running frame count and FPS calculations
 VERBOSE = False
@@ -11,6 +13,12 @@ VERBOSE = False
 # First camera ID number
 FIRST_CAMERA_ID = 1
 
+
+DEBUG = gettrace() is not None
+
+
+if DEBUG:
+    print("Running in DEBUG mode. Can use keyboard letter 'd' to test TTL for camera 1")
 
 if platform.system() == "Linux":
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
@@ -304,6 +312,11 @@ while True:
             if which_display >= len(cam_array):
                 which_display = -2
             print_current_display_id()
+        elif DEBUG and key == ord("d"):
+            # Special debugging keystroke that simulates TTL input in regards to camera 1
+            cam_obj = cam_array[0]
+            if cam_obj is not None:
+                cam_obj.handle_GPIO()
         elif key == ord("w"):
             # Write JPG images for each camera
             for cam_obj in cam_array:
@@ -331,7 +344,7 @@ while True:
                     else:
                         cam_obj.stop_record()
 
-        elif key != 255:
+        elif DEBUG and key != 255:
             print(f"You pressed: {key}")
 
     if frame_count % STATUS_REPORT_INTERVAL == 0:
