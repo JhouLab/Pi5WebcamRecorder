@@ -321,7 +321,7 @@ while True:
             # Write JPG images for each camera
             for cam_obj in cam_array:
                 if cam_obj.cam.isOpened():
-                    cam_obj.take_shapshot()
+                    cam_obj.take_snapshot()
         elif key >= ord("0") and key <= ord("9"):
             # Start/stop recording for specified camera
             cam_num = key - ord("0")
@@ -336,7 +336,8 @@ while True:
                     if not cam_obj.IsRecording:
                         if cam_obj.start_record():
                             # Successfully started recording.
-                            print(f"Started recording camera {cam_num}")
+#                            print(f"Started recording camera {cam_num}")
+                            pass  # We now notify user within the start_record() function itself.
                         else:
                             # Recording was attempted, but did not succeed. Usually this is
                             # because of file error, or missing codec.

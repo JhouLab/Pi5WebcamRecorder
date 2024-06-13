@@ -1,0 +1,48 @@
+; THIS IS A SAMPLE CONFIGURATION FILE
+;
+; To use it, first save it as "config.txt", then edit it for your own
+; needs.
+;
+; Because ".txt" files are not tracked by github in this repository,
+; each machine can have its own config.txt file that will not be
+; overwritten by updates.
+;
+; If any configuration option is missing, reasonable defaults will be
+; chosen. So having a "config.txt" file is optional unless you want to
+; override the defaults.
+;
+; LINES STARTING WITH SEMICOLONS (LIKE THIS ONE) ARE COMMENTS.
+;
+[options]
+
+; Program runs an internal loop that requests one camera frame per loop.
+; This variable sets how often this loop runs, in frames per second.
+; Most webcams max out around 29-30fps, so loop won't run faster than that.
+; Because CPU needs time to compress frames, the practical limit is usually lower,
+; e.g. 15-20fps when recording 4 cameras on Pi5 with h264.
+FRAME_RATE_PER_SECOND = 10
+
+; Main choices for the FOURCC code are h264 and mp4v.
+; h264 is very efficient at compression (1-2MB/min) but somewhat CPU intensive.
+; mp4v is less efficient (~5-10MB/min) but uses less CPU, allowing higher frame rates.
+FOURCC = h264
+; FOURCC = mp4v
+
+; If TTLs are close together, they are detected as a group, e.g. double or triple pulses.
+; This parameter sets the threshold (in seconds) for TTLs to be grouped.
+MAX_INTERVAL_IN_TTL_BURST = 1.5
+
+; Specify how many grouped pulses to start/end session.
+NUM_TTL_PULSES_TO_START_SESSION = 2
+NUM_TTL_PULSES_TO_STOP_SESSION = 2
+
+; Resolution to request from camera. Larger resolutions mean bigger files and slower frame rates.
+WIDTH = 640
+HEIGHT = 480
+
+
+; Base folder for data storage. Make sure there is a trailing slash at the end of any directory.
+; If you want to store data in the program folder, use an empty string.
+; Windows folders can use either backward or forward slash.
+DATA_FOLDER = /home/jhoulab/video/
+; DATA_FOLDER = C:/Users/TomJhou/Videos/

@@ -12,34 +12,12 @@ import time
 import platform
 import threading
 
+import configparser
 
 if platform.system() == "Linux":
     import RPi.GPIO as GPIO
 
-FRAME_RATE_PER_SECOND = 10
-
-FOURCC = 'h264'  # Very efficient compression, but CPU intensive. Windows version does not work as well as Linux.
-# FOURCC = 'mp4v' # MPEG-4 compression is less CPU intensive, allowing higher frame rates (>200fps across all cameras), but files will be 5-10x larger
-
-MAX_INTERVAL_IN_TTL_BURST = 1.5      # Max interval in seconds between consecutive TTLs in burst
-NUM_TTL_PULSES_TO_START_SESSION = 2
-NUM_TTL_PULSES_TO_STOP_SESSION = 2   # Can change to 3 to avoid ambiguity between session start/stop
-
-
-#
-# Note: h264 codec comes with OpenCV on Linux/Pi, but not Windows
-# Under Windows, download .DLL file here: https://github.com/cisco/openh264/releases
-# Note that if you have an older version of OpenCV, you may need an older h264 dll.
-# As of 6/8/2024, current h264 dll is version 2.4, but on Windows we need version 1.8.
-# Strangely, Windows h264 (version 1.8) is much less space efficient than Linux version
-# (~4MB/min versus 1-2MB/min).
-#
-
-# Resolution
-WIDTH = 640
-HEIGHT = 480
-
-os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings when camera id not found
+os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found
 
 # Must install OpenCV.
 #
@@ -58,6 +36,27 @@ os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings when camera id not
 #   If multiple installations, must pick the correct one, e.g.:
 #   c:/users/<user>/AppData/Local/Microsoft/WindowsApps/python3.11.exe -m pip install opencv-python 
 import cv2
+
+configParser = configparser.RawConfigParser()
+configFilePath = r'config.txt'
+configParser.read(configFilePath)
+
+DATA_FOLDER = configParser.get('options', 'DATA_FOLDER', fallback='')
+
+FRAME_RATE_PER_SECOND = configParser.getint('options', 'FRAME_RATE_PER_SECOND', fallback=10)
+HEIGHT = configParser.getint('options', 'HEIGHT', fallback=480)
+WIDTH = configParser.getint('options', 'WIDTH', fallback=640)
+if platform.system() == "Linux":
+    FOURCC = configParser.get('options', 'FOURCC', fallback='h264')
+else:
+    # Note: h264 codec comes with OpenCV on Linux/Pi, but not Windows. Will default to using mp4v on
+    # Windows. If you really want h264, there is a .DLL here: https://github.com/cisco/openh264/releases
+    # but it has poor compression ratio, and doesn't always install anyway.
+    FOURCC = configParser.get('options', 'FOURCC', fallback='mp4v')
+
+MAX_INTERVAL_IN_TTL_BURST = configParser.getfloat('options', 'MAX_INTERVAL_IN_TTL_BURST', fallback=1.5)
+NUM_TTL_PULSES_TO_START_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_START_SESSION', fallback=2)
+NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=2)
 
 
 def get_date_string():
@@ -230,21 +229,21 @@ class CamObj:
                 self.frame_num = 0
                 self.TTL_num = 0
 
-                prefix = self.get_filename_prefix()
+                prefix = DATA_FOLDER + self.get_filename_prefix()
                 self.filename = prefix + "_Video.avi"
-                self.filename_timestamp = prefix + "_Timestamp.txt"
-                self.filename_timestamp_TTL = prefix + "_Timestamp_TTL.txt"
+                self.filename_timestamp = prefix + "_Frames.txt"
+                self.filename_timestamp_TTL = prefix + "_TTLs.txt"
 
                 try:
                     # Create video file
                     self.Writer = cv2.VideoWriter(self.filename, self.codec, FRAME_RATE_PER_SECOND, self.resolution)
                 except:
-                    print("Warning: unable to create video file")
+                    print(f"Warning: unable to create video file: '{self.filename}'")
                     return False
 
                 if not self.Writer.isOpened():
                     # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
-                    print("Warning: unable to create video file")
+                    print(f"Warning: unable to create video file: '{self.filename}'")
                     return False
 
                 try:
@@ -272,6 +271,8 @@ class CamObj:
 
                 self.IsRecording = True
                 self.start_time = time.time()
+
+                print(f"Started recording camera {self.order} to file '{self.filename}'")
                 return True
 
     def stop_record(self):
@@ -290,8 +291,7 @@ class CamObj:
             # in the middle of stopping the old one.
 
             if self.IsRecording:
-                print(f"Stopping recording camera {self.order}")
-                self.print_elapsed()
+                print(f"Stopping recording camera {self.order} after " + self.get_elapsed_time_string())
 
                 self.IsRecording = False
 
@@ -379,15 +379,20 @@ class CamObj:
             return 0, None
 
     def print_elapsed(self):
+
+        str1 = f"   Camera {self.order} elapsed: " + self.get_elapsed_time_string()
+
+    def get_elapsed_time_string(self):
+
         elapsed_sec = self.frame_num / FRAME_RATE_PER_SECOND
-        str1 = f"   Camera {self.order} elapsed: "
         if elapsed_sec < 120:
-            print(str1 + f"{elapsed_sec:.0f} seconds, {self.frame_num} frames")
+            str1 = f"{elapsed_sec:.0f} seconds"
         else:
             elapsed_min = elapsed_sec / 60
-            print(str1 + f"{elapsed_min:.2f} minutes, {self.frame_num} frames")
+            str1 = f"{elapsed_min:.2f} minutes"
+        return str1 + f", {self.frame_num} frames"
 
-    def take_shapeshot(self):
+    def take_snapshot(self):
         if self.cam is None or self.frame is None:
             return
         if self.cam.isOpened():

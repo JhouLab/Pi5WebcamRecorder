@@ -60,9 +60,9 @@ Each camera recording generates its own files, and there is no data mixing betwe
 Each filename begins with the date, camera number, and data type. For example, a recording
 from camera 1, on June 12, 2024 at 5:38pm will generate these files:
 
-    2024-06-12_1738_Cam1_Video.avi              # Video file in H264 format
-    2024-06-12_1738_Cam1_Timestamp.txt          # Text file with timestamps of each video frame
-    2024-06-12_1738_Cam1_Timestamp_TTL.txt      # Text file with timestamps of low-to-high TTL transitions
+    2024-06-12_1738_Cam1_Frames.txt        # Text file with timestamps of each video frame
+    2024-06-12_1738_Cam1_TTLs.txt          # Text file with timestamps of low-to-high TTL transitions
+    2024-06-12_1738_Cam1_Video.avi         # Video file in H264 format
 
 H264 files are remarkably small, typically <2MB per minute. Estimated storage requirements are below:
 
