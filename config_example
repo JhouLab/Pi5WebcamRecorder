@@ -44,5 +44,5 @@ HEIGHT = 480
 ; Base folder for data storage. Make sure there is a trailing slash at the end of any directory.
 ; If you want to store data in the program folder, use an empty string.
 ; Windows folders can use either backward or forward slash.
-DATA_FOLDER = /home/jhoulab/video/
+DATA_FOLDER = /home/jhoulab/Videos/
 ; DATA_FOLDER = C:/Users/TomJhou/Videos/

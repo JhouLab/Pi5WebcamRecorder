@@ -355,14 +355,13 @@ while True:
             fps = frame_count / elapsed
             print(f"Frame count: {frame_count}, frames per second = {fps}")
 
-        if any_camera_recording(cam_array):
-            if not VERBOSE:
+            if any_camera_recording(cam_array):
                 print("Camera recording status:")
-            for x in cam_array:
-                # Print elapsed time for each camera that is actively recording.
-                if x is not None and x.cam is not None:
-                    if x.IsRecording:
-                        x.print_elapsed()
+                for x in cam_array:
+                    # Print elapsed time for each camera that is actively recording.
+                    if x is not None and x.cam is not None:
+                        if x.IsRecording:
+                            x.print_elapsed()
 
     if time.time() > next_frame:
         # We are already too late for next frame. Oops. Report warning if any recording is ongoing, as there might be missed frames
