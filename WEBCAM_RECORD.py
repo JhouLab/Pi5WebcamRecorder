@@ -314,9 +314,9 @@ while True:
             print_current_display_id()
         elif DEBUG and key == ord("d"):
             # Special debugging keystroke that simulates TTL input in regards to camera 1
-            cam_obj = cam_array[0]
-            if cam_obj is not None:
-                cam_obj.handle_GPIO()
+            for cam_obj in cam_array:
+                if cam_obj is not None:
+                    cam_obj.handle_GPIO()
         elif key == ord("w"):
             # Write JPG images for each camera
             for cam_obj in cam_array:

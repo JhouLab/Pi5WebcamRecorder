@@ -11,13 +11,15 @@ import datetime
 import time
 import platform
 import threading
-
+from sys import gettrace
 import configparser
 
 if platform.system() == "Linux":
     import RPi.GPIO as GPIO
 
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found
+
+DEBUG = gettrace() is not None
 
 # Must install OpenCV.
 #
@@ -116,15 +118,16 @@ class CamObj:
     codec = cv2.VideoWriter_fourcc(*FOURCC)  # What codec to use. Usually h264
     resolution = (WIDTH, HEIGHT)
     
-    helper_thread = None
+    helper_thread = None  # This is used to close files without blocking main thread
 
-    lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
+    lock = None
 
     def __init__(self, cam, id_num, order, GPIO_pin=-1):
         self.cam = cam
         self.id_num = id_num
         self.order = order
         self.GPIO_pin = GPIO_pin
+        self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         if cam is None:
             # Use blank frame for this object if no camera object is specified
             self.frame = make_blank_frame(f"{order} - No camera found")
@@ -179,7 +182,8 @@ class CamObj:
                         print(f"Unable to start recording camera {self.order} in response to GPIO input")
                         return
                     else:
-                        print(f"Started recording camera {self.order} in response to GPIO input")
+                        if DEBUG:
+                            print(f"Started recording camera {self.order} in response to GPIO input")
 
                     if not self.IsRecording:
                         # Not recording video, so don't save TTL timestamps
