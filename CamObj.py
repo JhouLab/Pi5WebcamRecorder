@@ -18,11 +18,11 @@ if platform.system() == "Linux":
 
 FRAME_RATE_PER_SECOND = 10
 
-FOURCC = 'h264'  # Very efficient compression, but CPU intensive. Total frame rate across all cameras should not exceed about 50
-# FOURCC = 'mp4v' # MPEG-4 compression is faster, allowing higher frame rates (>200fps across all cameras), but files will be 5-10x larger
+FOURCC = 'h264'  # Very efficient compression, but CPU intensive. Windows version does not work as well as Linux.
+# FOURCC = 'mp4v' # MPEG-4 compression is less CPU intensive, allowing higher frame rates (>200fps across all cameras), but files will be 5-10x larger
 
 MAX_INTERVAL_IN_TTL_BURST = 1.5      # Max interval in seconds between consecutive TTLs in burst
-NUM_TTL_PULSES_TO_START_SESSION = 2  # Can change to 3 to avoid ambiguity between session start/stop
+NUM_TTL_PULSES_TO_START_SESSION = 2
 NUM_TTL_PULSES_TO_STOP_SESSION = 2   # Can change to 3 to avoid ambiguity between session start/stop
 
 
