@@ -60,6 +60,7 @@ MAX_INTERVAL_IN_TTL_BURST = configParser.getfloat('options', 'MAX_INTERVAL_IN_TT
 NUM_TTL_PULSES_TO_START_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_START_SESSION', fallback=2)
 NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=3)
 
+FONT_SCALE = HEIGHT / 480
 
 def get_date_string():
     now = datetime.datetime.now()
@@ -75,7 +76,9 @@ def get_date_string():
 
 def make_blank_frame(txt):
     tmp = np.zeros((HEIGHT, WIDTH, 3), dtype="uint8")
-    cv2.putText(tmp, txt, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+    cv2.putText(tmp, txt, (int(10 * FONT_SCALE), int(30 * FONT_SCALE)), cv2.FONT_HERSHEY_SIMPLEX,
+                FONT_SCALE, (255, 255, 255),
+                round(FONT_SCALE + 0.5))   # Line thickness
     return tmp
 
 

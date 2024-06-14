@@ -1,7 +1,7 @@
 import time
 import numpy as np
 import math
-from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame
+from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE
 from get_hardware_info import *
 import cv2
 from sys import gettrace
@@ -51,6 +51,12 @@ else:
     IDENTIFY_CAMERA_BY_USB_PORT = False
     INPUT_PIN_LIST = [None] * 4   # List of input pins for the four cameras
 
+if WIDTH > 1024:
+    SCREEN_RESOLUTION = (WIDTH >> 1, HEIGHT >> 1)
+    SCREEN_RESOLUTION_INSET = (WIDTH >> 2, HEIGHT >> 2)
+else:
+    SCREEN_RESOLUTION = (WIDTH, HEIGHT)
+    SCREEN_RESOLUTION_INSET = (WIDTH >> 1, HEIGHT >> 1)
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
 # If not successful (i.e. if there is no camera plugged in with that ID), will throw exception,
@@ -83,15 +89,24 @@ def any_camera_recording(cam_list):
 def make_instruction_frame():
     # Frame with brief user-friendly instructions
     f = np.zeros((HEIGHT, WIDTH, 1), dtype="uint8")
+    x = int(10 * FONT_SCALE)
+    y = int(30 * FONT_SCALE)
+    ydiff = int(40 * FONT_SCALE)
+    line_thickness = round(FONT_SCALE)
     cv2.putText(f, "Video off. Recordings will continue.",
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+                (x, y),
+                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
+                line_thickness)
     cv2.putText(f, "Left-right cursor cycles cameras.",
-                (10, 70),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+                (x, y + ydiff),
+                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
+                line_thickness)
     cv2.putText(f, "Q to quit, 0-3 to start/stop record.",
-                (10, 110),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+                (x, y + 2 * ydiff),
+                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
+                line_thickness)
+
+    f = cv2.resize(f, SCREEN_RESOLUTION)
     return f
 
 
@@ -143,7 +158,7 @@ else:
 subframes = [None] * 4
 for x in range(4):
     tmp = make_blank_frame(f"{FIRST_CAMERA_ID + x} no camera found")
-    subframes[x] = cv2.resize(tmp, (WIDTH >> 1, HEIGHT >> 1))
+    subframes[x] = cv2.resize(tmp, SCREEN_RESOLUTION_INSET)
 
 if IDENTIFY_CAMERA_BY_USB_PORT:
     print("Scanning for all available cameras by USB port. Please wait ...")
@@ -237,22 +252,33 @@ while True:
 
         if cam_obj.status:
             # Add text to top left to show camera number
-            cv2.putText(cam_obj.frame, str(FIRST_CAMERA_ID + idx), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+            cv2.putText(cam_obj.frame, str(FIRST_CAMERA_ID + idx),
+                        (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
+                        cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
+                        round(FONT_SCALE + 0.5))  # Line thickness
             if cam_obj.IsRecording:
                 # Add red circle if recording
-                cv2.circle(cam_obj.frame, (20, 50), 8, (0, 0, 255), -1)   # -1 thickness fills circle
+                cv2.circle(cam_obj.frame,
+                           (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
+                           int(8 * FONT_SCALE),  # Radius
+                           (0, 0, 255),     # Color in BGR order
+                           -1)   # -1 thickness fills circle
 
     if which_display >= 0:
         # Show just one of the 4 cameras
         cam_obj = cam_array[which_display]
         if cam_obj.status:
-            cv2.imshow(DISPLAY_WINDOW_NAME, cam_obj.frame)
+            if SCREEN_RESOLUTION[0] == WIDTH:
+                cv2.imshow(DISPLAY_WINDOW_NAME, cam_obj.frame)
+            else:
+                tmp_frame = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
+                cv2.imshow(DISPLAY_WINDOW_NAME, tmp_frame)
     elif which_display == -2:
         # Show all 4 cameras on one screen (downsized 2x)
         for index, elt in enumerate(cam_array):
             if elt is not None and elt.frame is not None:
                 # Downsize
-                subframes[index] = cv2.resize(elt.frame, (WIDTH >> 1, HEIGHT >> 1))
+                subframes[index] = cv2.resize(elt.frame, SCREEN_RESOLUTION_INSET)
 
         # Concatenate 4 images into 1
         im_top = cv2.hconcat([subframes[0], subframes[1]])

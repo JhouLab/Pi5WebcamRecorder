@@ -1,9 +1,9 @@
 
 # HOW TO USE:
 
-Instructions version 1.0.
+Instructions version 1.2
 
-Updated June 12, 2024.
+Updated June 13, 2024.
 
 For best results, run this on a Raspberry Pi 5, which can easily handle 4 simultaneous cameras.
 The Pi 4 seems to struggle with even 2 cameras.
@@ -46,8 +46,8 @@ Once running, it will respond to the following keyboard keys:
 This program also monitors GPIO pins 4-7. A low-to-high transition (i.e. from 0V to 3.3V)
 on these pins has the following effects:
 
-    Double pulse:   Starts/stops recording when 2 pulses arrive <1 sec apart
-    Triple pulse:   (In future editions, this will stop recording)
+    Double pulse:   Starts recording when 2 pulses arrive <1 sec apart
+    Triple pulse:   Stops recording
     Single pulse:   Saves timestamp in _TTL.txt file
 
     GPIO4:          camera 1
@@ -66,37 +66,42 @@ from camera 1, on June 12, 2024 at 5:38pm will generate these files:
 
 H264 files are remarkably small, typically <2MB per minute. Estimated storage requirements are below:
 
-    1 GB:     About 8 hours (or more) of continuous recording.
-    1 TB:     About 3 months of continuous 24/7 recording from 4 cameras
-    1 TB:     About 1 year of continuous 24/7 recording from 1 camera
+    1 GB:     About 8 hours (or more) of continuous 24/7 recording.
+    64 GB:    About 20 days of continuous recording
+    1 TB:     About 3 months of continuous recording from 4 cameras
+    1 TB:     About 1 year of continuous recording from 1 camera
     1 TB:     About 3 years when recording two 1-hour sessions per day from 4 animals (i.e. 8 total hours/day)
 
-Basic video parameters are as follows. You can change them by editing the CamObj.py file:
+Default video parameters are as follows:
 
-    Frames per second: 10                # Set on line 19 of CamObj.py file
-    Codec: h264                          # Set on line 21 of CamObj.py
-    Pixel resolution: 640x480            # Set on lines 39-40 of CamObj.py file
+    Frames per second: 10
+    Codec: h264          
+    Pixel resolution: 640 (width) x 480 (height)
+    Data folder: same as program
 
-If you need more resolution or higher frame rate, the CPU might start to bog down. It may help
-to switch from h264 to mp4v format (MPEG-4) which is less CPU-intensive, but files require ~5x more disk space.
+You can also create a "config.txt" file to override the defaults. For example, the following
+is a valid "config.txt" file:
 
-This program is intended to run on a Raspberry Pi 5. It will (sort of) run on a Pi 4, but performance is frustratingly
-poor if you have more than 1 camera. This program also runs (sort of) under Windows, but it lacks the ability to
-distinguish which USB port is which, meaning camera position will be somewhat random. Strangely, the Windows H264 encoder
-(from Cisco systems, v1.8) also achieves much worse compression ratios than the Pi version.
+    [options]
+    FRAME_RATE_PER_SECOND = 10
+    DATA_FOLDER = /home/jhoulab/Videos/
+
+Note the first line must be a header that starts with '[options]'. For a full list of
+options that can be set, see the example file "config_example1".
+
+This program is optimized to run on a Raspberry Pi 5. It will run on a Pi 4, but performance is
+poor with >1 camera. It also runs under Windows, but lacks the ability to distinguish which USB
+port is which, meaning camera position will be somewhat random, and will also use mp4v instead of h264.
 
 
 # KNOWN SHORTCOMINGS:
 
-1. There is currently no way to specify what folder to save files go. All files go to the
-same folder as the program itself.
-
-2. When launching, you will get the following warning, which I can't get rid of, despite considerable
+1. When launching, you will get the following warning, which I can't get rid of, despite considerable
 effort trying. It seems to be harmless, so you can just ignore it:
 
     libpng warning: iCCP: known incorrect sRGB profile
 
-3. Data captured from the camera sensor is stored in an internal buffer, and read by python somewhat later.
+2. Data captured from the camera sensor is stored in an internal buffer, and read by python somewhat later.
 For more accurate timestamps, we need to determine the latency from capture to data transfer, and subtract
 that latency. My hunch is the error is <100ms, most likely around 70-80ms, but I haven't measured this yet.
 

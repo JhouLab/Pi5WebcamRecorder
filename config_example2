@@ -1,0 +1,5 @@
+[options]
+
+FRAME_RATE_PER_SECOND = 10
+
+DATA_FOLDER = /home/
