@@ -5,8 +5,8 @@ Instructions version 1.2
 
 Updated June 13, 2024.
 
-For best results, run this on a Raspberry Pi 5, which can easily handle 4 simultaneous cameras.
-The Pi 4 seems to struggle with even 2 cameras.
+For best results, run this on a Raspberry Pi 5, which can easily handle 4 simultaneous cameras,
+whereas the Pi 4 seems to struggle with even 2 cameras.
 
 Hopefully someone has already installed all files and libraries for you. If not, skip to the bottom
 "Installing on a new machine", then come back here when you are done.
@@ -37,16 +37,16 @@ The cameras are numbered 1-4, in the following order:
 
 Once running, it will respond to the following keyboard keys:
 
-    "Q":            Typing this stops any ongoing recordings, and quits the program
+    "Q":            Stops any ongoing recordings, and quits program
     Left cursor:    Cycles through cameras in descending order
     Right cursor:   Cycles through cameras in ascending order
     1-4:            Typing a camera number will manually start/stop recording of that camera.
-                    A red dot appears in the corner to indicate ongoing recording.
+                    A red dot in the corner indicates ongoing recording.
 
 This program also monitors GPIO pins 4-7. A low-to-high transition (i.e. from 0V to 3.3V)
 on these pins has the following effects:
 
-    Double pulse:   Starts recording when 2 pulses arrive <1 sec apart
+    Double pulse:   Starts recording when 2 pulses arrive <1.5 sec apart
     Triple pulse:   Stops recording
     Single pulse:   Saves timestamp in _TTL.txt file
 
@@ -96,14 +96,14 @@ port is which, meaning camera position will be somewhat random, and will also us
 
 # KNOWN SHORTCOMINGS:
 
-1. When launching, you will get the following warning, which I can't get rid of, despite considerable
-effort trying. It seems to be harmless, so you can just ignore it:
+1. When launching, you will get the following harmless warning. I don't know how to get rid of it,
+and you can just ignore it:
 
     libpng warning: iCCP: known incorrect sRGB profile
 
-2. Data captured from the camera sensor is stored in an internal buffer, and read by python somewhat later.
-For more accurate timestamps, we need to determine the latency from capture to data transfer, and subtract
-that latency. My hunch is the error is <100ms, most likely around 70-80ms, but I haven't measured this yet.
+2. Data captured from the camera sensor is buffered on the camera itself, and read via USB later.
+So frame timestamps are likely offset by some constant delay, probably on the order of tens of
+milliseconds. GPIO/TTL timestamps, on the other hand, should be accurate to within a couple of milliseconds.
 
 
 #  INSTALLING ON A NEW MACHINE:
