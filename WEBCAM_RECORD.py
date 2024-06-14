@@ -63,8 +63,10 @@ def setup_cam(id):
         tmp = cv2.VideoCapture(id)
 
     if tmp.isOpened():
-        tmp.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        tmp.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+        tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+        if not tmp.isOpened():
+            print(f"Resolution {WIDTH}x{HEIGHT} not supported. Please change config.txt.")
     return tmp
 
 
