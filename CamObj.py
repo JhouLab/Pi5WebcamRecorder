@@ -62,6 +62,18 @@ NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_
 
 FONT_SCALE = HEIGHT / 480
 
+
+import datetime
+
+
+def printt(txt):
+    # Get the current date and time
+    now = datetime.datetime.now()
+
+    s = now.strftime("%Y-%m-%d %H:%M:%S: ")
+    print(s + txt)
+
+
 def get_date_string():
     now = datetime.datetime.now()
     year = '{:04d}'.format(now.year)
@@ -279,7 +291,7 @@ class CamObj:
                 self.IsRecording = True
                 self.start_time = time.time()
 
-                print(f"Started recording camera {self.order} to file '{self.filename}'")
+                printt(f"Started recording camera {self.order} to file '{self.filename}'")
                 return True
 
     def stop_record(self):
@@ -298,7 +310,7 @@ class CamObj:
             # in the middle of stopping the old one.
 
             if self.IsRecording:
-                print(f"Stopping recording camera {self.order} after " + self.get_elapsed_time_string())
+                printt(f"Stopping recording camera {self.order} after " + self.get_elapsed_time_string())
 
                 self.IsRecording = False
 
@@ -349,7 +361,7 @@ class CamObj:
 
                 self.frame = make_blank_frame(f"{self.order} Camera lost connection")
                 # Warn user that something is wrong.
-                print(f"Unable to read video from camera with ID {self.order}. Will remove camera from available list, and stop any ongoing recordings.")
+                printt(f"Unable to read video from camera with ID {self.order}. Will remove camera from available list, and stop any ongoing recordings.")
 
                 # Remove camera resources
                 self.cam.release()

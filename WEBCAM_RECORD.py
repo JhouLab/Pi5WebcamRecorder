@@ -1,7 +1,7 @@
 import time
 import numpy as np
 import math
-from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE
+from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt
 from get_hardware_info import *
 import cv2
 from sys import gettrace
@@ -231,7 +231,6 @@ for idx, cam_obj in enumerate(cam_array):
     else:
         print(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}")
 
-print_current_display_id()
 
 frame_count = -1
 
@@ -239,6 +238,9 @@ FRAME_INTERVAL = 1.0 / FRAME_RATE_PER_SECOND
 
 # Report status every 30 seconds
 STATUS_REPORT_INTERVAL = FRAME_RATE_PER_SECOND * 30
+
+print()
+printt("Starting display")
 
 # infinite loop
 # Camera frame is read at the very beginning of loop. At the end of the loop, is a timer
@@ -395,7 +397,7 @@ while True:
         # We are already too late for next frame. Oops. Report warning if any recording is ongoing, as there might be missed frames
         lag_ms = (time.time() - next_frame) * 1000
         if any_camera_recording(cam_array):
-            print(f"Warning: CPU is lagging at frame {frame_count} by {lag_ms:.2f} ms. Might experience up to {int(math.ceil(lag_ms/100))} dropped frame(s).")
+            printt(f"Warning: CPU is lagging by {lag_ms:.2f} ms. Might experience up to {int(math.ceil(lag_ms/100))} dropped frame(s).")
 
         # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
         next_frame = time.time() + FRAME_INTERVAL
