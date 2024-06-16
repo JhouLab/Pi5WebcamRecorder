@@ -120,6 +120,7 @@ def printt(txt, omit_date_time=False, close_file=False):
     print(s)
     try:
         fid_log.write(s + "\n")
+        fid_log.flush()
         if close_file:
             fid_log.close()
     except:
