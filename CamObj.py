@@ -66,14 +66,6 @@ FONT_SCALE = HEIGHT / 480
 import datetime
 
 
-def printt(txt):
-    # Get the current date and time
-    now = datetime.datetime.now()
-
-    s = now.strftime("%Y-%m-%d %H:%M:%S: ")
-    print(s + txt)
-
-
 def get_date_string():
     now = datetime.datetime.now()
     year = '{:04d}'.format(now.year)
@@ -104,6 +96,35 @@ class closer(threading.Thread):
             self.cam_obj.stop_record_thread()
         except:
             pass
+
+
+filename_log = DATA_FOLDER + get_date_string() + "_log.txt"
+
+
+try:
+    # Create text file for frame timestamps
+    fid_log = open(filename_log, 'w')
+    print("Logging events to file: \'" + filename_log + "\'")
+except:
+    print("Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and that you have permission to write to it.")
+
+
+def printt(txt, omit_date_time=False, close_file=False):
+    # Get the current date and time
+    if not omit_date_time:
+        now = datetime.datetime.now()
+
+        s = now.strftime("%Y-%m-%d %H:%M:%S: ") + txt
+    else:
+        s = txt
+    print(s)
+    try:
+        fid_log.write(s + "\n")
+        if close_file:
+            fid_log.close()
+    except:
+        pass
+
 
 
 class CamObj:

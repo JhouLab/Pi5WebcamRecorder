@@ -18,7 +18,7 @@ DEBUG = gettrace() is not None
 
 
 if DEBUG:
-    print("Running in DEBUG mode. Can use keyboard letter 'd' to test TTL for camera 1")
+    printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
 
 if platform.system() == "Linux":
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
@@ -42,7 +42,8 @@ if platform.system() == "Linux":
         try:
             GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set to be input, with internal pull-up but not pull-down
         except RuntimeError:
-            print("Unable to set up GPIO. If this is a Pi5, please replace the default gpio library as follows:")
+            printt("Unable to set up GPIO.")
+            print("    If this is a Pi5, please replace the default gpio library as follows:")
             print("    sudo apt remove python3-rpi.gpio")
             print("    sudo apt install python3-rpi-lgpio")
             exit()
@@ -161,9 +162,9 @@ for x in range(4):
     subframes[x] = cv2.resize(tmp, SCREEN_RESOLUTION_INSET)
 
 if IDENTIFY_CAMERA_BY_USB_PORT:
-    print("Scanning for all available cameras by USB port. Please wait ...")
+    printt("Scanning for all available cameras by USB port. Please wait ...")
 else:
-    print("Scanning for all available cameras. Please wait ...")
+    printt("Scanning for all available cameras. Please wait ...")
 
 num_cameras_found = 0
 
@@ -178,15 +179,15 @@ for cam_id in range(MAX_ID):
             # But it does. For now. I hope.
             port = get_cam_usb_port(cam_id)
             if port < 0:
-                print("Unable to identify USB port. Won't show camera. Please contact developer.")
+                printt("Unable to identify USB port. Won't show camera. Please contact developer.")
                 continue
             if port > 3:
-                print(f"Invalid USB port number (should be 0-3): {port}")
+                printt(f"Invalid USB port number (should be 0-3): {port}")
                 continue
 
             if cam_array[port] is not None:
                 # If we already found a camera in this position ...
-                print(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
+                printt(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
                 continue
             cam_array[port] = CamObj(tmp, cam_id,
                                      FIRST_CAMERA_ID + port, GPIO_pin=INPUT_PIN_LIST[port])
@@ -202,10 +203,10 @@ for cam_id in range(MAX_ID):
 print()
 
 if len(cam_array) == 0:
-    print("NO CAMERAS FOUND")
+    printt("NO CAMERAS FOUND")
     quit()
 else:
-    print(f"Found {num_cameras_found} cameras")
+    printt(f"Found {num_cameras_found} cameras")
 
 # Which camera to display initially. User can change this later with arrow keys.
 #
@@ -227,9 +228,9 @@ for idx, cam_obj in enumerate(cam_array):
         continue
 
     if IDENTIFY_CAMERA_BY_USB_PORT:
-        print(f"Camera in USB port position {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}")
+        printt(f"Camera in USB port position {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
     else:
-        print(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}")
+        printt(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
 
 
 frame_count = -1
@@ -429,5 +430,5 @@ for cam_obj in cam_array:
         continue
     cam_obj.close()
 
-print("Exiting")
+printt("Exiting", close_file=True)
 
