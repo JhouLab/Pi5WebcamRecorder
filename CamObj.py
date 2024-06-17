@@ -17,7 +17,7 @@ import configparser
 if platform.system() == "Linux":
     import RPi.GPIO as GPIO
 
-os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found
+os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found. This statement must occur before importing cv2
 
 DEBUG = gettrace() is not None
 

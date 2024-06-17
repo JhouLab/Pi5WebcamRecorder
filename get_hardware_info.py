@@ -12,7 +12,7 @@ import platform
 
 def get_pi_version():
     if platform.system() != "Linux":
-        print("Function get_pi_version only works on Raspberry Pi/Linux systems")
+        print("This is not a Raspberry Pi/Linux system")
         return -1
 
     # Prepare the external command to extract serial number.
@@ -100,7 +100,7 @@ def get_cam_usb_port(cam_id) -> int:
 def get_cam_serial(cam_id):
     if platform.system() != "Linux":
         print("Function get_cam_serial only works on Raspberry Pi/Linux systems")
-        return -1
+        return None
 
     # Prepare the external command to extract serial number.
     p = subprocess.Popen('udevadm info --name=/dev/video{} | grep ID_SERIAL= | cut -d "=" -f 2'.format(cam_id),
@@ -117,3 +117,37 @@ def get_cam_serial(cam_id):
 
     # The response ends with a new line so remove it
     return response.replace('\n', '')
+
+
+if __name__ == '__main__':
+    import sys
+    import os
+    os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found. This statement must occur before importing cv2
+    import cv2
+    
+    pi = get_pi_version()
+    if pi < 0:
+        # Not a raspberry pi or Linux device
+        sys.exit()
+    print("Pi version: " + str(get_pi_version()))
+
+    for id in range(24):
+        if platform.system() == "Windows":
+            tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
+        else:
+            tmp = cv2.VideoCapture(id)
+
+        if not tmp.isOpened():
+            print(".", end="")
+            continue
+            
+        s = get_cam_serial(id)
+        if s is None or len(s) == 0:
+            print(".", end=None)
+            continue
+        print(f"Camera id: {id} has serial: {s}")
+        print(f"   and is plugged into USB port {get_cam_usb_port(id)}")
+
+        
+    
+

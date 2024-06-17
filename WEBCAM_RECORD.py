@@ -228,7 +228,7 @@ for idx, cam_obj in enumerate(cam_array):
         continue
 
     if IDENTIFY_CAMERA_BY_USB_PORT:
-        printt(f"Camera in USB port position {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
+        printt(f"Camera in USB port position {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num} and serial '{get_cam_serial(cam_obj.id_num)}'", omit_date_time=True)
     else:
         printt(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
 
