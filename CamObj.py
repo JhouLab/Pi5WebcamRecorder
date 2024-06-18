@@ -19,6 +19,7 @@ if platform.system() == "Linux":
 
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found. This statement must occur before importing cv2
 
+# This returns true if you ran the program in debug mode from the IDE
 DEBUG = gettrace() is not None
 
 # Must install OpenCV.
@@ -178,6 +179,25 @@ class CamObj:
 
         self.handle_GPIO()
 
+    def delayed_start(self):
+
+        # This will wait a second to make sure no additional GPIOs occurred, then
+        # will start recording video
+
+        time.sleep(MAX_INTERVAL_IN_TTL_BURST)
+
+        if self.num_consec_TTLs != NUM_TTL_PULSES_TO_START_SESSION:
+            return
+
+        if not self.start_record():
+            # Start recording failed, so don't record TTLs
+            print(f"Unable to start recording camera {self.order} in response to GPIO input")
+            return
+
+        if not self.IsRecording:
+            # Not recording video, so don't save TTL timestamps
+            print("Hmmm, something seems wrong, GPIO recording didn't start after all. Please contact developer.")
+
     def handle_GPIO(self):
 
         # Detected rising edge of GPIO
@@ -214,18 +234,10 @@ class CamObj:
             if not self.IsRecording:
 
                 if self.num_consec_TTLs == NUM_TTL_PULSES_TO_START_SESSION:
-                    # If not recording, then double pulse (two pulses <2.0 sec apart) starts recording.
-                    if not self.start_record():
-                        # Start recording failed, so don't record TTLs
-                        print(f"Unable to start recording camera {self.order} in response to GPIO input")
-                        return
-                    else:
-                        if DEBUG:
-                            print(f"Started recording camera {self.order} in response to GPIO input")
 
-                    if not self.IsRecording:
-                        # Not recording video, so don't save TTL timestamps
-                        print("Hmmm, something seems wrong, GPIO recording didn't start after all. Please contact developer.")
+                    t = threading.Thread(target=self.delayed_start)
+
+                    return
 
                 # At this point, we originally were not recording, and we either attempted to start a session
                 # or not, and we may or may not have succeeded.
@@ -266,7 +278,7 @@ class CamObj:
 
         # Because this function might be called from the GPIO callback thread, we need to
         # acquire lock to make sure it isn't also being called from the main thread.
-        with self.lock: 
+        with self.lock:
             if not self.IsRecording:
                 self.frame_num = 0
                 self.TTL_num = 0
@@ -321,7 +333,7 @@ class CamObj:
 
         # Close and release all file writers
         # Do it on a separate thread to avoid dropping frames
-        self.helper_thread = closer(self)
+        self.helper_thread = threading.Thread(target=self.stop_record_thread)
         self.helper_thread.start()
 
     def stop_record_thread(self):
