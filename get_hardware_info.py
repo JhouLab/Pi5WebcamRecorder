@@ -77,10 +77,10 @@ def get_cam_usb_port(cam_id) -> int:
     if pi_version == 5:
         # Py5 seems to have four distinct hubs?
         # How stable are these mappings across different devices?
-        s_table = ["/usb3/3-1",  # 0 Top left USB port on Pi5 (USB2)
+        s_table = ["/usb3/3-1",  # 0 Top left USB port on Pi5 (USB3)
                    "/usb1/1-2",  # 1 Top right USB port       (USB2)
                    "/usb1/1-1",  # 2 Bottom left USB port     (USB3)
-                   "/usb3/3-2"]  # 3 Bottom right USB port    (USB3)
+                   "/usb3/3-2"]  # 3 Bottom right USB port    (USB2)
     elif pi_version == 4:
         # Py4 seems to have just one hub, so the four ports are sub-hubs?
         # How stable are these mappings across different devices?

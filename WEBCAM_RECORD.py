@@ -40,7 +40,7 @@ if platform.system() == "Linux":
     INPUT_PIN_LIST = [4, 5, 6, 7]   # List of input pins for the four cameras
     for p in INPUT_PIN_LIST:
         try:
-            GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set to be input, with internal pull-up but not pull-down
+            GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Set to be input, with internal pull-down resistor
         except RuntimeError:
             printt("Unable to set up GPIO.")
             print("    If this is a Pi5, please replace the default gpio library as follows:")

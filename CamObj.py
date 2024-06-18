@@ -109,6 +109,7 @@ except:
     print("Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and that you have permission to write to it.")
 
 
+# Writes text to both screen and log file. The log file helps us retrospectively figure out what happened when debugging.
 def printt(txt, omit_date_time=False, close_file=False):
     # Get the current date and time
     if not omit_date_time:
@@ -129,7 +130,7 @@ def printt(txt, omit_date_time=False, close_file=False):
 
 
 class CamObj:
-    cam = None
+    cam = None   # this is the opencv camera object
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
     order = -1  # User-friendly camera ID. Will usually be USB port position, and also position on screen
     status = -1  # True if camera is operational and connected
