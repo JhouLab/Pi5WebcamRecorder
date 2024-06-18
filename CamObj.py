@@ -237,6 +237,8 @@ class CamObj:
 
                     t = threading.Thread(target=self.delayed_start)
 
+                    t.start()
+                    
                     return
 
                 # At this point, we originally were not recording, and we either attempted to start a session
