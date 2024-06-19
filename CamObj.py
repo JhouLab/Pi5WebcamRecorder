@@ -46,6 +46,9 @@ configParser.read(configFilePath)
 
 DATA_FOLDER = configParser.get('options', 'DATA_FOLDER', fallback='')
 
+if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
+    DATA_FOLDER = DATA_FOLDER + "/"
+
 FRAME_RATE_PER_SECOND = configParser.getint('options', 'FRAME_RATE_PER_SECOND', fallback=10)
 HEIGHT = configParser.getint('options', 'HEIGHT', fallback=480)
 WIDTH = configParser.getint('options', 'WIDTH', fallback=640)
