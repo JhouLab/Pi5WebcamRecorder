@@ -3,7 +3,7 @@
 
 Instructions version 1.2
 
-Updated June 13, 2024.
+Updated June 19, 2024.
 
 For best results, run this on a Raspberry Pi 5, which can easily handle 4 simultaneous cameras,
 whereas the Pi 4 seems to struggle with even 2 cameras.
@@ -48,7 +48,7 @@ on these pins has the following effects:
 
     Double pulse:   Starts recording when 2 pulses arrive <1.5 sec apart
     Triple pulse:   Stops recording
-    Single pulse:   Saves timestamp in _TTL.txt file
+    Single pulse:   Saves timestamp in _TTL.txt file, and flashes blue dot in top-left corner of video
 
     GPIO4:          camera 1
     GPIO5:          camera 2
@@ -56,42 +56,56 @@ on these pins has the following effects:
     GPIO7:          camera 4
 
 Each camera recording generates its own files, and there is no data mixing between cameras.
+There are three recorded files for each session, as listed below. All filenames begin with the
+date in YYYY-MM-DD-HHMM format, followed by camera number, and data type:
 
-Each filename begins with the date, camera number, and data type. For example, a recording
-from camera 1, on June 12, 2024 at 5:38pm will generate these files:
+    2024-06-12_1738_Cam1_Frames.txt        # Tab-delimited text file with timestamps of each video frame
+    2024-06-12_1738_Cam1_TTLs.txt          # Tab-delimited text file with timestamps of each TTL pulse
+    2024-06-12_1738_Cam1_Video.avi         # Video file.
 
-    2024-06-12_1738_Cam1_Frames.txt        # Text file with timestamps of each video frame
-    2024-06-12_1738_Cam1_TTLs.txt          # Text file with timestamps of low-to-high TTL transitions
-    2024-06-12_1738_Cam1_Video.avi         # Video file in H264 format
+By default, the software records at 10 frames per second and 640x480 resolution, using
+the H264 codec. To override the defaults, read the instructions in file "config_example1", which
+explains how to create a "config.txt" file, or skip to the next section below, "CONFIGURING".
 
-H264 files are remarkably small, typically <2MB per minute. Estimated storage requirements are below:
+I have tested this program with the following two codecs. There may be others available but they
+are not tested yet:
+
+    H264:  makes small files (<2MB per minute) but is computationally demanding. May drop frames at higher fps.
+    MP4V:  is computationally less demanding, allowing higher frame rates. But files are 2-5x larger
+
+Estimated storage requirements for H264 files at 10fps are below. Obviously, if you use a higher
+frame rate, or a less efficient codec, then storage requirements will increase.
 
     1 GB:     About 8 hours (or more) of continuous 24/7 recording.
     64 GB:    About 20 days of continuous recording
     1 TB:     About 3 months of continuous recording from 4 cameras
     1 TB:     About 1 year of continuous recording from 1 camera
-    1 TB:     About 3 years when recording two 1-hour sessions per day from 4 animals (i.e. 8 total hours/day)
+    1 TB:     About 3 years when recording two 1-hour sessions per
+              day from 4 animals (i.e. 8 total hours/day)
 
-Default video parameters are as follows:
 
-    Frames per second: 10
-    Codec: h264          
-    Pixel resolution: 640 (width) x 480 (height)
-    Data folder: same as program
+# CONFIGURING:
 
-You can also create a "config.txt" file to override the defaults. For example, the following
-is a valid "config.txt" file:
+I created two instructional files called "config_example1" and "config_example2" that
+explain possible configuration options:
 
-    [options]
-    FRAME_RATE_PER_SECOND = 10
-    DATA_FOLDER = /home/jhoulab/Videos/
+    config_example1      This lists of all configuration settings, along with brief
+                         explanations of why you would choose one over the other
+    config_example2      This is a bare-bones file with the most commonly used options 
 
-Note the first line must be a header that starts with '[options]'. For a full list of
-options that can be set, see the example file "config_example1".
+You can open either of the above files in any text editor, then "save as" and choose filename
+"config.txt". You can then edit "config.txt" to your liking. The program will read this config
+file whenever it starts up. The following options are available:
 
-This program is optimized to run on a Raspberry Pi 5. It will run on a Pi 4, but performance is
-poor with >1 camera. It also runs under Windows, but lacks the ability to distinguish which USB
-port is which, meaning camera position will be somewhat random, and will also use mp4v instead of h264.
+    FRAME_RATE_PER_SECOND                  # Frame rate of recorded video. Default 10
+    FOURCC                                 # What codec to use. Default h264. Can change to mp4v
+                                           # to achieve higher frame rates
+    MAX_INTERVAL_IN_TTL_BURST              # Max number of seconds between TTLs in bursts. Default 1.5
+    NUM_TTL_PULSES_TO_START_SESSION        # Number of pulses to start recording. Default 2
+    NUM_TTL_PULSES_TO_STOP_SESSION         # Number of pulses to end recording. Default 3
+    WIDTH                                  # X-resolution. Default 640
+    HEIGHT                                 # Y-resolution. Default 480
+    DATA_FOLDER                            # Folder for saving. Default /home/jhoulab/Videos/
 
 
 # KNOWN SHORTCOMINGS:
