@@ -264,7 +264,7 @@ while True:
                 cv2.circle(cam_obj.frame,
                            (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
                            int(8 * FONT_SCALE),  # Radius
-                           (0, 0, 255),     # Color in BGR order
+                           (0, 0, 255),     # Red dot (color is in BGR order)
                            -1)   # -1 thickness fills circle
 
     if which_display >= 0:

@@ -161,6 +161,9 @@ class CamObj:
 
     lock = None
 
+    frames_to_mark_GPIO = 0    # Use this to add blue dot to frames when GPIO is detected
+    pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
+
     def __init__(self, cam, id_num, order, GPIO_pin=-1):
         self.cam = cam
         self.id_num = id_num
@@ -183,6 +186,9 @@ class CamObj:
 
         # This will wait a second to make sure no additional GPIOs occurred, then
         # will start recording video
+
+        # This timer is used to temporarily show dark red dot while start is pending
+        self.pending_start_timer = int(FRAME_RATE_PER_SECOND * 1.5)
 
         time.sleep(MAX_INTERVAL_IN_TTL_BURST)
 
@@ -223,6 +229,9 @@ class CamObj:
             self.num_consec_TTLs += 1
         
         self.most_recent_gpio_time = gpio_time
+
+        # This is used to show blue dot on next frame. (Can increase this value to show on several frames)
+        self.frames_to_mark_GPIO = 1
 
         # Because this function is called from the GPIO callback thread, we need to
         # acquire lock to make sure main thread isn't also accessing the same variables.
@@ -405,6 +414,24 @@ class CamObj:
                 self.cam = None
                 self.status = 0
                 return 0, self.frame
+
+            if self.frames_to_mark_GPIO > 0:
+                # Add blue dot to indicate that GPIO was recently detected
+                self.frames_to_mark_GPIO -= 1
+                cv2.circle(self.frame,
+                           (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position
+                           int(8 * FONT_SCALE),  # Radius
+                           (255, 0, 0),     # Blue dot (color is in BGR order)
+                           -1)   # -1 thickness fills circle
+
+            if self.pending_start_timer > 0:
+                # Add dark red dot to indicate that a start might be pending
+                self.pending_start_timer -= 1
+                cv2.circle(self.frame,
+                           (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
+                           int(8 * FONT_SCALE),  # Radius
+                           (0, 0, 96),     # Dark red dot (color is in BGR order)
+                           -1)   # -1 thickness fills circle
 
             if self.Writer is not None and self.frame is not None and self.IsRecording:
                 if self.fid is not None and self.start_time > 0:
