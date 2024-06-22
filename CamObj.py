@@ -153,7 +153,14 @@ class CamObj:
     GPIO_pin = -1    # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
 
     frame_num = -1   # Number of frames recorded so far.
-    TTL_num = -1
+
+    # Class variables related to TTL handling
+    TTL_num = -1               # Counts how many TTLs (usually indicating trial starts) have occurred in this session
+    TTL_binary_mode = False
+    TTL_binary_bits = 0        # Ensures that we receive 16 binary bits
+    TTL_animal_ID = 0
+    most_recent_gpio_rising_edge_time = -1
+    most_recent_gpio_falling_edge_time = -1
     most_recent_gpio_time = -1
     num_consec_TTLs = 0   # Use this to track double and triple pulses
 
@@ -179,11 +186,68 @@ class CamObj:
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
-            GPIO.add_event_detect(GPIO_pin, GPIO.RISING, callback=self.GPIO_callback)
+            GPIO.add_event_detect(GPIO_pin, GPIO.RISING, callback=self.GPIO_callback1)
+            GPIO.add_event_detect(GPIO_pin, GPIO.FALLING, callback=self.GPIO_callback2)
 
-    def GPIO_callback(self, param):
+    # New GPIO pattern as of 6/22/2024
+    # Long high pulse (0.2s) starts binary mode, transmitting up to 16 bits of animal ID.
+    #     In binary mode, 75ms pulse is 1, 25ms pulse is 0. Duration between pulses is 25ms
+    #     Binary mode ends with long low pulse (0.2ms) followed by short high pulse (0.01ms)
+    # In regular mode, pulses are 0.1s long, with 0.4s gaps
+    #     Single pulses indicate cue start
+    #     Double pulses start session
+    #     Triple pulses end session
+    def GPIO_callback1(self, param):
 
-        self.handle_GPIO()
+        # Detected rising edge. Log the timestamp so that on falling edge we can see if this is a regular
+        # pulse or a LONG pulse that starts binary mode
+        self.most_recent_gpio_rising_edge_time = time.time()
+
+        if self.TTL_binary_mode:
+            # If already in binary mode, then long (0.2s) "off" period reverts back to regular mode
+            elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
+            if elapsed > 0.15:
+                self.TTL_binary_mode = False
+
+    def GPIO_callback2(self, param):
+
+        # Detected falling edge
+        self.most_recent_gpio_falling_edge_time = time.time()
+
+        if self.most_recent_gpio_rising_edge_time < 0:
+            # Ignore falling edge if no rising edge was detected. Is this even possible, e.g. at program launch?
+            return
+
+        on_time = time.time() - self.most_recent_gpio_rising_edge_time
+
+        if on_time < 0.01:
+            # Ignore very short pulses, which are probably some kind of mechanical switch bounce
+            return
+
+        if not self.TTL_binary_mode:
+            # If not in binary mode, then long pulses (0.2s) initiate binary mode, while short pulses (0.025s) end it.
+            # Intermediate length pulses are considered to be normal pulses, which are used to indicate
+            # trial start or session start/end
+            if on_time > 0.15:
+                self.TTL_binary_mode = True
+                self.TTL_animal_ID = 0
+                return
+            elif on_time < 0.05:
+                # This is pulse to end binary mode. Do nothing because we already ended it when rising edge was detected
+                return
+
+            # Handle a "normal" TTL pulse
+            self.handle_GPIO()
+
+        else:
+            # We are in TTL binary mode.
+            # 25ms pulses indicate 0
+            # 75ms pulses indicate 1
+            # We use 50ms threshold to distinguish
+            self.TTL_animal_ID *= 2
+            if on_time > 0.05:
+                self.TTL_animal_ID += 1
+            return
 
     def delayed_start(self):
 
@@ -209,7 +273,8 @@ class CamObj:
 
     def handle_GPIO(self):
 
-        # Detected rising edge of GPIO
+        # Detected normal GPIO pulse (i.e. not part of binary mode transmission of animal ID)
+        # This will actually be the falling edge of pulse.
 
         # Record timestamp now, in case there are delays acquiring lock
         # time.time() returns number of seconds since 1970.
@@ -246,6 +311,8 @@ class CamObj:
             if not self.IsRecording:
 
                 if self.num_consec_TTLs == NUM_TTL_PULSES_TO_START_SESSION:
+                    # We have detected a double pulse. Start thread that makes sure this
+                    # isn't just the beginning of a triple pulse, and if confirmed, will start session
 
                     t = threading.Thread(target=self.delayed_start)
 
@@ -253,13 +320,7 @@ class CamObj:
                     
                     return
 
-                # At this point, we originally were not recording, and we either attempted to start a session
-                # or not, and we may or may not have succeeded.
-
-                # Either way, we now return. The reason is that if we are not recording,
-                # then there is no need to record timestamp. But if we did just start recording,
-                # the very first TTL timestamp is also superfluous, and will have a negative value,
-                # so we don't record that either.
+                # Not recording, and only detected a single TTL pulse. Just ignore.
                 return
 
             # Calculate TTL timestamp relative to session start
@@ -270,19 +331,24 @@ class CamObj:
                 try:
                     self.fid_TTL.write(f"{self.TTL_num}\t{gpio_time_relative}\n")
                 except:
-                    print(f"Unable to write TTL file for camera {self.order}")
+                    print(f"Unable to write TTL timestamp file for camera {self.order}")
             else:
-                print(f"Unable to write TTL timestamp for camera {self.order}")
+                # We shouldn't ever get here. If so, something usually has gone wrong with file system,
+                # e.g. USB drive has come unplugged.
+                print(f"Missing TTL timestamp file for camera {self.order}")
 
         # By now lock has been released, and we are guaranteed to be recording.
 
-        if gpio_time_relative > 5.0 and self.num_consec_TTLs >= NUM_TTL_PULSES_TO_STOP_SESSION:
-            # Double pulses are pulses with about 1.0 seconds between rise times. They indicate
+        if self.num_consec_TTLs >= NUM_TTL_PULSES_TO_STOP_SESSION:
+            # Triple pulses are pulses with about 0.5 seconds between rise times. They indicate
             # start and stop of session.
             self.stop_record()
 
     def get_filename_prefix(self):
-        return get_date_string() + f"_Cam{self.order}"
+        if self.TTL_animal_ID <= 0:
+            return get_date_string() + f"_Cam{self.order}"
+        else:
+            return get_date_string() + f"_ID{self.TTL_animal_ID}"
 
     def start_record(self):
 
@@ -357,6 +423,8 @@ class CamObj:
 
             # Acquire lock to avoid starting a new recording
             # in the middle of stopping the old one.
+
+            self.TTL_animal_ID = 0
 
             if self.IsRecording:
                 printt(f"Stopping recording camera {self.order} after " + self.get_elapsed_time_string())
