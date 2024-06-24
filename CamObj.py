@@ -47,7 +47,11 @@ configParser.read(configFilePath)
 DATA_FOLDER = configParser.get('options', 'DATA_FOLDER', fallback='')
 
 if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
-    DATA_FOLDER = DATA_FOLDER + "/"
+    # Data folder doesn't end with either forward or backward slash
+    if len(DATA_FOLDER) > 0:
+        # Only append slash if data folder is not the empty string. Otherwise,
+        # just leave the empty string as is, so that we can default to the program directory.
+        DATA_FOLDER = DATA_FOLDER + "/"
 
 FRAME_RATE_PER_SECOND = configParser.getint('options', 'FRAME_RATE_PER_SECOND', fallback=10)
 HEIGHT = configParser.getint('options', 'HEIGHT', fallback=480)
@@ -186,8 +190,15 @@ class CamObj:
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
-            GPIO.add_event_detect(GPIO_pin, GPIO.RISING, callback=self.GPIO_callback1)
-            GPIO.add_event_detect(GPIO_pin, GPIO.FALLING, callback=self.GPIO_callback2)
+#            GPIO.add_event_detect(GPIO_pin, GPIO.RISING, callback=self.GPIO_callback1)
+#            GPIO.add_event_detect(GPIO_pin, GPIO.FALLING, callback=self.GPIO_callback2)
+            GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+
+    def GPIO_callback_both(self, param):
+        if GPIO.input(param):
+            self.GPIO_callback1(param)
+        else:
+            self.GPIO_callback2(param)
 
     # New GPIO pattern as of 6/22/2024
     # Long high pulse (0.2s) starts binary mode, transmitting up to 16 bits of animal ID.

@@ -42,7 +42,7 @@ if platform.system() == "Linux":
         try:
             GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Set to be input, with internal pull-down resistor
         except RuntimeError:
-            printt("Unable to set up GPIO.")
+            printt("Runtime Error: Unable to set up GPIO.")
             print("    If this is a Pi5, please replace the default gpio library as follows:")
             print("    sudo apt remove python3-rpi.gpio")
             print("    sudo apt install python3-rpi-lgpio")
