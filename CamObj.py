@@ -504,6 +504,13 @@ class CamObj:
                            (0, 0, 96),     # Dark red dot (color is in BGR order)
                            -1)   # -1 thickness fills circle
 
+            if self.TTL_animal_ID > 0:
+                # Add animal ID to video
+                cv2.putText(self.frame, str(self.TTL_animal_ID),
+                            (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
+                            cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
+                            round(FONT_SCALE + 0.5))  # Line thickness
+
             if self.Writer is not None and self.frame is not None and self.IsRecording:
                 if self.fid is not None and self.start_time > 0:
                     # Write timestamp to text file. Do this before writing AVI so that
