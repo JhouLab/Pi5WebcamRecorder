@@ -202,7 +202,7 @@ for cam_id in range(MAX_ID):
 
 print()
 
-if len(cam_array) == 0:
+if num_cameras_found == 0:
     printt("NO CAMERAS FOUND")
     quit()
 else:
@@ -217,6 +217,14 @@ else:
 #  2 shows bottom left USB port camera
 #  3 shows bottom right USB port camera
 which_display = -2
+if num_cameras_found == 1:
+    # If exactly one camera found, then show that one to start
+    for c in cam_array:
+        if c.cam is None:
+            continue
+        if c.order >= 0:
+            which_display = c.order - FIRST_CAMERA_ID
+            break
 
 # Report what was discovered
 for idx, cam_obj in enumerate(cam_array):
@@ -376,7 +384,7 @@ while True:
                     else:
                         cam_obj.stop_record()
 
-        elif DEBUG and key != 255:
+        elif key != 255:
             print(f"You pressed: {key}")
 
     if frame_count % STATUS_REPORT_INTERVAL == 0:
@@ -394,25 +402,27 @@ while True:
                         if x.IsRecording:
                             x.print_elapsed()
 
-    if time.time() > next_frame:
-        # We are already too late for next frame. Oops. Report warning if any recording is ongoing, as there might be missed frames
+    if time.time() > next_frame + 2 * FRAME_INTERVAL:
+        # We are 2 frames late. Oops. Report warning if any recording is ongoing, as there might be missed frames
         lag_ms = (time.time() - next_frame) * 1000
         if any_camera_recording(cam_array):
-            printt(f"Warning: CPU is lagging by {lag_ms:.2f} ms. Might experience up to {int(math.ceil(lag_ms/100))} dropped frame(s).")
+            printt(f"Warning: at frame {frame_count}, CPU is lagging by {lag_ms:.2f} ms. Might experience up to {int(math.ceil(lag_ms/100))} dropped frame(s).")
 
         # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
         next_frame = time.time() + FRAME_INTERVAL
     else:
         # We are done with loop, but not ready to request next frame. Wait a bit.
         advance_ms = (next_frame - time.time()) * 1000
-        # print("CPU is ahead by " + f"{advance_ms:.2f}" + " ms")
-        # Wait until next frame interval has elapsed
-        while time.time() < next_frame:
-            if next_frame - time.time() > 0.005:
-                # Sleep in 5ms increments to reduce CPU usage. Otherwise this
-                # loop will hog close to 100% CPU
-                time.sleep(0.005)
-            pass
+        
+        if advance_ms > 0:        
+            # print("CPU is ahead by " + f"{advance_ms:.2f}" + " ms")
+            # Wait until next frame interval has elapsed
+            while time.time() < next_frame:
+                if next_frame - time.time() > 0.005:
+                    # Sleep in 5ms increments to reduce CPU usage. Otherwise this
+                    # loop will hog close to 100% CPU
+                    time.sleep(0.005)
+                pass
 
         # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
         next_frame += FRAME_INTERVAL
