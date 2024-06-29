@@ -402,8 +402,8 @@ while True:
                         if x.IsRecording:
                             x.print_elapsed()
 
-    if time.time() > next_frame + 2 * FRAME_INTERVAL:
-        # We are 2 frames late. Oops. Report warning if any recording is ongoing, as there might be missed frames
+    if time.time() > next_frame:
+        # We are late for next frame. If recording, warn of possible missed frames.
         lag_ms = (time.time() - next_frame) * 1000
         if any_camera_recording(cam_array):
             printt(f"Warning: at frame {frame_count}, CPU is lagging by {lag_ms:.2f} ms. Might experience up to {int(math.ceil(lag_ms/100))} dropped frame(s).")

@@ -163,6 +163,7 @@ class CamObj:
     TTL_binary_mode = False
     TTL_binary_bits = 0        # Ensures that we receive 16 binary bits
     TTL_animal_ID = 0
+    TTL_tmp_ID = 0             # Temporary ID while we are receiving bits
     most_recent_gpio_rising_edge_time = -1
     most_recent_gpio_falling_edge_time = -1
     most_recent_gpio_time = -1
@@ -195,9 +196,14 @@ class CamObj:
             GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
 
     def GPIO_callback_both(self, param):
+    
         if GPIO.input(param):
+            if DEBUG:
+                print('GPIO on')
             self.GPIO_callback1(param)
         else:
+            if DEBUG:
+                print('GPIO off')
             self.GPIO_callback2(param)
 
     # New GPIO pattern as of 6/22/2024
@@ -218,7 +224,10 @@ class CamObj:
             # If already in binary mode, then long (0.2s) "off" period reverts back to regular mode
             elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
             if elapsed > 0.15:
+                print('Binary mode off')
                 self.TTL_binary_mode = False
+                self.TTL_animal_ID = self.TTL_tmp_ID
+                printt(f'Received ID {self.TTL_animal_ID}')
 
     def GPIO_callback2(self, param):
 
@@ -240,8 +249,10 @@ class CamObj:
             # Intermediate length pulses are considered to be normal pulses, which are used to indicate
             # trial start or session start/end
             if on_time > 0.15:
+                print('Set binary mode')
                 self.TTL_binary_mode = True
                 self.TTL_animal_ID = 0
+                self.TTL_tmp_ID = 0
                 return
             elif on_time < 0.05:
                 # This is pulse to end binary mode. Do nothing because we already ended it when rising edge was detected
@@ -255,9 +266,9 @@ class CamObj:
             # 25ms pulses indicate 0
             # 75ms pulses indicate 1
             # We use 50ms threshold to distinguish
-            self.TTL_animal_ID *= 2
+            self.TTL_tmp_ID *= 2
             if on_time > 0.05:
-                self.TTL_animal_ID += 1
+                self.TTL_tmp_ID += 1
             return
 
     def delayed_start(self):
