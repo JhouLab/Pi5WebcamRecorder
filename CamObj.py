@@ -13,6 +13,7 @@ import platform
 import threading
 from sys import gettrace
 import configparser
+from enum import Enum
 
 if platform.system() == "Linux":
     import RPi.GPIO as GPIO
@@ -158,12 +159,18 @@ class CamObj:
 
     frame_num = -1   # Number of frames recorded so far.
 
+    class TTL_type(Enum):
+        Normal = 0
+        Binary = 1
+        Checksum = 2
+
     # Class variables related to TTL handling
     TTL_num = -1               # Counts how many TTLs (usually indicating trial starts) have occurred in this session
-    TTL_binary_mode = False
     TTL_binary_bits = 0        # Ensures that we receive 16 binary bits
     TTL_animal_ID = 0
     TTL_tmp_ID = 0             # Temporary ID while we are receiving bits
+    TTL_mode = None
+    TTL_checksum = 0
     most_recent_gpio_rising_edge_time = -1
     most_recent_gpio_falling_edge_time = -1
     most_recent_gpio_time = -1
@@ -185,14 +192,14 @@ class CamObj:
         self.order = order
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
+        self.TTL_mode = self.TTL_type.Normal
+
         if cam is None:
             # Use blank frame for this object if no camera object is specified
             self.frame = make_blank_frame(f"{order} - No camera found")
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
-#            GPIO.add_event_detect(GPIO_pin, GPIO.RISING, callback=self.GPIO_callback1)
-#            GPIO.add_event_detect(GPIO_pin, GPIO.FALLING, callback=self.GPIO_callback2)
             GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
 
     def GPIO_callback_both(self, param):
@@ -208,9 +215,10 @@ class CamObj:
 
     # New GPIO pattern as of 6/22/2024
     # Long high pulse (0.2s) starts binary mode, transmitting up to 16 bits of animal ID.
-    #     In binary mode, 75ms pulse is 1, 25ms pulse is 0. Duration between pulses is 25ms
+    #     In binary mode, 75ms pulse is 1, 25ms pulse is 0. Off duration between pulses is 25ms
     #     Binary mode ends with long low pulse (0.2ms) followed by short high pulse (0.01ms)
-    # In regular mode, pulses are 0.1s long, with 0.4s gaps
+    # In regular mode, pulses are high for 0.1s, then low for 0.025-0.4s gaps (used to be long, but now much
+    # shorter.)
     #     Single pulses indicate cue start
     #     Double pulses start session
     #     Triple pulses end session
@@ -221,13 +229,15 @@ class CamObj:
         self.most_recent_gpio_rising_edge_time = time.time()
 
         if self.TTL_binary_mode:
-            # If already in binary mode, then long (0.2s) "off" period reverts back to regular mode
+            # If already in binary mode, then long (0.2s) "off" period switches to checksum mode for final pulse
             elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
-            if elapsed > 0.15:
-                print('Binary mode off')
-                self.TTL_binary_mode = False
-                self.TTL_animal_ID = self.TTL_tmp_ID
-                printt(f'Received ID {self.TTL_animal_ID}')
+            if 0.15 < elapsed < 0.25:
+                if DEBUG:
+                    printt('Binary mode awaiting final checksum...')
+                self.TTL_mode = self.TTL_type.Checksum
+            else:
+                printt(f'Binary checksum failed - incorrect pause duration of {elapsed} (should be 0.2s)')
+                self.TTL_mode = self.TTL_type.Normal
 
     def GPIO_callback2(self, param):
 
@@ -244,31 +254,63 @@ class CamObj:
             # Ignore very short pulses, which are probably some kind of mechanical switch bounce
             return
 
-        if not self.TTL_binary_mode:
-            # If not in binary mode, then long pulses (0.2s) initiate binary mode, while short pulses (0.025s) end it.
-            # Intermediate length pulses are considered to be normal pulses, which are used to indicate
-            # trial start or session start/end
-            if on_time > 0.15:
-                print('Set binary mode')
-                self.TTL_binary_mode = True
+        if self.TTL_mode == self.TTL_type.Normal:
+            # In normal (not binary or checksum) mode, read the following types of pulses:
+            # 0.1s on-time (range 0.01-0.15): indicates trial start, or session start/stop if doubled/tripled
+            # 0.2s on time (range 0.15-0.25) initiates binary mode
+            # 0.3s or longer (range 0.25 and up) ... ignore these?
+            if on_time < 0.15:
+                self.handle_GPIO()
+            elif on_time < 0.25:
+                if DEBUG:
+                    printt('Starting binary mode')
+                self.TTL_mode = self.TTL_type.Binary
                 self.TTL_animal_ID = 0
                 self.TTL_tmp_ID = 0
-                return
-            elif on_time < 0.05:
-                # This is pulse to end binary mode. Do nothing because we already ended it when rising edge was detected
+                self.TTL_binary_bits = 0
+                self.TTL_checksum = 0
+
+            return
+
+        elif self.TTL_mode == self.TTL_type.Checksum:
+            # Final pulse to end binary mode.
+            if on_time < 0.05:
+                checksum = 0
+            elif on_time < 0.1:
+                # 75ms pulse indicates ONE
+                checksum = 1
+            else:
+                printt(f"Received animal ID {self.TTL_tmp_ID} for box {self.order}, but checksum duration too long ({on_time} instead of 0-0.075s).")
+                self.TTL_animal_ID = -1
+                self.TTL_mode = self.TTL_type.Normal
                 return
 
-            # Handle a "normal" TTL pulse
-            self.handle_GPIO()
+            if self.TTL_checksum == checksum:
+                # Successfully received TTL ID
+                self.TTL_animal_ID = self.TTL_tmp_ID
+                printt(f'Received animal ID {self.TTL_animal_ID} for box {self.order}')
+            else:
+                printt(f"Received animal ID {self.TTL_tmp_ID} but checksum failed for box {self.order}")
+                self.TTL_animal_ID = -1
 
-        else:
+            self.TTL_mode = self.TTL_type.Normal
+            return
+
+        elif self.TTL_mode == self.TTL_type.Binary:
             # We are in TTL binary mode.
             # 25ms pulses indicate 0
             # 75ms pulses indicate 1
             # We use 50ms threshold to distinguish
+            self.TTL_binary_bits += 1
             self.TTL_tmp_ID *= 2
-            if on_time > 0.05:
-                self.TTL_tmp_ID += 1
+            if 0.05 < on_time:
+                if on_time < 0.1:
+                    # Pulse width between 0.5-0.1s indicates binary ONE
+                    self.TTL_checksum = 1 - self.TTL_checksum
+                    self.TTL_tmp_ID += 1
+                else:
+                    # Pulse width over 0.1s is ERROR, and aborts binary mode?
+
             return
 
     def delayed_start(self):
@@ -532,6 +574,13 @@ class CamObj:
                             (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
                             cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
                             round(FONT_SCALE + 0.5))  # Line thickness
+            elif self.TTL_animal_ID < 0:
+                # Animal ID checksum failed
+                cv2.putText(self.frame, "Unknown",
+                            (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
+                            cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
+                            round(FONT_SCALE + 0.5))  # Line thickness
+
 
             if self.Writer is not None and self.frame is not None and self.IsRecording:
                 if self.fid is not None and self.start_time > 0:
