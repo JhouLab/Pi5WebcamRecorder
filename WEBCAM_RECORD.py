@@ -53,8 +53,15 @@ else:
     INPUT_PIN_LIST = [None] * 4   # List of input pins for the four cameras
 
 if WIDTH > 1024:
-    SCREEN_RESOLUTION = (WIDTH >> 1, HEIGHT >> 1)
-    SCREEN_RESOLUTION_INSET = (WIDTH >> 2, HEIGHT >> 2)
+    # Downsample large video frames to something more reasonable
+    ratio = WIDTH / 1024
+    SCREEN_RESOLUTION = (1024, int(HEIGHT/ratio))
+    SCREEN_RESOLUTION_INSET = (512, SCREEN_RESOLUTION[1] >> 1)
+elif WIDTH <640:
+    # Upsample small frames
+    ratio = 640 / WIDTH
+    SCREEN_RESOLUTION = (640, int(HEIGHT * ratio))
+    SCREEN_RESOLUTION_INSET = (320, SCREEN_RESOLUTION[1] >> 1)
 else:
     SCREEN_RESOLUTION = (WIDTH, HEIGHT)
     SCREEN_RESOLUTION_INSET = (WIDTH >> 1, HEIGHT >> 1)
@@ -67,9 +74,18 @@ def setup_cam(id):
     if platform.system() == "Windows":
         tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
     else:
-        tmp = cv2.VideoCapture(id)
+        if WIDTH > 640:
+            tmp = cv2.VideoCapture(id, cv2.CAP_V4L2)   # This is needed for MJPG mode to work, allowing higher frame rates
+        else:
+            tmp = cv2.VideoCapture(id)
 
     if tmp.isOpened():
+        if WIDTH > 640:
+            # Higher resolutions are limited by USB transfer speeds to use lower frame rates.
+            # Changing to MJPG roughly doubles the max frame rate, at some cost of CPU cycles
+            tmp.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
+        if not tmp.isOpened():
+            print(f"MJPG not supported. Please edit code.")
         tmp.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
         tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
         if not tmp.isOpened():
@@ -204,7 +220,7 @@ print()
 
 if num_cameras_found == 0:
     printt("NO CAMERAS FOUND")
-    quit()
+    exit()
 else:
     printt(f"Found {num_cameras_found} cameras")
 
@@ -262,13 +278,13 @@ while True:
         cam_obj.read()
 
         if cam_obj.status:
-            # Add text to top left to show camera number
+            # Add text to top left to show camera number. This will NOT show in recording
             cv2.putText(cam_obj.frame, str(FIRST_CAMERA_ID + idx),
                         (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
                         cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
                         round(FONT_SCALE + 0.5))  # Line thickness
             if cam_obj.IsRecording:
-                # Add red circle if recording
+                # Add red circle if recording. Again, this does not show in recorded file.
                 cv2.circle(cam_obj.frame,
                            (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
                            int(8 * FONT_SCALE),  # Radius
@@ -315,9 +331,12 @@ while True:
         next_frame = start + FRAME_INTERVAL
         continue
 
-    # Check if any key has been pressed. Note use of waitKeyEx(), which
-    # is compatible with cursor keys on Windows whereas waitKey() is not.
-    key = cv2.waitKeyEx(1)
+    # Check if any key has been pressed.
+    if platform.system() == "Linux":
+        key = cv2.waitKey(1)
+    elif platform.system() == "Windows":
+        # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
+        key = cv2.waitKeyEx(1)
 
     if (key & 0xFF) != 255:
         key2 = key >> 16  # On Windows, arrow keys are encoded here
@@ -364,8 +383,9 @@ while True:
         elif key == ord("w"):
             # Write JPG images for each camera
             for cam_obj in cam_array:
-                if cam_obj.cam.isOpened():
-                    cam_obj.take_snapshot()
+                if cam_obj.cam is not None:
+                    if cam_obj.cam.isOpened():
+                        cam_obj.take_snapshot()
         elif key >= ord("0") and key <= ord("9"):
             # Start/stop recording for specified camera
             cam_num = key - ord("0")

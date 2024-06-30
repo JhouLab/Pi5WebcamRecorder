@@ -26,22 +26,34 @@ FRAME_RATE_PER_SECOND = 10
 ; Main choices for the FOURCC code are h264 and mp4v.
 ; h264 is very efficient at compression (1-2MB/min) but somewhat CPU intensive.
 ; mp4v is less efficient (~5-10MB/min) but uses less CPU, allowing higher frame rates.
+; mjpg 
 FOURCC = h264
 ; FOURCC = mp4v
-
-; If TTLs are close together, they are detected as a group, e.g. double or triple pulses.
-; This parameter sets the threshold (in seconds) below which TTLs are read as part of a group.
-MAX_INTERVAL_IN_TTL_BURST = 1.5
 
 ; Specify how many grouped pulses to start/end session.
 NUM_TTL_PULSES_TO_START_SESSION = 2
 NUM_TTL_PULSES_TO_STOP_SESSION = 3
 
 ; Resolution to request from camera. Not all resolutions are supported by all cameras,
-; and you might need some trial and error to figure out what your cameras support.
+; and most cameras internally limit frame rate as resolution increases. Some examples:
 ;
-; For example, the Logitech c920e webcam supports the following:
-;     (4:3 aspect ratio):  320x240, 640x480, 1024x720, 1280x960
+; Many cheap-o webcams support the following:
+;
+;  4:3 aspect ratio options:
+;     320x240 at 30fps
+;     640x480 at 30fps
+;     800x600 at 15fps
+;     1024x768 at 10fps
+;     1280x960 at 7.5fps
+;     1440x1080 at 5fps
+;
+;  16:9 aspect ratio options:
+;
+;     1280x720 at 10fps in YUY mode, 20fps in MJPG mode
+;     1920x1080 at 5fps in YUY mode, 10fps in MJPG mode
+;
+; Logitech c920e webcam supports the following:
+;     (4:3 aspect ratio):  320x240, 640x480, 1280x960
 ;     (16:9 aspect ratio): 640x360, 1024x576, 1280x720, 1920x1080
 ; ... as well as a few weird options:
 ;     1024x720   (64:45 aspect ratio that is close to 4:3 but not quite)

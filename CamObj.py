@@ -59,7 +59,7 @@ if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
         # just leave the empty string as is, so that we can default to the program directory.
         DATA_FOLDER = DATA_FOLDER + "/"
 
-FRAME_RATE_PER_SECOND = configParser.getint('options', 'FRAME_RATE_PER_SECOND', fallback=10)
+FRAME_RATE_PER_SECOND = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=10)
 HEIGHT = configParser.getint('options', 'HEIGHT', fallback=480)
 WIDTH = configParser.getint('options', 'WIDTH', fallback=640)
 if platform.system() == "Linux":
@@ -70,7 +70,6 @@ else:
     # but it has poor compression ratio, and doesn't always install anyway.
     FOURCC = configParser.get('options', 'FOURCC', fallback='mp4v')
 
-MAX_INTERVAL_IN_TTL_BURST = configParser.getfloat('options', 'MAX_INTERVAL_IN_TTL_BURST', fallback=.25)
 NUM_TTL_PULSES_TO_START_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_START_SESSION', fallback=2)
 NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=3)
 
@@ -164,7 +163,7 @@ class CamObj:
     fid = None       # Writer for timestamp file
     fid_TTL = None   # Writer for TTL timestamp file
 
-    start_time = -1  # Timestamp when recording started.
+    start_time = -1  # Timestamp (in seconds) when recording started.
     IsRecording = False
     GPIO_pin = -1    # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
 
@@ -546,9 +545,8 @@ class CamObj:
             self.TTL_animal_ID = 0
 
             if self.IsRecording:
-                printt(f"Stopping recording camera {self.order} after " + self.get_elapsed_time_string())
-
                 self.IsRecording = False
+                printt(f"Stopping recording camera {self.order} after " + self.get_elapsed_time_string())
 
             if self.Writer is not None:
                 try:
@@ -679,9 +677,10 @@ class CamObj:
 
     def get_elapsed_time_string(self):
 
-        elapsed_sec = self.frame_num / FRAME_RATE_PER_SECOND
+        elapsed_sec = time.time() - self.start_time
+        
         if elapsed_sec < 120:
-            str1 = f"{elapsed_sec:.0f} seconds"
+            str1 = f"{elapsed_sec:.1f} seconds"
         else:
             elapsed_min = elapsed_sec / 60
             str1 = f"{elapsed_min:.2f} minutes"
