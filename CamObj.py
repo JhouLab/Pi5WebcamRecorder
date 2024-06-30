@@ -163,6 +163,7 @@ class CamObj:
         Normal = 0
         Binary = 1
         Checksum = 2
+        Debug = 3
 
     # Class variables related to TTL handling
     TTL_num = -1               # Counts how many TTLs (usually indicating trial starts) have occurred in this session
@@ -205,12 +206,12 @@ class CamObj:
     def GPIO_callback_both(self, param):
     
         if GPIO.input(param):
-            if DEBUG:
-                print('GPIO on')
+#            if DEBUG:
+#                print('GPIO on')
             self.GPIO_callback1(param)
         else:
-            if DEBUG:
-                print('GPIO off')
+#            if DEBUG:
+#                print('GPIO off')
             self.GPIO_callback2(param)
 
     # New GPIO pattern as of 6/22/2024
@@ -228,15 +229,15 @@ class CamObj:
         # pulse or a LONG pulse that starts binary mode
         self.most_recent_gpio_rising_edge_time = time.time()
 
-        if self.TTL_binary_mode:
+        if self.TTL_mode == self.TTL_type.Binary:
             # If already in binary mode, then long (0.2s) "off" period switches to checksum mode for final pulse
             elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
             if 0.15 < elapsed < 0.25:
                 if DEBUG:
                     printt('Binary mode awaiting final checksum...')
                 self.TTL_mode = self.TTL_type.Checksum
-            else:
-                printt(f'Binary checksum failed - incorrect pause duration of {elapsed} (should be 0.2s)')
+            elif elapsed >= 0.25:
+                printt(f'Very long pause of {elapsed}s detected (max should be 0.2s to end binary mode)')
                 self.TTL_mode = self.TTL_type.Normal
 
     def GPIO_callback2(self, param):
@@ -269,6 +270,9 @@ class CamObj:
                 self.TTL_tmp_ID = 0
                 self.TTL_binary_bits = 0
                 self.TTL_checksum = 0
+#            elif on_time > 2.0:
+                # Extra long pulse starts debug testing mode
+#                self.TTL_mode = self.TTL_time.Debug
 
             return
 
@@ -304,11 +308,11 @@ class CamObj:
             self.TTL_binary_bits += 1
             self.TTL_tmp_ID *= 2
             if 0.05 < on_time:
-                if on_time < 0.1:
-                    # Pulse width between 0.5-0.1s indicates binary ONE
-                    self.TTL_checksum = 1 - self.TTL_checksum
-                    self.TTL_tmp_ID += 1
-                else:
+                # Pulse width between 0.5-0.1s indicates binary ONE
+                self.TTL_checksum = 1 - self.TTL_checksum
+                self.TTL_tmp_ID += 1
+                if on_time > 0.1:
+                    printt('Warning: Binary pulse width is longer than 100ms.')
                     # Pulse width over 0.1s is ERROR, and aborts binary mode?
 
             return
