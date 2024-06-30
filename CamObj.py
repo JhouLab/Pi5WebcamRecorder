@@ -65,9 +65,12 @@ else:
     # but it has poor compression ratio, and doesn't always install anyway.
     FOURCC = configParser.get('options', 'FOURCC', fallback='mp4v')
 
-MAX_INTERVAL_IN_TTL_BURST = configParser.getfloat('options', 'MAX_INTERVAL_IN_TTL_BURST', fallback=1.5)
+MAX_INTERVAL_IN_TTL_BURST = configParser.getfloat('options', 'MAX_INTERVAL_IN_TTL_BURST', fallback=.25)
 NUM_TTL_PULSES_TO_START_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_START_SESSION', fallback=2)
 NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=3)
+
+# Number of seconds to discriminate between binary 0 and 1
+BINARY_BIT_PULSE_THRESHOLD = 0.03
 
 FONT_SCALE = HEIGHT / 480
 
@@ -124,7 +127,10 @@ def printt(txt, omit_date_time=False, close_file=False):
     if not omit_date_time:
         now = datetime.datetime.now()
 
-        s = now.strftime("%Y-%m-%d %H:%M:%S: ") + txt
+        if DEBUG:
+            s = now.strftime("%Y-%m-%d %H:%M:%S.%f: ") + txt
+        else:
+            s = now.strftime("%Y-%m-%d %H:%M:%S: ") + txt
     else:
         s = txt
     print(s)
@@ -171,6 +177,7 @@ class CamObj:
     TTL_animal_ID = 0
     TTL_tmp_ID = 0             # Temporary ID while we are receiving bits
     TTL_mode = None
+    TTL_debug_count = 0
     TTL_checksum = 0
     most_recent_gpio_rising_edge_time = -1
     most_recent_gpio_falling_edge_time = -1
@@ -233,12 +240,21 @@ class CamObj:
             # If already in binary mode, then long (0.2s) "off" period switches to checksum mode for final pulse
             elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
             if 0.15 < elapsed < 0.25:
+                if self.TTL_binary_bits != 16:
+                    printt(f'Binary mode received {self.TTL_binary_bits} bits instead of 16')
+                    self.TTL_animal_ID = -1
+                
                 if DEBUG:
                     printt('Binary mode awaiting final checksum...')
                 self.TTL_mode = self.TTL_type.Checksum
             elif elapsed >= 0.25:
                 printt(f'Very long pause of {elapsed}s detected (max should be 0.2s to end binary mode)')
                 self.TTL_mode = self.TTL_type.Normal
+        elif self.TTL_mode == self.TTL_type.Debug:
+            elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
+            if elapsed < 0.002 or elapsed > 0.018:
+                printt(f'{self.TTL_debug_count}    off time {elapsed}')
+        return
 
     def GPIO_callback2(self, param):
 
@@ -270,18 +286,20 @@ class CamObj:
                 self.TTL_tmp_ID = 0
                 self.TTL_binary_bits = 0
                 self.TTL_checksum = 0
-#            elif on_time > 2.0:
+            elif on_time > 2.0 and DEBUG:
                 # Extra long pulse starts debug testing mode
-#                self.TTL_mode = self.TTL_time.Debug
+                self.TTL_mode = self.TTL_type.Debug
+                printt('Entering DEBUG TTL mode')
+                self.TTL_debug_count = 0
 
             return
 
         elif self.TTL_mode == self.TTL_type.Checksum:
             # Final pulse to end binary mode.
-            if on_time < 0.05:
+            if on_time < BINARY_BIT_PULSE_THRESHOLD:
                 checksum = 0
             elif on_time < 0.1:
-                # 75ms pulse indicates ONE
+                # 50ms pulse indicates ONE
                 checksum = 1
             else:
                 printt(f"Received animal ID {self.TTL_tmp_ID} for box {self.order}, but checksum duration too long ({on_time} instead of 0-0.075s).")
@@ -307,7 +325,7 @@ class CamObj:
             # We use 50ms threshold to distinguish
             self.TTL_binary_bits += 1
             self.TTL_tmp_ID *= 2
-            if 0.05 < on_time:
+            if BINARY_BIT_PULSE_THRESHOLD < on_time:
                 # Pulse width between 0.5-0.1s indicates binary ONE
                 self.TTL_checksum = 1 - self.TTL_checksum
                 self.TTL_tmp_ID += 1
@@ -316,16 +334,28 @@ class CamObj:
                     # Pulse width over 0.1s is ERROR, and aborts binary mode?
 
             return
+        elif self.TTL_mode == self.TTL_type.Debug:
+            if on_time > 1:
+                # Cancel debug mode
+                self.TTL_mode = self.TTL_type.Normal
+                printt(f'Exiting DEBUG TTL mode with pulse length {on_time}')
+            elif True:  # on_time > .025:
+                self.TTL_debug_count += 1
+                if on_time < 0.012 or on_time > 0.028:
+                    printt(f"{self.TTL_debug_count} Debug TTL on time is {on_time} (should be 0.02)")
 
     def delayed_start(self):
 
         # This will wait a second to make sure no additional GPIOs occurred, then
         # will start recording video
 
-        # This timer is used to temporarily show dark red dot while start is pending
-        self.pending_start_timer = int(FRAME_RATE_PER_SECOND * 1.5)
+        # This timer is used to make sure no extra pulses come in between second and third pulse
+        wait_interval_sec = MAX_INTERVAL_IN_TTL_BURST * 1.5
+        
+        # Calculate number of frames to show dark red "pending" dot
+        self.pending_start_timer = int(FRAME_RATE_PER_SECOND * wait_interval_sec + 1)
 
-        time.sleep(MAX_INTERVAL_IN_TTL_BURST)
+        time.sleep(wait_interval_sec)
 
         if self.num_consec_TTLs != NUM_TTL_PULSES_TO_START_SESSION:
             return
