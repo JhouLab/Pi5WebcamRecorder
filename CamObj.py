@@ -41,6 +41,11 @@ DEBUG = gettrace() is not None
 #   c:/users/<user>/AppData/Local/Microsoft/WindowsApps/python3.11.exe -m pip install opencv-python 
 import cv2
 
+
+# If true, will print extra diagnostics, such as GPIO on/off times and consecutive TTL counter
+VERBOSE = False
+
+
 configParser = configparser.RawConfigParser()
 configFilePath = r'config.txt'
 configParser.read(configFilePath)
@@ -70,7 +75,7 @@ NUM_TTL_PULSES_TO_START_SESSION = configParser.getint('options', 'NUM_TTL_PULSES
 NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=3)
 
 # Number of seconds to discriminate between binary 0 and 1
-BINARY_BIT_PULSE_THRESHOLD = 0.03
+BINARY_BIT_PULSE_THRESHOLD = 0.05
 
 FONT_SCALE = HEIGHT / 480
 
@@ -213,32 +218,42 @@ class CamObj:
     def GPIO_callback_both(self, param):
     
         if GPIO.input(param):
-#            if DEBUG:
-#                print('GPIO on')
+            if VERBOSE:
+                printt('GPIO on')
             self.GPIO_callback1(param)
         else:
-#            if DEBUG:
-#                print('GPIO off')
+            if VERBOSE:
+                printt('GPIO off')
             self.GPIO_callback2(param)
 
     # New GPIO pattern as of 6/22/2024
-    # Long high pulse (0.2s) starts binary mode, transmitting up to 16 bits of animal ID.
+    # Long high pulse (0.2s) starts binary mode, transmitting 16 bits of animal ID.
     #     In binary mode, 75ms pulse is 1, 25ms pulse is 0. Off duration between pulses is 25ms
-    #     Binary mode ends with long low pulse (0.2ms) followed by short high pulse (0.01ms)
+    #     Binary mode ends with long low period (0.2ms) followed by short high pulse (0.01ms)
     # In regular mode, pulses are high for 0.1s, then low for 0.025-0.4s gaps (used to be long, but now much
     # shorter.)
     #     Single pulses indicate cue start
     #     Double pulses start session
     #     Triple pulses end session
+    # As of 6/30/2024
+    # Extra long high pulse (2.5s) starts DEBUG TTL mode, where TTL duration is recorded
+    #     and warnings are printed for any deviation from expected 75ms/25ms on/off duty cycle.
+    #     deviation has to exceed 10ms to be printed.
     def GPIO_callback1(self, param):
 
         # Detected rising edge. Log the timestamp so that on falling edge we can see if this is a regular
         # pulse or a LONG pulse that starts binary mode
         self.most_recent_gpio_rising_edge_time = time.time()
+        elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
+        
+        if elapsed > 0.1:
+            # Burst TTLs must have ~50ms gap.
+            self.num_consec_TTLs = 0
+            if VERBOSE:
+                printt(f'Num consec TTLs: 0')
 
         if self.TTL_mode == self.TTL_type.Binary:
             # If already in binary mode, then long (0.2s) "off" period switches to checksum mode for final pulse
-            elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
             if 0.15 < elapsed < 0.25:
                 if self.TTL_binary_bits != 16:
                     printt(f'Binary mode received {self.TTL_binary_bits} bits instead of 16')
@@ -251,9 +266,10 @@ class CamObj:
                 printt(f'Very long pause of {elapsed}s detected (max should be 0.2s to end binary mode)')
                 self.TTL_mode = self.TTL_type.Normal
         elif self.TTL_mode == self.TTL_type.Debug:
+            # In debug mode, all gaps should be 25ms
             elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
-            if elapsed < 0.002 or elapsed > 0.018:
-                printt(f'{self.TTL_debug_count}    off time {elapsed}')
+            if elapsed < 0.015 or elapsed > 0.035:
+                printt(f'{self.TTL_debug_count}    off time {elapsed}, should be 0.025')
         return
 
     def GPIO_callback2(self, param):
@@ -269,14 +285,19 @@ class CamObj:
 
         if on_time < 0.01:
             # Ignore very short pulses, which are probably some kind of mechanical switch bounce
+            # But: sometimes these are a result of pulses piling up in Windows, then getting sent all at once.
             return
 
         if self.TTL_mode == self.TTL_type.Normal:
             # In normal (not binary or checksum) mode, read the following types of pulses:
             # 0.1s on-time (range 0.01-0.15): indicates trial start, or session start/stop if doubled/tripled
             # 0.2s on time (range 0.15-0.25) initiates binary mode
-            # 0.3s or longer (range 0.25 and up) ... ignore these?
+            # 0.3s-2s ... ignored
+            # 2.5s (range >2s) starts DEBUG TTL mode
             if on_time < 0.15:
+                self.num_consec_TTLs += 1
+                if VERBOSE:
+                    printt(f'Num consec TTLs: {self.num_consec_TTLs}')
                 self.handle_GPIO()
             elif on_time < 0.25:
                 if DEBUG:
@@ -295,11 +316,11 @@ class CamObj:
             return
 
         elif self.TTL_mode == self.TTL_type.Checksum:
-            # Final pulse to end binary mode.
+            # Final pulse of either 75 or 25ms to end binary mode.
             if on_time < BINARY_BIT_PULSE_THRESHOLD:
                 checksum = 0
-            elif on_time < 0.1:
-                # 50ms pulse indicates ONE
+            elif on_time < 0.15:
+                # 75ms pulse indicates ONE
                 checksum = 1
             else:
                 printt(f"Received animal ID {self.TTL_tmp_ID} for box {self.order}, but checksum duration too long ({on_time} instead of 0-0.075s).")
@@ -335,14 +356,17 @@ class CamObj:
 
             return
         elif self.TTL_mode == self.TTL_type.Debug:
+            # Debug mode
+            # Should receive continuous pulses of duration 75ms, with 25ms gap
+            # Long pulse of >1s will cancel debug mode
             if on_time > 1:
                 # Cancel debug mode
                 self.TTL_mode = self.TTL_type.Normal
                 printt(f'Exiting DEBUG TTL mode with pulse length {on_time}')
             elif True:  # on_time > .025:
                 self.TTL_debug_count += 1
-                if on_time < 0.012 or on_time > 0.028:
-                    printt(f"{self.TTL_debug_count} Debug TTL on time is {on_time} (should be 0.02)")
+                if on_time < 0.065 or on_time > 0.085:
+                    printt(f"{self.TTL_debug_count} Debug TTL on time is {on_time} (should be 0.075)")
 
     def delayed_start(self):
 
@@ -350,14 +374,20 @@ class CamObj:
         # will start recording video
 
         # This timer is used to make sure no extra pulses come in between second and third pulse
-        wait_interval_sec = MAX_INTERVAL_IN_TTL_BURST * 1.5
+        # Any gap >0.1s will cancel consecutive TTL count. However, we have to wait 50ms plus 100ms
+        # to make sure we don't have a third pulse, i.e. have to wait 150ms. We extend this to 500ms just
+        # in case.
+        wait_interval_sec = 0.5
         
         # Calculate number of frames to show dark red "pending" dot
         self.pending_start_timer = int(FRAME_RATE_PER_SECOND * wait_interval_sec + 1)
 
         time.sleep(wait_interval_sec)
 
-        if self.num_consec_TTLs != NUM_TTL_PULSES_TO_START_SESSION:
+        if self.num_consec_TTLs > NUM_TTL_PULSES_TO_START_SESSION:
+            # If a third pulse has arrived, then don't start.
+            # However, if count has reset to 0, that is OK, since it would mean that
+            # additional pulse arrived too late to count as part of burst (>0.1s gap)
             return
 
         if not self.start_record():
@@ -387,13 +417,6 @@ class CamObj:
             # triggering manually by jumpering the GPIO pins.
             return
 
-        if interval > MAX_INTERVAL_IN_TTL_BURST:
-            # Long interval resets count of consecutive TTLs
-            self.num_consec_TTLs = 1
-        else:
-            # Short interval increments count of consecutive TTLs
-            self.num_consec_TTLs += 1
-        
         self.most_recent_gpio_time = gpio_time
 
         # This is used to show blue dot on next frame. (Can increase this value to show on several frames)
@@ -415,8 +438,6 @@ class CamObj:
                     t = threading.Thread(target=self.delayed_start)
 
                     t.start()
-                    
-                    return
 
                 # Not recording, and only detected a single TTL pulse. Just ignore.
                 return
@@ -600,6 +621,14 @@ class CamObj:
                            (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
                            int(8 * FONT_SCALE),  # Radius
                            (0, 0, 96),     # Dark red dot (color is in BGR order)
+                           -1)   # -1 thickness fills circle
+
+            if self.TTL_mode == self.TTL_type.Debug:
+                # Green dot indicates we are in TTL DEBUG mode
+                cv2.circle(self.frame,
+                           (int(20 * FONT_SCALE), int(110 * FONT_SCALE)),  # x-y position
+                           int(8 * FONT_SCALE),  # Radius
+                           (0, 255, 0),     # color is in BGR order
                            -1)   # -1 thickness fills circle
 
             if self.TTL_animal_ID > 0:

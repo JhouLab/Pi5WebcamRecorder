@@ -352,10 +352,15 @@ while True:
                 which_display = -2
             print_current_display_id()
         elif DEBUG and key == ord("d"):
-            # Special debugging keystroke that simulates TTL input in regards to camera 1
+            # Special debugging keystroke that toggles DEBUG TTL measurement mode
             for cam_obj in cam_array:
                 if cam_obj is not None:
-                    cam_obj.handle_GPIO()
+                    if cam_obj.TTL_mode == cam_obj.TTL_type.Normal:
+                        cam_obj.TTL_mode = cam_obj.TTL_type.Debug
+                        printt(f'Entering DEBUG TTL mode for camera {cam_obj.order}')
+                    elif cam_obj.TTL_mode == cam_obj.TTL_type.Debug:
+                        cam_obj.TTL_mode = cam_obj.TTL_type.Normal
+                        printt(f'Exiting DEBUG TTL mode for camera {cam_obj.order}')
         elif key == ord("w"):
             # Write JPG images for each camera
             for cam_obj in cam_array:
