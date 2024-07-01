@@ -386,7 +386,7 @@ while True:
                 if cam_obj.cam is not None:
                     if cam_obj.cam.isOpened():
                         cam_obj.take_snapshot()
-        elif key >= ord("0") and key <= ord("9"):
+        elif ord("0") <= key <= ord("9"):
             # Start/stop recording for specified camera
             cam_num = key - ord("0")
             cam_idx = cam_num - FIRST_CAMERA_ID
