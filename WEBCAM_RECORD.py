@@ -236,7 +236,7 @@ which_display = -2
 if num_cameras_found == 1:
     # If exactly one camera found, then show that one to start
     for c in cam_array:
-        if c.cam is None:
+        if c is None or c.cam is None:
             continue
         if c.order >= 0:
             which_display = c.order - FIRST_CAMERA_ID
