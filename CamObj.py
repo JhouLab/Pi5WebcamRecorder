@@ -268,7 +268,7 @@ class CamObj:
             # In debug mode, all gaps should be 25ms
             elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
             if elapsed < 0.015 or elapsed > 0.035:
-                printt(f'{self.TTL_debug_count}    off time {elapsed}, should be 0.025')
+                printt(f'{self.TTL_debug_count} off time {elapsed}, expected 0.025')
         return
 
     def GPIO_callback2(self, param):

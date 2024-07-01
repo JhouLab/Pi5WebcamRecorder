@@ -53,12 +53,12 @@ NUM_TTL_PULSES_TO_STOP_SESSION = 3
 ;     1920x1080 at 5fps in YUY mode, 10fps in MJPG mode
 ;
 ; Logitech c920e webcam supports the following:
+
 ;     (4:3 aspect ratio):  320x240, 640x480, 1280x960
 ;     (16:9 aspect ratio): 640x360, 1024x576, 1280x720, 1920x1080
-; ... as well as a few weird options:
 ;     1024x720   (64:45 aspect ratio that is close to 4:3 but not quite)
 ;     1280x960   (4:3 aspect ratio that actually captures at 16:9, which basically takes a widescreen and squashes it into a 4:3 screen)
-; Strangely, logitech c920e does not support the once-common 1024x768 and 1280x1024 formats.
+; Strangely, logitech c920e does not support 1024x768 and 1280x1024 formats.
 WIDTH = 640
 HEIGHT = 480
 
