@@ -281,7 +281,7 @@ while True:
             # Add text to top left to show camera number. This will NOT show in recording
             cv2.putText(cam_obj.frame, str(FIRST_CAMERA_ID + idx),
                         (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
-                        cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
+                        cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
                         round(FONT_SCALE + 0.5))  # Line thickness
             if cam_obj.IsRecording:
                 # Add red circle if recording. Again, this does not show in recorded file.

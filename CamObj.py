@@ -633,7 +633,7 @@ class CamObj:
                 # Add animal ID to video
                 cv2.putText(self.frame, str(self.TTL_animal_ID),
                             (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
-                            cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
+                            cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
                             round(FONT_SCALE + 0.5))  # Line thickness
             elif self.TTL_animal_ID < 0:
                 # Animal ID checksum failed
