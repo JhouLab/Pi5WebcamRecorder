@@ -253,15 +253,15 @@ class CamObj:
 
         if self.TTL_mode == self.TTL_type.Binary:
             # If already in binary mode, then long (0.2s) "off" period switches to checksum mode for final pulse
-            if 0.15 < elapsed < 0.25:
+            if 0.15 < elapsed < 0.5:
                 if self.TTL_binary_bits != 16:
-                    printt(f'Binary mode received {self.TTL_binary_bits} bits instead of 16')
+                    printt(f'Warning: in binary mode received {self.TTL_binary_bits} bits instead of 16')
                     self.TTL_animal_ID = -1
                 
                 if DEBUG:
-                    printt('Binary mode awaiting final checksum...')
+                    printt('Binary mode now awaiting final checksum...')
                 self.TTL_mode = self.TTL_type.Checksum
-            elif elapsed >= 0.25:
+            elif elapsed >= 0.5:
                 printt(f'Very long pause of {elapsed}s detected (max should be 0.2s to end binary mode)')
                 self.TTL_mode = self.TTL_type.Normal
         elif self.TTL_mode == self.TTL_type.Debug:
@@ -280,6 +280,7 @@ class CamObj:
             # Ignore falling edge if no rising edge was detected. Is this even possible, e.g. at program launch?
             return
 
+        # Calculate pulse width
         on_time = time.time() - self.most_recent_gpio_rising_edge_time
 
         if on_time < 0.01:

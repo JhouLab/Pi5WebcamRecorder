@@ -1,12 +1,18 @@
 
 # HOW TO USE:
 
-Instructions version 1.2
+Instructions version 1.3
 
-Updated June 19, 2024.
+Updated July 5, 2024.
 
-For best results, run this on a Raspberry Pi 5, which can easily handle 4 simultaneous cameras,
-whereas the Pi 4 seems to struggle with even 2 cameras.
+For best results, run this on a Raspberry Pi 5, which can easily handle 4 simultaneous cameras
+at 640x480 and 10 frames per second, whereas the Pi 4 struggles with even 2 cameras.
+
+Pi 5 can handle higher frame rates (e.g. 15fps) if you restrict recording to just 2 cameras or
+if you change the codec from h264 to mp4v. For details, see below under "CONFIGURING".
+
+
+# GETTING STARTED:
 
 Hopefully someone has already installed all files and libraries for you. If not, skip to the bottom
 "Installing on a new machine", then come back here when you are done.
@@ -15,6 +21,7 @@ Locate the directory where the program resides. If not sure where that is, look 
 
     /home/jhoulab/Documents/github/Pi5WebcamRecorder
 
+This can be changed, e.g. if you plug in an external drive (see below under "CONFIGURING").
 Now launch the program with one of the following methods:
 
     Method 1: From command line. Open command prompt, "cd" to program directory, then type:
@@ -40,20 +47,11 @@ Once running, it will respond to the following keyboard keys:
     "Q":            Stops any ongoing recordings, and quits program
     Left cursor:    Cycles through cameras in descending order
     Right cursor:   Cycles through cameras in ascending order
-    1-4:            Typing a camera number will manually start/stop recording of that camera.
+    1-4:            Typing a camera number will manually start/stop recording that camera.
                     A red dot in the corner indicates ongoing recording.
 
-This program also monitors GPIO pins 4-7. A low-to-high transition (i.e. from 0V to 3.3V)
-on these pins has the following effects:
-
-    Double pulse:   Starts recording when 2 pulses arrive <1.5 sec apart
-    Triple pulse:   Stops recording
-    Single pulse:   Saves timestamp in _TTL.txt file, and flashes blue dot in top-left corner of video
-
-    GPIO4:          camera 1
-    GPIO5:          camera 2
-    GPIO6:          camera 3
-    GPIO7:          camera 4
+This program also monitors GPIO pins 4-7, which are used to start/stop recordings and indicates
+trial start times. See below under "GPIO PROTOCOL".
 
 Each camera recording generates its own files, and there is no data mixing between cameras.
 There are three recorded files for each session, as listed below. All filenames begin with the
@@ -109,10 +107,46 @@ whenever it starts up. The following options are available:
     DATA_FOLDER                            # Folder for saving. Default /home/jhoulab/Videos/
 
 
+# GPIO TIMING PROTOCOL
+
+This program monitors GPIO inputs 4 through 7, which corresponds to the following cameras:
+
+    GPIO4:          camera 1
+    GPIO5:          camera 2
+    GPIO6:          camera 3
+    GPIO7:          camera 4
+
+Note that these are 3.3V lines, so you must use a level shifter when reading 5V inputs.
+
+A standard pulse should be 100ms long. If doubled or tripled, the trough between pulses should be 50ms.
+
+    3.3V    100ms
+             ___      ___      
+            |   |    |   |    
+    0V -----     ----     --------
+	             50ms
+
+A single pulse indicates trial start, and these are saved in the _TTL.txt file. A double pulse starts recording, while
+a triple pulse stops recording.
+
+Binary id transmission always has 18 pulses, starting with a 200ms long pulse, 16 binary bits, and a final checksum parity bit
+preceded by 200ms trough. For all binary bits, 25ms pulse width indicates binary 0, and 75ms pulse indicates binary 1:
+
+    3.3V     0.2s   <16 binary bits, 25/75ms>    <Parity bit 25/75ms>
+             ____   _   _   _               _       _
+            |    | | | | | | |    etc      | |     | |
+    0V -----      -   -   -   -           -   -----   ---------------
+	              <25ms troughs between bits> 200ms
+
+
+Note that Windows timing can jitter by a modest amount, usually under 10ms but occasionally more.
+Python code allows for at least 25ms of error in timing, and often much more.				
+
+
+
 # KNOWN SHORTCOMINGS:
 
-1. When launching, you will get the following harmless warning. I don't know how to get rid of it,
-and you can just ignore it:
+1. When launching, you will get the following harmless warning, which you can ignore:
 
     libpng warning: iCCP: known incorrect sRGB profile
 
