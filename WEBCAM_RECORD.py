@@ -2,7 +2,7 @@ import tkinter
 from typing import List
 import time
 
-import PIL.ImageTk
+from PIL import Image, ImageTk  # Need to import pillow from Jeffrey A. Clark
 import numpy as np
 import math
 from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt
@@ -10,11 +10,10 @@ from get_hardware_info import *
 import cv2
 from sys import gettrace
 from enum import Enum
+from functools import partial
 
 import tkinter as tk
-from tkinter import *
 from tkinter import messagebox as mb
-from PIL import Image, ImageTk       # Need to import pillow from Jeffrey A. Clark
 
 # If true, will print extra diagnostics, such as a running frame count and FPS calculations
 VERBOSE = False
@@ -22,9 +21,7 @@ VERBOSE = False
 # First camera ID number
 FIRST_CAMERA_ID = 1
 
-
 DEBUG = gettrace() is not None
-
 
 if DEBUG:
     printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
@@ -46,7 +43,7 @@ if platform.system() == "Linux":
     import RPi.GPIO as GPIO
 
     GPIO.setmode(GPIO.BCM)  # Set's GPIO pins to BCM GPIO numbering
-    INPUT_PIN_LIST = [4, 5, 6, 7]   # List of input pins for the four cameras
+    INPUT_PIN_LIST = [4, 5, 6, 7]  # List of input pins for the four cameras
     for p in INPUT_PIN_LIST:
         try:
             GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Set to be input, with internal pull-down resistor
@@ -59,14 +56,14 @@ if platform.system() == "Linux":
 else:
     # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = False
-    INPUT_PIN_LIST = [None] * 4   # List of input pins for the four cameras
+    INPUT_PIN_LIST = [None] * 4  # List of input pins for the four cameras
 
 if WIDTH > 1024:
     # Downsample large video frames to something more reasonable
     ratio = WIDTH / 1024
-    SCREEN_RESOLUTION = (1024, int(HEIGHT/ratio))
+    SCREEN_RESOLUTION = (1024, int(HEIGHT / ratio))
     SCREEN_RESOLUTION_INSET = (512, SCREEN_RESOLUTION[1] >> 1)
-elif WIDTH <640:
+elif WIDTH < 640:
     # Upsample small frames
     ratio = 640 / WIDTH
     SCREEN_RESOLUTION = (640, int(HEIGHT * ratio))
@@ -74,6 +71,7 @@ elif WIDTH <640:
 else:
     SCREEN_RESOLUTION = (WIDTH, HEIGHT)
     SCREEN_RESOLUTION_INSET = (WIDTH >> 1, HEIGHT >> 1)
+
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
 # If not successful (i.e. if there is no camera plugged in with that ID), will throw exception,
@@ -84,7 +82,8 @@ def setup_cam(id):
         tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
     else:
         if WIDTH > 640:
-            tmp = cv2.VideoCapture(id, cv2.CAP_V4L2)   # This is needed for MJPG mode to work, allowing higher frame rates
+            tmp = cv2.VideoCapture(id,
+                                   cv2.CAP_V4L2)  # This is needed for MJPG mode to work, allowing higher frame rates
         else:
             tmp = cv2.VideoCapture(id)
 
@@ -136,8 +135,6 @@ def make_instruction_frame():
     return f
 
 
-
-
 # Highest camera ID to search when first connecting. Some sources
 # recommend searching up to 99, but that takes too long and is usually
 # unnecessary. So far, I have not needed to search above about 8, but we
@@ -158,7 +155,6 @@ if IDENTIFY_CAMERA_BY_USB_PORT:
 else:
     # Array of camera objects, one for each discovered camera
     cam_array = []
-
 
 # Make subframes that are blank. These are used for 2x2 grid display.
 # Blank frames will be replaced by real ones if camera is found.
@@ -214,7 +210,6 @@ if num_cameras_found == 0:
 else:
     printt(f"Found {num_cameras_found} cameras")
 
-
 # Report what was discovered
 for idx, cam_obj in enumerate(cam_array):
     if cam_obj is None:
@@ -225,46 +220,98 @@ for idx, cam_obj in enumerate(cam_array):
         continue
 
     if IDENTIFY_CAMERA_BY_USB_PORT:
-        printt(f"Camera in USB port position {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num} and serial '{get_cam_serial(cam_obj.id_num)}'", omit_date_time=True)
+        printt(
+            f"Camera in USB port position {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num} and serial '{get_cam_serial(cam_obj.id_num)}'",
+            omit_date_time=True)
     else:
         printt(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
-
 
 print()
 printt("Starting display")
 
 
 class RECORDER:
-
     class PendingAction(Enum):
         Nothing = 0
         StartRecord = 1
         EndRecord = 2
         Quit = 3
+        DebugMode = 4
 
     pendingActionVar = PendingAction.Nothing
 
     def onKeyPress(self, event):
         print(event.char)
         if event.char == 'q':
-            self.close()
+            self.show_quit_dialog()
+        elif "0" <= event.char <= "9":
+            # Start/stop recording for specified camera
+            cam_num = ord(event.char) - ord("0")
+            cam_idx = cam_num - FIRST_CAMERA_ID
+            if cam_idx < 0 or cam_idx >= len(self.cam_array):
+                print(f"Camera number {cam_num} does not exist, won't record.")
+            else:
+                cam_obj = self.cam_array[cam_idx]
+                if cam_obj is None:
+                    print(f"Camera number {cam_num} not found, won't record.")
+                else:
+                    if not cam_obj.IsRecording:
+
+                        self.show_start_record_dialog(cam_num)
+
+                    else:
+                        res = mb.askyesno('Stop?', f'Stop recording camera {cam_num}?')
+                        if res:
+                            cam_obj.stop_record()
+        else:
+            isLeftArrow = False
+            isRightArrow = False
+            if event.keycode == 37:
+                # Left arrow
+                isLeftArrow = True
+            elif event.keycode == 39:
+                # Right arrow
+                isRightArrow = True
+            else:
+                print(event.char)
+
+            if isLeftArrow:  # Left arrow key
+                self.which_display -= 1
+                if self.which_display < -2:
+                    self.which_display = len(cam_array) - 1
+                self.print_current_display_id()
+            elif isRightArrow:  # Right arrow key
+                self.which_display += 1
+                if self.which_display >= len(cam_array):
+                    self.which_display = -2
+                self.print_current_display_id()
+            elif DEBUG and self.pendingActionVar == self.PendingAction.DebugMode:
+                # Special debugging keystroke that toggles DEBUG TTL measurement mode
+                for cam_obj in cam_array:
+                    if cam_obj is not None:
+                        if cam_obj.TTL_mode == cam_obj.TTL_type.Normal:
+                            cam_obj.TTL_mode = cam_obj.TTL_type.Debug
+                            printt(f'Entering DEBUG TTL mode for camera {cam_obj.order}')
+                        elif cam_obj.TTL_mode == cam_obj.TTL_type.Debug:
+                            cam_obj.TTL_mode = cam_obj.TTL_type.Normal
+                            printt(f'Exiting DEBUG TTL mode for camera {cam_obj.order}')
 
     pendingActionCamera = -1
     pendingActionID = ""
 
     def __init__(self, _cam_array):
 
-        self.root = Tk()
+        self.root = tk.Tk()
         self.root.bind('<KeyPress>', self.onKeyPress)
         self.canvas = tkinter.Canvas(self.root, width=SCREEN_RESOLUTION[0], height=SCREEN_RESOLUTION[1])
         self.canvas.pack()
 
         b_list = [
-            ("Close", self.close),
+            ("Close", self.show_quit_dialog),
         ]
 
-        for x in b_list:
-            tk.Button(self.root, text=x[0], command=x[1]).pack(side=tk.BOTTOM)
+        for _b in b_list:
+            tk.Button(self.root, text=_b[0], command=_b[1]).pack(side=tk.BOTTOM)
 
         self.cam_array = _cam_array
 
@@ -279,10 +326,7 @@ class RECORDER:
         #
         # -2 shows all 4 cameras in a 2x2 grid
         # -1 turns off display
-        #  0 shows whatever is plugged into top left USB port
-        #  1 shows top right USB port camera
-        #  2 shows bottom left USB port camera
-        #  3 shows bottom right USB port camera
+        #  0-3 show the 4 cameras, by USB port position
         self.which_display = -2
         if num_cameras_found == 1:
             # If exactly one camera found, then show that one to start
@@ -293,34 +337,49 @@ class RECORDER:
                     self.which_display = c.order - FIRST_CAMERA_ID
                     break
 
-        self.root.after(0, self.main_loop)
+        self.update_image()
 
-    def options_done(self):
-        self.w.destroy()
-        self.pendingActionVar = self.PendingAction.Quit
+    def confirm_quit(self, widget, value):
+        widget.destroy()
+        if value:
+            self.pendingActionVar = self.PendingAction.Quit
 
-    def close(self):
+    def show_quit_dialog(self):
 
         w = tk.Toplevel(self.root)
-        w.title("Select")
+        w.title("Confirm?")
 
-        f = tk.Frame(w, highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
+        w.resizable(False, False)  # Remove maximize button
+        w.attributes("-toolwindow", True)  # Remove minimize button
+
+        f = tk.Frame(w)  # , highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
         f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
 
-        l1 = tk.Label(f, text="quit?", anchor="e", justify=tk.RIGHT)
+        l1 = tk.Label(f, text="Confirm quit?", anchor="e", justify=tk.RIGHT)
         l1.pack(side=tk.TOP)
 
-        b = tk.Button(f, text="OK", command=self.options_done)
-        b.pack(padx=15, pady=10, ipadx=20, ipady=10)
-
-        self.w = w
+        b = tk.Button(f, text="OK", command=partial(self.confirm_quit, w, True))
+        b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
+        b.focus_set()
+        b = tk.Button(f, text="Cancel", command=partial(self.confirm_quit, w, False))
+        b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
         return
+
+    def imshow(self, img):
+        if img is None:
+            return
+
+        # cv2.imshow(DISPLAY_WINDOW_NAME, img)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # photo_img must be class variable, as it needs to persist after method returns
+        self.photo_img = ImageTk.PhotoImage(image=Image.fromarray(img))
+        self.canvas.create_image(0, 0, image=self.photo_img, anchor=tkinter.NW)
 
     # Print message indicating which camera is displaying to screen.
     def print_current_display_id(self):
         if self.which_display == -1:
             print("TURNING OFF CAMERA DISPLAY.")
-            cv2.imshow(DISPLAY_WINDOW_NAME, INSTRUCTION_FRAME)
+            self.imshow(INSTRUCTION_FRAME)
             return
 
         if self.which_display == -2:
@@ -334,16 +393,47 @@ class RECORDER:
             if cam is not None:
                 # Show the blank frame now, since it will not be updated in timer loop.
                 # Otherwise we will see leftover image from last good camera
-                cv2.imshow(DISPLAY_WINDOW_NAME, cam.frame)
+                self.imshow(cam.frame)
         else:
             print(f"Showing camera {cam_position}")
 
-    def start_make_pending(self, cam_num, animal_id):
-        self.pendingActionVar = self.PendingAction.StartRecord
-        self.pendingActionCamera = cam_num
-        self.pendingActionID = animal_id
+    def show_start_record_dialog(self, cam_num):
+        w = tk.Toplevel(self.root)
+        w.title("Start recording?")
 
-    def main_loop(self):
+        w.resizable(False, False)  # Remove maximize button
+        w.attributes("-toolwindow", True)  # Remove minimize button
+
+        f = tk.Frame(w)  # , highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
+        f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
+
+        l1 = tk.Label(f, text=f"Enter animal ID for camera #{cam_num}", anchor="e")
+        l1.pack(side=tk.TOP)
+
+        s = tk.StringVar(value=f"Cam{cam_num}")
+        e = tk.Entry(f, textvariable=s)
+        e.pack(side=tk.TOP)
+
+        e.bind('<Return>', partial(self.confirm_start, w, cam_num, s, True))
+
+        b = tk.Button(f, text="OK", command=partial(self.confirm_start, w, cam_num, s, True, None))
+        b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
+        b.focus_set()
+        b = tk.Button(f, text="Cancel", command=partial(self.confirm_start, w, cam_num, s, False, None))
+        b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
+
+    def confirm_start(self, widget, cam_num, animal_id_var, result, _event):
+        # We ignore _event, which is there for compatibility with the bind('<Return>') statement
+        # which mandates that we send that event
+        widget.destroy()
+        if not result:
+            return
+
+        self.pendingActionVar = self.PendingAction.StartRecord
+        self.pendingActionID = animal_id_var.get()
+        self.pendingActionCamera = cam_num - FIRST_CAMERA_ID
+
+    def update_image(self):
 
         # Camera frame is read at the very beginning of loop. At the end of the loop, is a timer
         # that waits until 1/FRAME_RATE_PER_SECOND seconds after previous frame target, forcing all
@@ -364,8 +454,8 @@ class RECORDER:
                     cv2.circle(cam_obj.frame,
                                (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
                                int(8 * FONT_SCALE),  # Radius
-                               (0, 0, 255),     # Red dot (color is in BGR order)
-                               -1)   # -1 thickness fills circle
+                               (0, 0, 255),  # Red dot (color is in BGR order)
+                               -1)  # -1 thickness fills circle
 
         if self.which_display >= 0:
             # Show just one of the 4 cameras
@@ -374,8 +464,7 @@ class RECORDER:
                 if SCREEN_RESOLUTION[0] == WIDTH:
                     img = cam_obj.frame
                 else:
-                    tmp_frame = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
-                    img = tmp_frame
+                    img = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
         elif self.which_display == -2:
             # Show all 4 cameras on one screen (downsized 2x)
             for index, elt in enumerate(self.cam_array):
@@ -390,17 +479,19 @@ class RECORDER:
         else:
             img = None
 
-        if img is not None:
-            # cv2.imshow(DISPLAY_WINDOW_NAME, img)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            photo_img = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(img))
-            self.canvas.create_image(0, 0, image=photo_img, anchor=tkinter.NW)
-
-#        self.root.update()
+        self.imshow(img)
 
         if self.pendingActionVar == self.PendingAction.Quit:
             self.cleanup()
             return
+        elif self.pendingActionVar == self.PendingAction.StartRecord:
+            cam_num = self.pendingActionCamera
+            cam_obj = self.cam_array[cam_num]
+            if not cam_obj.start_record(self.pendingActionID):
+                # Recording was attempted, but did not succeed. Usually this is
+                # because of file error, or missing codec.
+                print(f"Unable to start recording camera {cam_num}.")
+            self.pendingActionVar = self.PendingAction.Nothing
 
         if self.frame_count == 0:
             # Now that the first frame is done, we can start timer and should get stable FPS readings
@@ -413,101 +504,6 @@ class RECORDER:
 
         self.frame_count = self.frame_count + 1
 
-        # Check if any key has been pressed.
-        if platform.system() == "Linux":
-            key = cv2.waitKey(1)
-        elif platform.system() == "Windows":
-            # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
-            key = cv2.waitKeyEx(1)
-
-        if (key & 0xFF) != 255:
-            key2 = key >> 16  # On Windows, arrow keys are encoded here
-            key1 = (key >> 8) & 0xFF  # This always seems to be 0
-            key = key & 0xFF  # On Raspberry Pi, arrow keys are coded here along with all other keys
-
-            # check for 'q' key-press
-            if key == ord("q"):
-                # if 'q' key-pressed break out
-                self.close()
-
-            if platform.system() == "Linux":
-                # Raspberry Pi encodes arrow keys in lowest byte
-                isLeftArrow = key == 81
-                isRightArrow = key == 83
-            elif platform.system() == "Windows":
-                # Windows encodes arrow keys in highest byte
-                isLeftArrow = key2 == 37
-                isRightArrow = key2 == 39
-            else:
-                isLeftArrow = False
-                isRightArrow = False
-
-            if isLeftArrow:  # Left arrow key
-                self.which_display -= 1
-                if self.which_display < -2:
-                    self.which_display = len(cam_array) - 1
-                self.print_current_display_id()
-            elif isRightArrow:  # Right arrow key
-                self.which_display += 1
-                if self.which_display >= len(cam_array):
-                    self.which_display = -2
-                self.print_current_display_id()
-            elif DEBUG and key == ord("d"):
-                # Special debugging keystroke that toggles DEBUG TTL measurement mode
-                for cam_obj in cam_array:
-                    if cam_obj is not None:
-                        if cam_obj.TTL_mode == cam_obj.TTL_type.Normal:
-                            cam_obj.TTL_mode = cam_obj.TTL_type.Debug
-                            printt(f'Entering DEBUG TTL mode for camera {cam_obj.order}')
-                        elif cam_obj.TTL_mode == cam_obj.TTL_type.Debug:
-                            cam_obj.TTL_mode = cam_obj.TTL_type.Normal
-                            printt(f'Exiting DEBUG TTL mode for camera {cam_obj.order}')
-            elif key == ord("w"):
-                # Write JPG images for each camera
-                for cam_obj in self.cam_array:
-                    if cam_obj.cam is not None:
-                        if cam_obj.cam.isOpened():
-                            cam_obj.take_snapshot()
-            elif ord("0") <= key <= ord("9"):
-                # Start/stop recording for specified camera
-                cam_num = key - ord("0")
-                cam_idx = cam_num - FIRST_CAMERA_ID
-                if cam_idx >= len(self.cam_array):
-                    print(f"Camera number {cam_num} does not exist, won't record.")
-                else:
-                    cam_obj = self.cam_array[cam_idx]
-                    if cam_obj is None:
-                        print(f"Camera number {cam_num} not found, won't record.")
-                    else:
-                        if not cam_obj.IsRecording:
-
-                            # Query user for animal ID
-                            a = StringVar()
-                            Label(self.root, text='Enter animal ID').pack()
-                            Entry(self.root, textvariable=a).pack()
-                            Button(self.root, text='Ok',
-                                   command=lambda: self.start_make_pending(cam_num, a.get())).pack()
-
-                        else:
-                            res = mb.askyesno('Stop?', f'Stop recording camera {cam_num}?')
-                            if res:
-                                cam_obj.stop_record()
-
-            elif key != 255:
-                print(f"You pressed: {key}")
-
-        if self.pendingActionVar == self.PendingAction.StartRecord:
-            cam_num = self.pendingActionCamera
-            cam_obj = self.cam_array[cam_num]
-            if cam_obj.start_record():
-                # Successfully started recording.
-                #                            print(f"Started recording camera {cam_num}")
-                pass  # We now notify user within the start_record() function itself.
-            else:
-                # Recording was attempted, but did not succeed. Usually this is
-                # because of file error, or missing codec.
-                print(f"Unable to start recording camera {cam_num}.")
-            self.pendingActionVar = self.PendingAction.Nothing
 
         if self.frame_count % self.STATUS_REPORT_INTERVAL == 0:
             # Print status periodically (frame # and frames per second)
@@ -528,11 +524,12 @@ class RECORDER:
             # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
             lag_ms = (time.time() - self.next_frame) * 1000
             if any_camera_recording(cam_array):
-                printt(f"Warning: at frame {self.frame_count}, CPU lag {lag_ms:.2f} ms. Might drop up to {int(math.ceil(lag_ms/100))} frame(s).")
+                printt(
+                    f"Warning: at frame {self.frame_count}, CPU lag {lag_ms:.2f} ms. Might drop up to {int(math.ceil(lag_ms / 100))} frame(s).")
 
             # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
             self.next_frame = time.time() + self.FRAME_INTERVAL
-            self.root.after(1, self.main_loop)
+            self.root.after(1, self.update_image)
         else:
             # We are done with loop, but not ready to request next frame. Wait a bit.
             advance_ms = (self.next_frame - time.time()) * 1000
@@ -543,7 +540,7 @@ class RECORDER:
             if advance_ms < 0:
                 advance_ms = 1
 
-            self.root.after(int(advance_ms), self.main_loop)
+            self.root.after(int(advance_ms), self.update_image)
 
     def cleanup(self):
 
@@ -565,5 +562,4 @@ class RECORDER:
 
 
 rec_obj = RECORDER(cam_array)
-mainloop()
-
+rec_obj.root.mainloop()

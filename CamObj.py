@@ -450,13 +450,15 @@ class CamObj:
             # start and stop of session.
             self.stop_record()
 
-    def get_filename_prefix(self):
-        if self.TTL_animal_ID <= 0:
-            return get_date_string() + f"_Cam{self.order}"
-        else:
-            return get_date_string() + f"_ID{self.TTL_animal_ID}"
+    def get_filename_prefix(self, animal_ID=None):
+        if animal_ID is None or animal_ID == "":
+            if self.TTL_animal_ID > 0:
+                animal_ID = str(self.TTL_animal_ID)
+            else:
+                animal_ID = f"Cam{self.order}"
+        return get_date_string() + "_" + animal_ID
 
-    def start_record(self):
+    def start_record(self, animal_ID=None):
 
         if self.cam is None or not self.cam.isOpened():
             print(f"Camera {self.order} is not available for recording.")
@@ -469,7 +471,7 @@ class CamObj:
                 self.frame_num = 0
                 self.TTL_num = 0
 
-                prefix = DATA_FOLDER + self.get_filename_prefix()
+                prefix = DATA_FOLDER + self.get_filename_prefix(animal_ID)
                 self.filename = prefix + "_Video.avi"
                 self.filename_timestamp = prefix + "_Frames.txt"
                 self.filename_timestamp_TTL = prefix + "_TTLs.txt"
