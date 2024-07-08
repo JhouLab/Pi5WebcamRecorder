@@ -1,3 +1,4 @@
+from typing import List
 import time
 import numpy as np
 import math
@@ -160,6 +161,8 @@ MAX_ID = 14
 INSTRUCTION_FRAME = make_instruction_frame()
 
 DISPLAY_WINDOW_NAME = "Camera output"
+
+cam_array: List[CamObj | None]
 
 if IDENTIFY_CAMERA_BY_USB_PORT:
     # Array of subframes for 4x1 display

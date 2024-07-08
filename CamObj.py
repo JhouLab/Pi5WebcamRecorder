@@ -7,7 +7,6 @@
 
 import os
 import numpy as np
-import datetime
 import time
 import platform
 import threading
@@ -185,7 +184,6 @@ class CamObj:
     TTL_checksum = 0
     most_recent_gpio_rising_edge_time = -1
     most_recent_gpio_falling_edge_time = -1
-    most_recent_gpio_time = -1
     num_consec_TTLs = 0   # Use this to track double and triple pulses
 
     codec = cv2.VideoWriter_fourcc(*FOURCC)  # What codec to use. Usually h264
@@ -404,20 +402,9 @@ class CamObj:
         # Detected normal GPIO pulse (i.e. not part of binary mode transmission of animal ID)
         # This will actually be the falling edge of pulse.
 
-        # Record timestamp now, in case there are delays acquiring lock
-        # time.time() returns number of seconds since 1970.
-        gpio_time = time.time()
-
-        # Calculate interval from previous pulse. This is used to detect double-pulses that indicate
-        # session start/stop
-        interval = gpio_time - self.most_recent_gpio_time
-
-        if interval <= 0.001:
-            # Ignore GPIOs less than 1ms apart. These are usually mechanical switch bounces, e.g. if
-            # triggering manually by jumpering the GPIO pins.
-            return
-
-        self.most_recent_gpio_time = gpio_time
+        # Use rising edge time, since we don't get here until falling edge.
+        # NOte that time.time() returns number of seconds since 1970, as a floating point number.
+        gpio_time = self.most_recent_gpio_rising_edge_time
 
         # This is used to show blue dot on next frame. (Can increase this value to show on several frames)
         self.frames_to_mark_GPIO = 1
