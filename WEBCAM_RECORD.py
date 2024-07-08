@@ -1,12 +1,20 @@
+import tkinter
 from typing import List
 import time
+
+import PIL.ImageTk
 import numpy as np
 import math
 from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt
 from get_hardware_info import *
 import cv2
 from sys import gettrace
+from enum import Enum
 
+import tkinter as tk
+from tkinter import *
+from tkinter import messagebox as mb
+from PIL import Image, ImageTk       # Need to import pillow from Jeffrey A. Clark
 
 # If true, will print extra diagnostics, such as a running frame count and FPS calculations
 VERBOSE = False
@@ -128,27 +136,6 @@ def make_instruction_frame():
     return f
 
 
-# Print message indicating which camera is displaying to screen.
-def print_current_display_id():
-    if which_display == -1:
-        print("TURNING OFF CAMERA DISPLAY.")
-        cv2.imshow(DISPLAY_WINDOW_NAME, INSTRUCTION_FRAME)
-        return
-
-    if which_display == -2:
-        print("Multi-frame display")
-        return
-
-    cam = cam_array[which_display]
-    cam_position = cam.order
-    if cam is None or cam.cam is None:
-        print(f"Camera in position {cam_position} is disconnected")
-        if cam is not None:
-            # Show the blank frame now, since it will not be updated in timer loop.
-            # Otherwise we will see leftover image from last good camera
-            cv2.imshow(DISPLAY_WINDOW_NAME, cam.frame)
-    else:
-        print(f"Showing camera {cam_position}")
 
 
 # Highest camera ID to search when first connecting. Some sources
@@ -227,23 +214,6 @@ if num_cameras_found == 0:
 else:
     printt(f"Found {num_cameras_found} cameras")
 
-# Which camera to display initially. User can change this later with arrow keys.
-#
-# -2 shows all 4 cameras in a 2x2 grid
-# -1 turns off display
-#  0 shows whatever is plugged into top left USB port
-#  1 shows top right USB port camera
-#  2 shows bottom left USB port camera
-#  3 shows bottom right USB port camera
-which_display = -2
-if num_cameras_found == 1:
-    # If exactly one camera found, then show that one to start
-    for c in cam_array:
-        if c is None or c.cam is None:
-            continue
-        if c.order >= 0:
-            which_display = c.order - FIRST_CAMERA_ID
-            break
 
 # Report what was discovered
 for idx, cam_obj in enumerate(cam_array):
@@ -260,213 +230,340 @@ for idx, cam_obj in enumerate(cam_array):
         printt(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
 
 
-frame_count = -1
-
-FRAME_INTERVAL = 1.0 / FRAME_RATE_PER_SECOND
-
-# Report status every 30 seconds
-STATUS_REPORT_INTERVAL = FRAME_RATE_PER_SECOND * 30
-
 print()
 printt("Starting display")
 
-# infinite loop
-# Camera frame is read at the very beginning of loop. At the end of the loop, is a timer
-# that waits until 1/FRAME_RATE_PER_SECOND seconds after previous frame target, forcing all
-# cameras to sync up at this interval.
-while True:
 
-    for idx, cam_obj in enumerate(cam_array):
-        # Read camera frame
-        cam_obj.read()
+class RECORDER:
 
-        if cam_obj.status:
-            # Add text to top left to show camera number. This will NOT show in recording
-            cv2.putText(cam_obj.frame, str(FIRST_CAMERA_ID + idx),
-                        (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
-                        cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
-                        round(FONT_SCALE + 0.5))  # Line thickness
-            if cam_obj.IsRecording:
-                # Add red circle if recording. Again, this does not show in recorded file.
-                cv2.circle(cam_obj.frame,
-                           (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
-                           int(8 * FONT_SCALE),  # Radius
-                           (0, 0, 255),     # Red dot (color is in BGR order)
-                           -1)   # -1 thickness fills circle
+    class PendingAction(Enum):
+        Nothing = 0
+        StartRecord = 1
+        EndRecord = 2
+        Quit = 3
 
-    if which_display >= 0:
-        # Show just one of the 4 cameras
-        cam_obj = cam_array[which_display]
-        if cam_obj.status:
-            if SCREEN_RESOLUTION[0] == WIDTH:
-                cv2.imshow(DISPLAY_WINDOW_NAME, cam_obj.frame)
-            else:
-                tmp_frame = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
-                cv2.imshow(DISPLAY_WINDOW_NAME, tmp_frame)
-    elif which_display == -2:
-        # Show all 4 cameras on one screen (downsized 2x)
-        for index, elt in enumerate(cam_array):
-            if elt is not None and elt.frame is not None:
-                # Downsize
-                subframes[index] = cv2.resize(elt.frame, SCREEN_RESOLUTION_INSET)
+    pendingActionVar = PendingAction.Nothing
 
-        # Concatenate 4 images into 1
-        im_top = cv2.hconcat([subframes[0], subframes[1]])
-        im_bot = cv2.hconcat([subframes[2], subframes[3]])
-        cv2.imshow(DISPLAY_WINDOW_NAME, cv2.vconcat([im_top, im_bot]))
+    def onKeyPress(self, event):
+        print(event.char)
+        if event.char == 'q':
+            self.close()
 
-    frame_count = frame_count + 1
+    pendingActionCamera = -1
+    pendingActionID = ""
 
-    if frame_count < 0:
-        # First couple of frames are slow due to launching of display window, so skip fps calculation.
-        # Short 40ms sleep to force camera frames to sync up. Camera requires 33ms to generate new
-        # frame, so this guarantees frame will be present when we next request it.
-        time.sleep(.04)
-        continue
+    def __init__(self, _cam_array):
 
-    if frame_count == 0:
-        # Now that the first few frames are done, we can start timer and should get stable FPS readings
-        # Another 40ms sleep to ensure frame is present
-        time.sleep(.04)
-        start = time.time()
+        self.root = Tk()
+        self.root.bind('<KeyPress>', self.onKeyPress)
+        self.canvas = tkinter.Canvas(self.root, width=SCREEN_RESOLUTION[0], height=SCREEN_RESOLUTION[1])
+        self.canvas.pack()
 
-        # This is actually target time for the frame AFTER the next, since the next one will be read immediately
-        next_frame = start + FRAME_INTERVAL
-        continue
+        b_list = [
+            ("Close", self.close),
+        ]
 
-    # Check if any key has been pressed.
-    if platform.system() == "Linux":
-        key = cv2.waitKey(1)
-    elif platform.system() == "Windows":
-        # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
-        key = cv2.waitKeyEx(1)
+        for x in b_list:
+            tk.Button(self.root, text=x[0], command=x[1]).pack(side=tk.BOTTOM)
 
-    if (key & 0xFF) != 255:
-        key2 = key >> 16  # On Windows, arrow keys are encoded here
-        key1 = (key >> 8) & 0xFF  # This always seems to be 0
-        key = key & 0xFF  # On Raspberry Pi, arrow keys are coded here along with all other keys
+        self.cam_array = _cam_array
 
-        # check for 'q' key-press
-        if key == ord("q"):
-            # if 'q' key-pressed break out
-            break
+        self.frame_count = 0
 
-        if platform.system() == "Linux":
-            # Raspberry Pi encodes arrow keys in lowest byte
-            isLeftArrow = key == 81
-            isRightArrow = key == 83
-        elif platform.system() == "Windows":
-            # Windows encodes arrow keys in highest byte
-            isLeftArrow = key2 == 37
-            isRightArrow = key2 == 39
+        self.FRAME_INTERVAL = 1.0 / FRAME_RATE_PER_SECOND
+
+        # Report status every 30 seconds
+        self.STATUS_REPORT_INTERVAL = FRAME_RATE_PER_SECOND * 30
+
+        # Which camera to display initially. User can change this later with arrow keys.
+        #
+        # -2 shows all 4 cameras in a 2x2 grid
+        # -1 turns off display
+        #  0 shows whatever is plugged into top left USB port
+        #  1 shows top right USB port camera
+        #  2 shows bottom left USB port camera
+        #  3 shows bottom right USB port camera
+        self.which_display = -2
+        if num_cameras_found == 1:
+            # If exactly one camera found, then show that one to start
+            for c in _cam_array:
+                if c is None or c.cam is None:
+                    continue
+                if c.order >= 0:
+                    self.which_display = c.order - FIRST_CAMERA_ID
+                    break
+
+        self.root.after(0, self.main_loop)
+
+    def options_done(self):
+        self.w.destroy()
+        self.pendingActionVar = self.PendingAction.Quit
+
+    def close(self):
+
+        w = tk.Toplevel(self.root)
+        w.title("Select")
+
+        f = tk.Frame(w, highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
+        f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
+
+        l1 = tk.Label(f, text="quit?", anchor="e", justify=tk.RIGHT)
+        l1.pack(side=tk.TOP)
+
+        b = tk.Button(f, text="OK", command=self.options_done)
+        b.pack(padx=15, pady=10, ipadx=20, ipady=10)
+
+        self.w = w
+        return
+
+    # Print message indicating which camera is displaying to screen.
+    def print_current_display_id(self):
+        if self.which_display == -1:
+            print("TURNING OFF CAMERA DISPLAY.")
+            cv2.imshow(DISPLAY_WINDOW_NAME, INSTRUCTION_FRAME)
+            return
+
+        if self.which_display == -2:
+            print("Multi-frame display")
+            return
+
+        cam = cam_array[self.which_display]
+        cam_position = cam.order
+        if cam is None or cam.cam is None:
+            print(f"Camera in position {cam_position} is disconnected")
+            if cam is not None:
+                # Show the blank frame now, since it will not be updated in timer loop.
+                # Otherwise we will see leftover image from last good camera
+                cv2.imshow(DISPLAY_WINDOW_NAME, cam.frame)
         else:
-            isLeftArrow = False
-            isRightArrow = False
+            print(f"Showing camera {cam_position}")
 
-        if isLeftArrow:  # Left arrow key
-            which_display -= 1
-            if which_display < -2:
-                which_display = len(cam_array) - 1
-            print_current_display_id()
-        elif isRightArrow:  # Right arrow key
-            which_display += 1
-            if which_display >= len(cam_array):
-                which_display = -2
-            print_current_display_id()
-        elif DEBUG and key == ord("d"):
-            # Special debugging keystroke that toggles DEBUG TTL measurement mode
-            for cam_obj in cam_array:
-                if cam_obj is not None:
-                    if cam_obj.TTL_mode == cam_obj.TTL_type.Normal:
-                        cam_obj.TTL_mode = cam_obj.TTL_type.Debug
-                        printt(f'Entering DEBUG TTL mode for camera {cam_obj.order}')
-                    elif cam_obj.TTL_mode == cam_obj.TTL_type.Debug:
-                        cam_obj.TTL_mode = cam_obj.TTL_type.Normal
-                        printt(f'Exiting DEBUG TTL mode for camera {cam_obj.order}')
-        elif key == ord("w"):
-            # Write JPG images for each camera
-            for cam_obj in cam_array:
-                if cam_obj.cam is not None:
-                    if cam_obj.cam.isOpened():
-                        cam_obj.take_snapshot()
-        elif ord("0") <= key <= ord("9"):
-            # Start/stop recording for specified camera
-            cam_num = key - ord("0")
-            cam_idx = cam_num - FIRST_CAMERA_ID
-            if cam_idx >= len(cam_array):
-                print(f"Camera number {cam_num} does not exist, won't record.")
-            else:
-                cam_obj = cam_array[cam_idx]
-                if cam_obj is None:
-                    print(f"Camera number {cam_num} not found, won't record.")
+    def start_make_pending(self, cam_num, animal_id):
+        self.pendingActionVar = self.PendingAction.StartRecord
+        self.pendingActionCamera = cam_num
+        self.pendingActionID = animal_id
+
+    def main_loop(self):
+
+        # Camera frame is read at the very beginning of loop. At the end of the loop, is a timer
+        # that waits until 1/FRAME_RATE_PER_SECOND seconds after previous frame target, forcing all
+        # cameras to sync up at this interval.
+
+        for idx, cam_obj in enumerate(self.cam_array):
+            # Read camera frame
+            cam_obj.read()
+
+            if cam_obj.status:
+                # Add text to top left to show camera number. This will NOT show in recording
+                cv2.putText(cam_obj.frame, str(FIRST_CAMERA_ID + idx),
+                            (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
+                            cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
+                            round(FONT_SCALE + 0.5))  # Line thickness
+                if cam_obj.IsRecording:
+                    # Add red circle if recording. Again, this does not show in recorded file.
+                    cv2.circle(cam_obj.frame,
+                               (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
+                               int(8 * FONT_SCALE),  # Radius
+                               (0, 0, 255),     # Red dot (color is in BGR order)
+                               -1)   # -1 thickness fills circle
+
+        if self.which_display >= 0:
+            # Show just one of the 4 cameras
+            cam_obj = self.cam_array[self.which_display]
+            if cam_obj.status:
+                if SCREEN_RESOLUTION[0] == WIDTH:
+                    img = cam_obj.frame
                 else:
-                    if not cam_obj.IsRecording:
-                        if cam_obj.start_record():
-                            # Successfully started recording.
-#                            print(f"Started recording camera {cam_num}")
-                            pass  # We now notify user within the start_record() function itself.
-                        else:
-                            # Recording was attempted, but did not succeed. Usually this is
-                            # because of file error, or missing codec.
-                            print(f"Unable to start recording camera {cam_num}.")
+                    tmp_frame = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
+                    img = tmp_frame
+        elif self.which_display == -2:
+            # Show all 4 cameras on one screen (downsized 2x)
+            for index, elt in enumerate(self.cam_array):
+                if elt is not None and elt.frame is not None:
+                    # Downsize
+                    subframes[index] = cv2.resize(elt.frame, SCREEN_RESOLUTION_INSET)
+
+            # Concatenate 4 images into 1
+            im_top = cv2.hconcat([subframes[0], subframes[1]])
+            im_bot = cv2.hconcat([subframes[2], subframes[3]])
+            img = cv2.vconcat([im_top, im_bot])
+        else:
+            img = None
+
+        if img is not None:
+            # cv2.imshow(DISPLAY_WINDOW_NAME, img)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            photo_img = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(img))
+            self.canvas.create_image(0, 0, image=photo_img, anchor=tkinter.NW)
+
+#        self.root.update()
+
+        if self.pendingActionVar == self.PendingAction.Quit:
+            self.cleanup()
+            return
+
+        if self.frame_count == 0:
+            # Now that the first frame is done, we can start timer and should get stable FPS readings
+            # Another 40ms sleep to ensure frame is present
+            time.sleep(.04)
+            self.start = time.time()
+
+            # This is actually target time for the frame AFTER the next, since the next one will be read immediately
+            self.next_frame = self.start + self.FRAME_INTERVAL
+
+        self.frame_count = self.frame_count + 1
+
+        # Check if any key has been pressed.
+        if platform.system() == "Linux":
+            key = cv2.waitKey(1)
+        elif platform.system() == "Windows":
+            # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
+            key = cv2.waitKeyEx(1)
+
+        if (key & 0xFF) != 255:
+            key2 = key >> 16  # On Windows, arrow keys are encoded here
+            key1 = (key >> 8) & 0xFF  # This always seems to be 0
+            key = key & 0xFF  # On Raspberry Pi, arrow keys are coded here along with all other keys
+
+            # check for 'q' key-press
+            if key == ord("q"):
+                # if 'q' key-pressed break out
+                self.close()
+
+            if platform.system() == "Linux":
+                # Raspberry Pi encodes arrow keys in lowest byte
+                isLeftArrow = key == 81
+                isRightArrow = key == 83
+            elif platform.system() == "Windows":
+                # Windows encodes arrow keys in highest byte
+                isLeftArrow = key2 == 37
+                isRightArrow = key2 == 39
+            else:
+                isLeftArrow = False
+                isRightArrow = False
+
+            if isLeftArrow:  # Left arrow key
+                self.which_display -= 1
+                if self.which_display < -2:
+                    self.which_display = len(cam_array) - 1
+                self.print_current_display_id()
+            elif isRightArrow:  # Right arrow key
+                self.which_display += 1
+                if self.which_display >= len(cam_array):
+                    self.which_display = -2
+                self.print_current_display_id()
+            elif DEBUG and key == ord("d"):
+                # Special debugging keystroke that toggles DEBUG TTL measurement mode
+                for cam_obj in cam_array:
+                    if cam_obj is not None:
+                        if cam_obj.TTL_mode == cam_obj.TTL_type.Normal:
+                            cam_obj.TTL_mode = cam_obj.TTL_type.Debug
+                            printt(f'Entering DEBUG TTL mode for camera {cam_obj.order}')
+                        elif cam_obj.TTL_mode == cam_obj.TTL_type.Debug:
+                            cam_obj.TTL_mode = cam_obj.TTL_type.Normal
+                            printt(f'Exiting DEBUG TTL mode for camera {cam_obj.order}')
+            elif key == ord("w"):
+                # Write JPG images for each camera
+                for cam_obj in self.cam_array:
+                    if cam_obj.cam is not None:
+                        if cam_obj.cam.isOpened():
+                            cam_obj.take_snapshot()
+            elif ord("0") <= key <= ord("9"):
+                # Start/stop recording for specified camera
+                cam_num = key - ord("0")
+                cam_idx = cam_num - FIRST_CAMERA_ID
+                if cam_idx >= len(self.cam_array):
+                    print(f"Camera number {cam_num} does not exist, won't record.")
+                else:
+                    cam_obj = self.cam_array[cam_idx]
+                    if cam_obj is None:
+                        print(f"Camera number {cam_num} not found, won't record.")
                     else:
-                        cam_obj.stop_record()
+                        if not cam_obj.IsRecording:
 
-        elif key != 255:
-            print(f"You pressed: {key}")
+                            # Query user for animal ID
+                            a = StringVar()
+                            Label(self.root, text='Enter animal ID').pack()
+                            Entry(self.root, textvariable=a).pack()
+                            Button(self.root, text='Ok',
+                                   command=lambda: self.start_make_pending(cam_num, a.get())).pack()
 
-    if frame_count % STATUS_REPORT_INTERVAL == 0:
-        # Print status periodically (frame # and frames per second)
-        if VERBOSE:
-            elapsed = time.time() - start
-            fps = frame_count / elapsed
-            print(f"Frame count: {frame_count}, frames per second = {fps}")
+                        else:
+                            res = mb.askyesno('Stop?', f'Stop recording camera {cam_num}?')
+                            if res:
+                                cam_obj.stop_record()
 
+            elif key != 255:
+                print(f"You pressed: {key}")
+
+        if self.pendingActionVar == self.PendingAction.StartRecord:
+            cam_num = self.pendingActionCamera
+            cam_obj = self.cam_array[cam_num]
+            if cam_obj.start_record():
+                # Successfully started recording.
+                #                            print(f"Started recording camera {cam_num}")
+                pass  # We now notify user within the start_record() function itself.
+            else:
+                # Recording was attempted, but did not succeed. Usually this is
+                # because of file error, or missing codec.
+                print(f"Unable to start recording camera {cam_num}.")
+            self.pendingActionVar = self.PendingAction.Nothing
+
+        if self.frame_count % self.STATUS_REPORT_INTERVAL == 0:
+            # Print status periodically (frame # and frames per second)
+            if VERBOSE:
+                elapsed = time.time() - self.start
+                fps = self.frame_count / elapsed
+                print(f"Frame count: {self.frame_count}, frames per second = {fps}")
+
+                if any_camera_recording(cam_array):
+                    print("Camera recording status:")
+                    for x in cam_array:
+                        # Print elapsed time for each camera that is actively recording.
+                        if x is not None and x.cam is not None:
+                            if x.IsRecording:
+                                x.print_elapsed()
+
+        if time.time() > self.next_frame + 20:
+            # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
+            lag_ms = (time.time() - self.next_frame) * 1000
             if any_camera_recording(cam_array):
-                print("Camera recording status:")
-                for x in cam_array:
-                    # Print elapsed time for each camera that is actively recording.
-                    if x is not None and x.cam is not None:
-                        if x.IsRecording:
-                            x.print_elapsed()
+                printt(f"Warning: at frame {self.frame_count}, CPU lag {lag_ms:.2f} ms. Might drop up to {int(math.ceil(lag_ms/100))} frame(s).")
 
-    if time.time() > next_frame + 20:
-        # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
-        lag_ms = (time.time() - next_frame) * 1000
-        if any_camera_recording(cam_array):
-            printt(f"Warning: at frame {frame_count}, CPU lag {lag_ms:.2f} ms. Might drop up to {int(math.ceil(lag_ms/100))} frame(s).")
+            # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
+            self.next_frame = time.time() + self.FRAME_INTERVAL
+            self.root.after(1, self.main_loop)
+        else:
+            # We are done with loop, but not ready to request next frame. Wait a bit.
+            advance_ms = (self.next_frame - time.time()) * 1000
 
-        # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
-        next_frame = time.time() + FRAME_INTERVAL
-    else:
-        # We are done with loop, but not ready to request next frame. Wait a bit.
-        advance_ms = (next_frame - time.time()) * 1000
-        
-        if advance_ms > 0:        
-            # print("CPU is ahead by " + f"{advance_ms:.2f}" + " ms")
-            # Wait until next frame interval has elapsed
-            while time.time() < next_frame:
-                if next_frame - time.time() > 0.005:
-                    # Sleep in 5ms increments to reduce CPU usage. Otherwise this
-                    # loop will hog close to 100% CPU
-                    time.sleep(0.005)
-                pass
+            # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
+            self.next_frame += self.FRAME_INTERVAL
 
-        # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
-        next_frame += FRAME_INTERVAL
-        
+            if advance_ms < 0:
+                advance_ms = 1
 
-# All done. Close up windows and files
-cv2.destroyAllWindows()
-for cam_obj in cam_array:
-    if cam_obj is None:
-        continue
-    cam_obj.stop_record()
+            self.root.after(int(advance_ms), self.main_loop)
 
-for cam_obj in cam_array:
-    if cam_obj is None:
-        continue
-    cam_obj.close()
+    def cleanup(self):
 
-printt("Exiting", close_file=True)
+        # All done. Close up windows and files
+        # cv2.destroyAllWindows()
+        for cam_obj in self.cam_array:
+            if cam_obj is None:
+                continue
+            cam_obj.stop_record()
+
+        for cam_obj in self.cam_array:
+            if cam_obj is None:
+                continue
+            cam_obj.close()
+
+        self.root.destroy()
+
+        printt("Exiting", close_file=True)
+
+
+rec_obj = RECORDER(cam_array)
+mainloop()
 
