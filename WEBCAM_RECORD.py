@@ -308,6 +308,7 @@ class RECORDER:
         self.root = tk.Tk()
         self.root.bind('<KeyPress>', self.onKeyPress)
         self.root.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
+        self.root.title("Pi5 Camera recorder")
 
         self.canvas = tkinter.Canvas(self.root, width=SCREEN_RESOLUTION[0], height=SCREEN_RESOLUTION[1])
         self.canvas.pack()
