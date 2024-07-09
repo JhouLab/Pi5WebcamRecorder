@@ -578,7 +578,7 @@ class RECORDER:
                         self.message_widget[idx].config(text="--")
 
         lag_ms = (time.time() - self.next_frame) * 1000
-        if lag_ms > 20:
+        if lag_ms > 50:
             # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
             if any_camera_recording(cam_array):
                 printt(
