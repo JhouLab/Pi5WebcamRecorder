@@ -313,6 +313,14 @@ class RECORDER:
         self.canvas = tkinter.Canvas(self.root, width=SCREEN_RESOLUTION[0], height=SCREEN_RESOLUTION[1])
         self.canvas.pack()
 
+        self.frame1 = tk.Frame(self.root, borderwidth=5)
+        self.frame1.pack(fill=tk.X)
+
+        self.message_widget = [None] * 4
+        for idx in range(4):
+            self.message_widget[idx] = tk.Label(self.frame1, text=f"", anchor=tk.W)
+            self.message_widget[idx].pack(fill=tk.X)
+
         b_list = [
             ("Close", self.show_quit_dialog),
         ]
@@ -515,21 +523,21 @@ class RECORDER:
 
         self.frame_count = self.frame_count + 1
 
-
-        if self.frame_count % self.STATUS_REPORT_INTERVAL == 0:
+        if self.frame_count % 10 == 0:
             # Print status periodically (frame # and frames per second)
             if VERBOSE:
                 elapsed = time.time() - self.start
                 fps = self.frame_count / elapsed
                 print(f"Frame count: {self.frame_count}, frames per second = {fps}")
 
-                if any_camera_recording(cam_array):
-                    print("Camera recording status:")
-                    for x in cam_array:
-                        # Print elapsed time for each camera that is actively recording.
-                        if x is not None and x.cam is not None:
-                            if x.IsRecording:
-                                x.print_elapsed()
+            if any_camera_recording(cam_array):
+                for idx, cam in enumerate(cam_array):
+                    # Print elapsed time for each camera that is actively recording.
+                    if cam.IsRecording:
+                        s = cam.print_elapsed()
+                        self.message_widget[idx].config(text=s)
+                    else:
+                        self.message_widget[idx].config(text="--")
 
         if time.time() > self.next_frame + 20:
             # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
