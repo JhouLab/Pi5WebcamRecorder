@@ -270,10 +270,10 @@ class RECORDER:
         else:
             isLeftArrow = False
             isRightArrow = False
-            if event.keycode == 37:
+            if event.keycode == 37 or event.keycode == 113:
                 # Left arrow
                 isLeftArrow = True
-            elif event.keycode == 39:
+            elif event.keycode == 39 or event.keycode == 114:
                 # Right arrow
                 isRightArrow = True
             else:
