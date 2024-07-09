@@ -705,6 +705,7 @@ class CamObj:
     def print_elapsed(self):
 
         str1 = f"   Camera {self.order} elapsed: " + self.get_elapsed_time_string()
+        return str1
 
     def get_elapsed_time_string(self):
 
