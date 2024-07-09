@@ -1,3 +1,4 @@
+from __future__ import annotations   # Need this for type hints to work on older Python versions
 import tkinter
 from typing import List
 import time
