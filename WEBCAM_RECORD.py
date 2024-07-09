@@ -474,6 +474,8 @@ class RECORDER:
                     img = cam_obj.frame
                 else:
                     img = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
+            else:
+                img = None
         elif self.which_display == -2:
             # Show all 4 cameras on one screen (downsized 2x)
             for index, elt in enumerate(self.cam_array):
