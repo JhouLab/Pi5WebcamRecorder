@@ -430,7 +430,7 @@ while True:
                         if x.IsRecording:
                             x.print_elapsed()
 
-    if time.time() > next_frame + 20:
+    if time.time() > next_frame + .050:
         # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
         lag_ms = (time.time() - next_frame) * 1000
         if any_camera_recording(cam_array):
