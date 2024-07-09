@@ -101,9 +101,13 @@ def setup_cam(id):
             print(f"MJPG not supported. Please edit code.")
         tmp.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
         tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+        fps = tmp.get(cv2.CAP_PROP_FPS)
         if not tmp.isOpened():
             print(f"Resolution {WIDTH}x{HEIGHT} not supported. Please change config.txt.")
-    return tmp
+    else:
+        fps = 0
+        
+    return tmp, fps
 
 
 def any_camera_recording(cam_list):
@@ -174,10 +178,11 @@ else:
     printt("Scanning for all available cameras. Please wait ...")
 
 num_cameras_found = 0
+min_fps = FRAME_RATE_PER_SECOND
 
 # Scan IDs to find cameras
 for cam_id in range(MAX_ID):
-    tmp = setup_cam(cam_id)
+    tmp, fps = setup_cam(cam_id)
     print(".", end="", flush=True)
     if tmp.isOpened():
         if IDENTIFY_CAMERA_BY_USB_PORT:
@@ -197,15 +202,16 @@ for cam_id in range(MAX_ID):
                 printt(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
                 continue
             cam_array[port] = CamObj(tmp, cam_id,
-                                     FIRST_CAMERA_ID + port, GPIO_pin=INPUT_PIN_LIST[port])
+                                     FIRST_CAMERA_ID + port, fps, GPIO_pin=INPUT_PIN_LIST[port])
             num_cameras_found += 1
         else:
             # If not using USB port number, then cameras are put into array
             # in the order they are discovered. This could be unpredictable, but at least
             # it will work, and won't crash. In this case, we also ignore GPIO pin list, since
             # recordings will need to be started and stopped manually.
-            cam_array.append(CamObj(tmp, cam_id, FIRST_CAMERA_ID + len(cam_array)))
+            cam_array.append(CamObj(tmp, cam_id, FIRST_CAMERA_ID + len(cam_array), fps))
             num_cameras_found += 1
+            
 
 print()
 
@@ -221,7 +227,7 @@ for idx, cam_obj in enumerate(cam_array):
         # No camera was found for this USB port position.
         # Create dummy camera object as placeholder, allowing a blank frame
         # to show.
-        cam_array[idx] = CamObj(None, -1, FIRST_CAMERA_ID + idx)
+        cam_array[idx] = CamObj(None, -1, FIRST_CAMERA_ID + idx, 0)
         continue
 
     if IDENTIFY_CAMERA_BY_USB_PORT:
@@ -230,6 +236,12 @@ for idx, cam_obj in enumerate(cam_array):
             omit_date_time=True)
     else:
         printt(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
+        
+    printt(f"    Frames per second: {cam_obj.max_fps}")
+    if cam_obj.max_fps < min_fps:
+        min_fps = cam_obj.max_fps
+
+FRAME_RATE_PER_SECOND = min_fps
 
 print()
 printt("Starting display")
@@ -565,9 +577,9 @@ class RECORDER:
                     else:
                         self.message_widget[idx].config(text="--")
 
-        if time.time() > self.next_frame + 20:
+        lag_ms = (time.time() - self.next_frame) * 1000
+        if lag_ms > 20:
             # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
-            lag_ms = (time.time() - self.next_frame) * 1000
             if any_camera_recording(cam_array):
                 printt(
                     f"Warning: CPU lag {lag_ms:.2f} ms. Might drop up to {int(math.ceil(lag_ms / 100))} frame(s).")

@@ -200,10 +200,11 @@ class CamObj:
     frames_to_mark_GPIO = 0    # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
 
-    def __init__(self, cam, id_num, order, GPIO_pin=-1):
+    def __init__(self, cam, id_num, order, max_fps, GPIO_pin=-1):
         self.cam = cam
         self.id_num = id_num
         self.order = order
+        self.max_fps = max_fps
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
