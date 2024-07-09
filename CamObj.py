@@ -8,11 +8,19 @@
 import os
 import numpy as np
 import time
+import datetime
 import platform
 import threading
 from sys import gettrace
 import configparser
 from enum import Enum
+
+USE_FFMPEG = False
+
+if USE_FFMPEG:
+    # Experimental feature ... I had hoped this would give more flexibility for saving greyscale to
+    # reduce file sizes. But haven't figured out how to make it work with greyscale.
+    import ffmpeg      # Need to install ffmpeg-python from Karl Kroening
 
 if platform.system() == "Linux":
     import RPi.GPIO as GPIO
@@ -22,12 +30,10 @@ os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when ca
 # This returns true if you ran the program in debug mode from the IDE
 DEBUG = gettrace() is not None
 
-# Must install OpenCV.
+# OpenCV install instructions:
 #
-# On Pi5, instructions for installing OpenCV are here:
-#   https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
-#
-#   The following two lines worked for me on Pi5:
+# On Pi5, look here: https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
+#     This is what worked for me:
 #     sudo apt-get install libopencv-dev
 #     sudo apt-get install python3-opencv
 # 
@@ -43,7 +49,6 @@ import cv2
 
 # If true, will print extra diagnostics, such as GPIO on/off times and consecutive TTL counter
 VERBOSE = False
-
 
 configParser = configparser.RawConfigParser()
 configFilePath = r'config.txt'
@@ -71,14 +76,12 @@ else:
 
 NUM_TTL_PULSES_TO_START_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_START_SESSION', fallback=2)
 NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=3)
+RECORD_COLOR = configParser.getint('options', 'RECORD_COLOR', fallback=1)
 
 # Number of seconds to discriminate between binary 0 and 1
 BINARY_BIT_PULSE_THRESHOLD = 0.05
 
 FONT_SCALE = HEIGHT / 480
-
-
-import datetime
 
 
 def get_date_string():
@@ -144,7 +147,6 @@ def printt(txt, omit_date_time=False, close_file=False):
             fid_log.close()
     except:
         pass
-
 
 
 class CamObj:
@@ -458,6 +460,18 @@ class CamObj:
                 animal_ID = f"Cam{self.order}"
         return get_date_string() + "_" + animal_ID
 
+    def save_video(self, saving_file_name, fps):
+
+        process = (
+            ffmpeg
+            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'.format(WIDTH, HEIGHT))
+            .output(saving_file_name, pix_fmt='yuv420p', vcodec='libx264', r=fps, crf=28)  # Lower CRF values give better quality. Valid range is 1-51
+            .overwrite_output()
+            .run_async(pipe_stdin=True)
+        )
+
+        return process
+
     def start_record(self, animal_ID=None):
 
         if self.cam is None or not self.cam.isOpened():
@@ -478,15 +492,23 @@ class CamObj:
 
                 try:
                     # Create video file
-                    self.Writer = cv2.VideoWriter(self.filename, self.codec, FRAME_RATE_PER_SECOND, self.resolution)
+                    if USE_FFMPEG:
+                        self.process = self.save_video(self.filename, FRAME_RATE_PER_SECOND)
+                    else:
+                        self.Writer = cv2.VideoWriter(self.filename,
+                                                      self.codec,
+                                                      FRAME_RATE_PER_SECOND,
+                                                      self.resolution,
+                                                      RECORD_COLOR)
                 except:
                     print(f"Warning: unable to create video file: '{self.filename}'")
                     return False
 
-                if not self.Writer.isOpened():
-                    # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
-                    print(f"Warning: unable to create video file: '{self.filename}'")
-                    return False
+                if not USE_FFMPEG:
+                    if not self.Writer.isOpened():
+                        # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
+                        print(f"Warning: unable to create video file: '{self.filename}'")
+                        return False
 
                 try:
                     # Create text file for frame timestamps
@@ -538,13 +560,18 @@ class CamObj:
                 self.IsRecording = False
                 printt(f"Stopping recording camera {self.order} after " + self.get_elapsed_time_string())
 
+                # Close Video file
+                if USE_FFMPEG:
+                    self.process.stdin.close()
+                    self.process.wait()
+
             if self.Writer is not None:
                 try:
-                    # Close Video file
                     self.Writer.release()
                 except:
                     pass
                 self.Writer = None
+
             if self.fid is not None:
                 try:
                     # Close text timestamp file
@@ -632,8 +659,10 @@ class CamObj:
                             cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
                             round(FONT_SCALE + 0.5))  # Line thickness
 
+            if not RECORD_COLOR and self.frame is not None:
+                self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
 
-            if self.Writer is not None and self.frame is not None and self.IsRecording:
+            if self.frame is not None and self.IsRecording:
                 if self.fid is not None and self.start_time > 0:
                     # Write timestamp to text file. Do this before writing AVI so that
                     # timestamp will not be delayed by latency required to compress video. This
@@ -648,10 +677,20 @@ class CamObj:
 
                 self.frame_num += 1
 
-                if self.Writer is not None:
+                if self.IsRecording:
                     try:
                         # Write frame to AVI video file if possible
-                        self.Writer.write(self.frame)
+                        if USE_FFMPEG:
+                            if RECORD_COLOR:
+                                self.process.stdin.write(
+                                    cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
+                                    .astype(np.uint8)
+                                    .tobytes()
+                                )
+                            else:
+                                self.process.stdin.write(self.frame.astype(np.uint8).tobytes())
+                        else:
+                            self.Writer.write(self.frame)
                     except:
                         print(f"Unable to write video file for camera {self.order}. Will stop recording")
                         self.stop_record()
