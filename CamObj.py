@@ -19,8 +19,10 @@ USE_FFMPEG = False
 
 if USE_FFMPEG:
     # Experimental feature ... I had hoped this would give more flexibility for saving greyscale to
-    # reduce file sizes. But haven't figured out how to make it work with greyscale.
-    import ffmpeg      # Need to install ffmpeg-python from Karl Kroening
+    # reduce file sizes. But haven't figured out how to make it work with greyscale, and haven't figured
+    # out how to install on Raspberry Pi. Note also that ffmpeg-python is just a wrapper for ffmpeg,
+    # which must already be installed separately. This isn't worth the trouble, it should probably go away.
+    import ffmpeg      # On Pycharm/Windows, install ffmpeg-python from Karl Kroening.
 
 if platform.system() == "Linux":
     import RPi.GPIO as GPIO
