@@ -1,7 +1,10 @@
 import tkinter
 from typing import List
 import time
+import platform
 
+# On Raspberry pi, need to type:
+# sudo apt-get install python3-pil.imagetk
 from PIL import Image, ImageTk  # Need to import pillow from Jeffrey A. Clark
 import numpy as np
 import math
@@ -350,7 +353,8 @@ class RECORDER:
         w.title("Confirm?")
 
         w.resizable(False, False)  # Remove maximize button
-        w.attributes("-toolwindow", True)  # Remove minimize button
+        if platform.system() == "Windows":
+            w.attributes("-toolwindow", True)  # Remove minimize button
 
         f = tk.Frame(w)  # , highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
         f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
@@ -402,7 +406,8 @@ class RECORDER:
         w.title("Start recording?")
 
         w.resizable(False, False)  # Remove maximize button
-        w.attributes("-toolwindow", True)  # Remove minimize button
+        if platform.system() == "Windows":
+            w.attributes("-toolwindow", True)  # Remove minimize button
 
         f = tk.Frame(w)  # , highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
         f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
