@@ -426,6 +426,7 @@ class RECORDER:
         self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
 
         cv2.namedWindow(DISPLAY_WINDOW_NAME)  # Create a named window
+        cv2.imshow(DISPLAY_WINDOW_NAME, make_blank_frame(""))  # Must show something or else moveWindow fails on Pi
         cv2.moveWindow(DISPLAY_WINDOW_NAME, 20, 220)  # Start video in top left, below control bar
 
         self.update_image()
