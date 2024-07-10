@@ -3,13 +3,14 @@ import tkinter
 from typing import List
 import time
 import platform
+import os
 
 # On Raspberry pi, need to type:
 # sudo apt-get install python3-pil.imagetk
 from PIL import Image, ImageTk  # Need to import pillow from Jeffrey A. Clark
 import numpy as np
 import math
-from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt
+from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt, DATA_FOLDER
 from get_hardware_info import *
 import cv2
 from sys import gettrace
@@ -100,9 +101,13 @@ def setup_cam(id):
             print(f"MJPG not supported. Please edit code.")
         tmp.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
         tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+        fps = tmp.get(cv2.CAP_PROP_FPS)
         if not tmp.isOpened():
             print(f"Resolution {WIDTH}x{HEIGHT} not supported. Please change config.txt.")
-    return tmp
+    else:
+        fps = 0
+        
+    return tmp, fps
 
 
 def any_camera_recording(cam_list):
@@ -173,10 +178,11 @@ else:
     printt("Scanning for all available cameras. Please wait ...")
 
 num_cameras_found = 0
+min_fps = FRAME_RATE_PER_SECOND
 
 # Scan IDs to find cameras
 for cam_id in range(MAX_ID):
-    tmp = setup_cam(cam_id)
+    tmp, fps = setup_cam(cam_id)
     print(".", end="", flush=True)
     if tmp.isOpened():
         if IDENTIFY_CAMERA_BY_USB_PORT:
@@ -196,15 +202,16 @@ for cam_id in range(MAX_ID):
                 printt(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
                 continue
             cam_array[port] = CamObj(tmp, cam_id,
-                                     FIRST_CAMERA_ID + port, GPIO_pin=INPUT_PIN_LIST[port])
+                                     FIRST_CAMERA_ID + port, fps, GPIO_pin=INPUT_PIN_LIST[port])
             num_cameras_found += 1
         else:
             # If not using USB port number, then cameras are put into array
             # in the order they are discovered. This could be unpredictable, but at least
             # it will work, and won't crash. In this case, we also ignore GPIO pin list, since
             # recordings will need to be started and stopped manually.
-            cam_array.append(CamObj(tmp, cam_id, FIRST_CAMERA_ID + len(cam_array)))
+            cam_array.append(CamObj(tmp, cam_id, FIRST_CAMERA_ID + len(cam_array), fps))
             num_cameras_found += 1
+            
 
 print()
 
@@ -220,7 +227,7 @@ for idx, cam_obj in enumerate(cam_array):
         # No camera was found for this USB port position.
         # Create dummy camera object as placeholder, allowing a blank frame
         # to show.
-        cam_array[idx] = CamObj(None, -1, FIRST_CAMERA_ID + idx)
+        cam_array[idx] = CamObj(None, -1, FIRST_CAMERA_ID + idx, 0)
         continue
 
     if IDENTIFY_CAMERA_BY_USB_PORT:
@@ -229,6 +236,17 @@ for idx, cam_obj in enumerate(cam_array):
             omit_date_time=True)
     else:
         printt(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
+        
+    printt(f"    Frames per second: {cam_obj.max_fps}")
+    if cam_obj.max_fps < min_fps:
+        # Should issue warning here ...
+        min_fps = cam_obj.max_fps
+
+# Lower frame rate to whatever is the lowest of all 4 cameras.
+FRAME_RATE_PER_SECOND = min_fps
+
+# Can use either canvas or Label object to display frame in Tkinter. Let's see which one is faster.
+USE_LABEL = True
 
 print()
 printt("Starting display")
@@ -239,7 +257,6 @@ class RECORDER:
         Nothing = 0
         StartRecord = 1
         EndRecord = 2
-        Quit = 3
         DebugMode = 4
 
     pendingActionVar = PendingAction.Nothing
@@ -310,8 +327,32 @@ class RECORDER:
         self.root.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
         self.root.title("Pi5 Camera recorder")
 
-        self.canvas = tkinter.Canvas(self.root, width=SCREEN_RESOLUTION[0], height=SCREEN_RESOLUTION[1])
-        self.canvas.pack()
+        if USE_LABEL:
+            frame_label = tk.Frame(self.root)
+            frame_label.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+            
+            self.label = tk.Label(self.root)
+            self.label.pack()
+        else:
+            frame_canvas = tk.Frame(self.root, borderwidth=1, relief='solid')
+            frame_canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+
+            self.canvas = tkinter.Canvas(frame_canvas, width=SCREEN_RESOLUTION[0], height=SCREEN_RESOLUTION[1])
+            self.canvas.pack()
+
+        # Frame1 goes below canvas, and holds status and control buttons
+        frame1 = tk.Frame(self.root)  # , borderwidth=1, relief="solid")
+        frame1.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Frame2 holds status labels
+        frame2 = tk.Frame(frame1, borderwidth=1, relief="solid")
+        frame2.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
+
+        # Add four status lines, one for each camera
+        self.message_widget = [None] * 4
+        for idx in range(4):
+            self.message_widget[idx] = tk.Label(frame2, text=f"", anchor=tk.W)
+            self.message_widget[idx].pack(fill=tk.X)
 
         self.frame1 = tk.Frame(self.root, borderwidth=5)
         self.frame1.pack(fill=tk.X)
@@ -322,11 +363,14 @@ class RECORDER:
             self.message_widget[idx].pack(fill=tk.X)
 
         b_list = [
-            ("Close", self.show_quit_dialog),
+            ("         Close        ", self.show_quit_dialog),
+            ("Browse data folder", self.browse_data_folder),
         ]
 
         for _b in b_list:
-            tk.Button(self.root, text=_b[0], command=_b[1]).pack(side=tk.BOTTOM)
+            # Using tk.RIGHT causes buttons to "stick" to the right edge, and won't get
+            # squished if window is resized.
+            tk.Button(frame1, text=_b[0], command=_b[1]).pack(side=tk.RIGHT, ipadx=5, ipady=5)
 
         self.cam_array = _cam_array
 
@@ -352,17 +396,34 @@ class RECORDER:
                     self.which_display = c.order - FIRST_CAMERA_ID
                     break
 
+        # Force window to show, so we can get width/height
+        self.root.update()
+
+        # Set min window size, to prevent too much squashing of components
+        self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
+
         self.update_image()
+
+    def browse_data_folder(self):
+        p = platform.system()
+        if p == "Windows":
+            os.startfile(DATA_FOLDER)
+        elif p == "Linux":
+            os.system("pcmanfm \"%s\"" % DATA_FOLDER)
 
     def confirm_quit(self, widget, value):
         widget.destroy()
         if value:
-            self.pendingActionVar = self.PendingAction.Quit
+            self.root.after(0, self.cleanup)
 
     def show_quit_dialog(self):
 
+        if not any_camera_recording(self.cam_array):
+            self.root.after(0, self.cleanup)
+            return
+
         w = tk.Toplevel(self.root)
-        w.title("Confirm?")
+        w.title("Are you sure?")
 
         w.resizable(False, False)  # Remove maximize button
         if platform.system() == "Windows":
@@ -371,25 +432,37 @@ class RECORDER:
         f = tk.Frame(w)  # , highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
         f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
 
-        l1 = tk.Label(f, text="Confirm quit?", anchor="e", justify=tk.RIGHT)
+        l1 = tk.Label(f, text="Camera(s) still recording. Quitting will end recordings.", anchor="e", justify=tk.RIGHT)
         l1.pack(side=tk.TOP)
 
-        b = tk.Button(f, text="OK", command=partial(self.confirm_quit, w, True))
+        f1 = tk.Frame(w)
+        f1.pack(side=tk.TOP)
+
+        b = tk.Button(f1, text="   OK   ", command=partial(self.confirm_quit, w, True))
         b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
         b.focus_set()
-        b = tk.Button(f, text="Cancel", command=partial(self.confirm_quit, w, False))
-        b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
+        b = tk.Button(f1, text="Cancel", command=partial(self.confirm_quit, w, False))
+        b.pack(padx=5, pady=5, ipadx=5, ipady=5, side=tk.LEFT)
         return
 
     def imshow(self, img):
         if img is None:
             return
 
-        # cv2.imshow(DISPLAY_WINDOW_NAME, img)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # cv2.imshow(DISPLAY_WINDOW_NAME, img)   # This is very fast, but not compatible with Tk windows
+        
         # photo_img must be class variable, as it needs to persist after method returns
-        self.photo_img = ImageTk.PhotoImage(image=Image.fromarray(img))
-        self.canvas.create_image(0, 0, image=self.photo_img, anchor=tkinter.NW)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # This takes <1ms usually
+        self.photo_img = ImageTk.PhotoImage(image=Image.fromarray(img))   # This takes 6-7ms usually
+        t1 = time.time()
+        
+        # Both label and canvas options take about 30-45ms on average. Yikes.
+        if USE_LABEL:
+            self.label.configure(image=self.photo_img)
+        else:
+            self.canvas.create_image(0, 0, image=self.photo_img, anchor=tkinter.NW)
+        t2 = time.time() - t1
+        print(t2)
 
     # Print message indicating which camera is displaying to screen.
     def print_current_display_id(self):
@@ -433,7 +506,7 @@ class RECORDER:
 
         e.bind('<Return>', partial(self.confirm_start, w, cam_num, s, True))
 
-        b = tk.Button(f, text="OK", command=partial(self.confirm_start, w, cam_num, s, True, None))
+        b = tk.Button(f, text="    OK    ", command=partial(self.confirm_start, w, cam_num, s, True, None))
         b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
         b.focus_set()
         b = tk.Button(f, text="Cancel", command=partial(self.confirm_start, w, cam_num, s, False, None))
@@ -451,10 +524,6 @@ class RECORDER:
         self.pendingActionCamera = cam_num - FIRST_CAMERA_ID
 
     def update_image(self):
-
-        # Camera frame is read at the very beginning of loop. At the end of the loop, is a timer
-        # that waits until 1/FRAME_RATE_PER_SECOND seconds after previous frame target, forcing all
-        # cameras to sync up at this interval.
 
         for idx, cam_obj in enumerate(self.cam_array):
             # Read camera frame
@@ -500,10 +569,7 @@ class RECORDER:
 
         self.imshow(img)
 
-        if self.pendingActionVar == self.PendingAction.Quit:
-            self.cleanup()
-            return
-        elif self.pendingActionVar == self.PendingAction.StartRecord:
+        if self.pendingActionVar == self.PendingAction.StartRecord:
             cam_num = self.pendingActionCamera
             cam_obj = self.cam_array[cam_num]
             if not cam_obj.start_record(self.pendingActionID):
@@ -539,12 +605,12 @@ class RECORDER:
                     else:
                         self.message_widget[idx].config(text="--")
 
-        if time.time() > self.next_frame + 20:
+        lag_ms = (time.time() - self.next_frame) * 1000
+        if lag_ms > 50:
             # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
-            lag_ms = (time.time() - self.next_frame) * 1000
             if any_camera_recording(cam_array):
                 printt(
-                    f"Warning: at frame {self.frame_count}, CPU lag {lag_ms:.2f} ms. Might drop up to {int(math.ceil(lag_ms / 100))} frame(s).")
+                    f"Warning: CPU lag {lag_ms:.2f} ms. Might drop up to {int(math.ceil(lag_ms / 100))} frame(s).")
 
             # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
             self.next_frame = time.time() + self.FRAME_INTERVAL
@@ -563,6 +629,8 @@ class RECORDER:
 
     def cleanup(self):
 
+        self.root.destroy()
+
         # All done. Close up windows and files
         # cv2.destroyAllWindows()
         for cam_obj in self.cam_array:
@@ -574,8 +642,6 @@ class RECORDER:
             if cam_obj is None:
                 continue
             cam_obj.close()
-
-        self.root.destroy()
 
         printt("Exiting", close_file=True)
 
