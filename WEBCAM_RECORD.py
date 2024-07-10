@@ -350,6 +350,7 @@ class RECORDER:
         b_list = [
             ("         Close        ", self.show_quit_dialog),
             ("Browse data folder", self.browse_data_folder),
+            ("Stop all recording", partial(self.show_stop_dialog, -1))
         ]
 
         for _b in b_list:
@@ -505,11 +506,25 @@ class RECORDER:
 
     def show_stop_dialog(self, cam_num):
 
-        cam_obj = self.cam_array[cam_num]
-        if cam_obj is not None and cam_obj.IsRecording:
-            res = mb.askyesno('Stop?', f'Stop recording camera {FIRST_CAMERA_ID + cam_num}?')
-            if res:
-                cam_obj.stop_record()
+        if cam_num < 0:
+            if any_camera_recording(self.cam_array):
+                res = mb.askyesno('Stop all recordings?', f'Stop recording all cameras?')
+                if res:
+                    for cam_obj in self.cam_array:
+                        if cam_obj is not None:
+                            cam_obj.stop_record()
+            else:
+                tk.messagebox.showinfo("Warning", "No cameras are recording")
+
+        else:
+            cam_obj = self.cam_array[cam_num]
+            if cam_obj is not None and cam_obj.IsRecording:
+                res = mb.askyesno('Stop?', f'Stop recording camera {FIRST_CAMERA_ID + cam_num}?')
+                if res:
+                    cam_obj.stop_record()
+            else:
+                tk.messagebox.showinfo("Warning", "Camera is not recording")
+
 
     def update_image(self):
 
