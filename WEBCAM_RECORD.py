@@ -1,13 +1,11 @@
 from __future__ import annotations   # Need this for type hints to work on older Python versions
-import tkinter
+
 from typing import List
 import time
-import platform
-import os
 
 # On Raspberry pi, need to type:
 # sudo apt-get install python3-pil.imagetk
-from PIL import Image, ImageTk  # Need to import pillow from Jeffrey A. Clark
+# from PIL import Image, ImageTk  # Need to import pillow from Jeffrey A. Clark
 import numpy as np
 import math
 from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space
@@ -18,7 +16,7 @@ from enum import Enum
 from functools import partial
 
 import tkinter as tk
-from tkinter import messagebox as mb
+from tkinter import messagebox
 
 # If true, will print extra diagnostics, such as a running frame count and FPS calculations
 VERBOSE = False
@@ -78,8 +76,9 @@ else:
     SCREEN_RESOLUTION_INSET = (WIDTH >> 1, HEIGHT >> 1)
 
 # Reading from webcam using MJPG generally allows higher frame rates
-USE_MJPG = (WIDTH > 640)
+# USE_MJPG = (WIDTH > 640)
 USE_MJPG = True
+
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
 # If not successful (i.e. if there is no camera plugged in with that ID), will throw exception,
@@ -225,25 +224,25 @@ else:
     printt(f"Found {num_cameras_found} cameras")
 
 # Report what was discovered
-for idx, cam_obj in enumerate(cam_array):
-    if cam_obj is None:
+for idx1, cam_obj1 in enumerate(cam_array):
+    if cam_obj1 is None:
         # No camera was found for this USB port position.
         # Create dummy camera object as placeholder, allowing a blank frame
         # to show.
-        cam_array[idx] = CamObj(None, -1, FIRST_CAMERA_ID + idx, 0)
+        cam_array[idx1] = CamObj(None, -1, FIRST_CAMERA_ID + idx1, 0)
         continue
 
     if IDENTIFY_CAMERA_BY_USB_PORT:
         printt(
-            f"Camera in USB port position {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num} and serial '{get_cam_serial(cam_obj.id_num)}'",
+            f"Camera in USB port position {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num} and serial '{get_cam_serial(cam_obj1.id_num)}'",
             omit_date_time=True)
     else:
-        printt(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
+        printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}", omit_date_time=True)
         
-    printt(f"    Frames per second: {cam_obj.max_fps}")
-    if 0 < cam_obj.max_fps < min_fps:
+    printt(f"    Frames per second: {cam_obj1.max_fps}")
+    if 0 < cam_obj1.max_fps < min_fps:
         # Should issue warning here ...
-        min_fps = cam_obj.max_fps
+        min_fps = cam_obj1.max_fps
 
 # Lower frame rate to whatever is the lowest of all 4 cameras.
 FRAME_RATE_PER_SECOND = min_fps
@@ -264,6 +263,7 @@ class RECORDER:
         PREV = -20
         NEXT = -10
         ALL = -2
+        INSTRUCTIONS = -1
 
     pendingActionVar = PendingAction.Nothing
 
@@ -297,7 +297,7 @@ class RECORDER:
                         self.show_start_record_dialog(cam_num)
 
                     else:
-                        res = mb.askyesno('Stop?', f'Stop recording camera {cam_num}?')
+                        res = messagebox.askyesno('Stop?', f'Stop recording camera {cam_num}?')
                         if res:
                             cam_obj.stop_record()
         else:
@@ -351,7 +351,7 @@ class RECORDER:
         frame2.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
 
         # Add up to four status lines, one for each camera
-        self.message_widget = [None] * 4
+        self.message_widget: List[tk.Label | None] = [None] * 4
         for idx in range(len(_cam_array)):
             cam_obj = _cam_array[idx]
             if cam_obj is None or cam_obj.cam is None:
@@ -372,7 +372,7 @@ class RECORDER:
         # frame3 holds buttons
         frame3 = tk.Frame(frame1)
         frame3.pack(side=tk.TOP, fill=tk.X, expand=True)
-        frame3.columnconfigure((0, 1, 2), weight=1, uniform=1)
+        frame3.columnconfigure("all", weight=1, uniform="1")
 
         b_list1 = [
             ("Show all cams", partial(self.change_cam, self.CAM_VALS.ALL)),
@@ -406,7 +406,7 @@ class RECORDER:
         # -2 shows all 4 cameras in a 2x2 grid
         # -1 turns off display
         #  0-3 show the 4 cameras, by USB port position
-        self.which_display = -2
+        self.which_display = self.CAM_VALS.ALL.value
         if num_cameras_found == 1:
             # If exactly one camera found, then show that one to start
             for c in _cam_array:
@@ -485,17 +485,14 @@ class RECORDER:
             if cam_num == self.CAM_VALS.NEXT:
                 self.which_display += 1
                 if self.which_display >= len(cam_array):
-                    self.which_display = -2
+                    self.which_display = self.CAM_VALS.INSTRUCTIONS.value
             elif cam_num == self.CAM_VALS.PREV:
                 self.which_display -= 1
-                if self.which_display < -2:
+                if self.which_display < self.CAM_VALS.INSTRUCTIONS.value:
                     self.which_display = len(cam_array) - 1
-            elif cam_num == self.CAM_VALS.ALL:
+            else:
                 # Convert from Enum type to integer
                 self.which_display = cam_num.value
-            else:
-                # Unrecognized Enum
-                return
         else:
             self.which_display = cam_num
 
@@ -503,12 +500,12 @@ class RECORDER:
 
     # Print message indicating which camera is displaying to screen.
     def print_current_display_id(self):
-        if self.which_display == -1:
+        if self.which_display == self.CAM_VALS.INSTRUCTIONS.value:
             print("TURNING OFF CAMERA DISPLAY.")
             self.imshow(INSTRUCTION_FRAME)
             return
 
-        if self.which_display == -2:
+        if self.which_display == self.CAM_VALS.ALL.value:
             print("Multi-frame display")
             return
 
@@ -574,7 +571,7 @@ class RECORDER:
 
         if cam_num < 0:
             if any_camera_recording(self.cam_array):
-                res = mb.askyesno('Stop all recordings?', f'Stop recording all cameras?')
+                res = messagebox.askyesno('Stop all recordings?', f'Stop recording all cameras?')
                 if res:
                     for cam_obj in self.cam_array:
                         if cam_obj is not None:
@@ -585,7 +582,7 @@ class RECORDER:
         else:
             cam_obj = self.cam_array[cam_num]
             if cam_obj is not None and cam_obj.IsRecording:
-                res = mb.askyesno('Stop?', f'Stop recording camera {FIRST_CAMERA_ID + cam_num}?')
+                res = messagebox.askyesno('Stop?', f'Stop recording camera {FIRST_CAMERA_ID + cam_num}?')
                 if res:
                     cam_obj.stop_record()
             else:
@@ -625,7 +622,7 @@ class RECORDER:
                     img = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
             else:
                 img = None
-        elif self.which_display == -2:
+        elif self.which_display == self.CAM_VALS.ALL.value:
             # Show all 4 cameras on one screen (downsized 2x)
             for index, elt in enumerate(self.cam_array):
                 if elt is not None and elt.frame is not None:
@@ -686,6 +683,7 @@ class RECORDER:
             self.handle_keypress(key, key >> 16, CV2KEY=True)
 
         if self.pendingActionVar == self.PendingAction.Exiting:
+            # Will this ever get executed? Only way would be if waitkey receives a character during self.imshow()
             self.cleanup()
             return
 
