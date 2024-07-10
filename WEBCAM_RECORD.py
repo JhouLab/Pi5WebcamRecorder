@@ -77,6 +77,9 @@ else:
     SCREEN_RESOLUTION = (WIDTH, HEIGHT)
     SCREEN_RESOLUTION_INSET = (WIDTH >> 1, HEIGHT >> 1)
 
+# Reading from webcam using MJPG generally allows higher frame rates
+USE_MJPG = (WIDTH > 640)
+USE_MJPG = True
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
 # If not successful (i.e. if there is no camera plugged in with that ID), will throw exception,
@@ -86,14 +89,14 @@ def setup_cam(id):
     if platform.system() == "Windows":
         tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
     else:
-        if WIDTH > 640:
+        if USE_MJPG:
             tmp = cv2.VideoCapture(id,
                                    cv2.CAP_V4L2)  # This is needed for MJPG mode to work, allowing higher frame rates
         else:
             tmp = cv2.VideoCapture(id)
 
     if tmp.isOpened():
-        if WIDTH > 640:
+        if USE_MJPG:
             # Higher resolutions are limited by USB transfer speeds to use lower frame rates.
             # Changing to MJPG roughly doubles the max frame rate, at some cost of CPU cycles
             tmp.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
@@ -246,7 +249,7 @@ for idx, cam_obj in enumerate(cam_array):
 FRAME_RATE_PER_SECOND = min_fps
 
 print()
-printt("Starting display")
+printt(f"Starting display. Frame rate for display and recording is {FRAME_RATE_PER_SECOND}")
 
 
 class RECORDER:
