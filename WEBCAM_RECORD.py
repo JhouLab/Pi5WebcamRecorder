@@ -260,6 +260,11 @@ class RECORDER:
         Exiting = 3
         DebugMode = 4
 
+    class CAM_VALS(Enum):
+        PREV = -20
+        NEXT = -10
+        ALL = -2
+
     pendingActionVar = PendingAction.Nothing
 
     def onKeyPress(self, event):
@@ -313,15 +318,9 @@ class RECORDER:
                 isRightArrow = (keycode == 39 or keycode == 114)
 
             if isLeftArrow:  # Left arrow key
-                self.which_display -= 1
-                if self.which_display < -2:
-                    self.which_display = len(cam_array) - 1
-                self.print_current_display_id()
+                self.change_cam(self.CAM_VALS.PREV)
             elif isRightArrow:  # Right arrow key
-                self.which_display += 1
-                if self.which_display >= len(cam_array):
-                    self.which_display = -2
-                self.print_current_display_id()
+                self.change_cam(self.CAM_VALS.NEXT)
             elif DEBUG and self.pendingActionVar == self.PendingAction.DebugMode:
                 # Special debugging keystroke that toggles DEBUG TTL measurement mode
                 for cam_obj in cam_array:
@@ -370,16 +369,28 @@ class RECORDER:
         self.disk_free_label = tk.Label(frame1, text=f"Free disk space: {get_disk_free_space():.1f}GB")  # , borderwidth=1, relief="solid")
         self.disk_free_label.pack(side=tk.TOP, fill=tk.X, expand=True, pady=5)
 
-        b_list = [
-            ("         Close        ", self.show_quit_dialog),
-            ("Browse data folder", self.browse_data_folder),
-            ("Stop all recording", partial(self.show_stop_dialog, -1))
+        # frame3 holds buttons
+        frame3 = tk.Frame(frame1)
+        frame3.pack(side=tk.TOP, fill=tk.X, expand=True)
+        frame3.columnconfigure((0, 1, 2), weight=1, uniform=1)
+
+        b_list1 = [
+            ("Show all cams", partial(self.change_cam, self.CAM_VALS.ALL)),
+            ("Prev cam", partial(self.change_cam, self.CAM_VALS.PREV)),
+            ("Next cam", partial(self.change_cam, self.CAM_VALS.NEXT)),
         ]
 
-        for _b in b_list:
-            # Using tk.RIGHT causes buttons to "stick" to the right edge, and won't get
-            # squished if window is resized.
-            tk.Button(frame1, text=_b[0], command=_b[1]).pack(side=tk.RIGHT, ipadx=5, ipady=5)
+        for idx, _b in enumerate(b_list1):
+            tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=0, column=idx, ipadx=5, ipady=5, sticky="ew")
+
+        b_list2 = [
+            ("Stop all recording", partial(self.show_stop_dialog, -1)),
+            ("Browse data folder", self.browse_data_folder),
+            ("         Close        ", self.show_quit_dialog),
+        ]
+
+        for idx, _b in enumerate(b_list2):
+            tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=1, column=idx, ipadx=5, ipady=5, sticky="ew")
 
         self.cam_array = _cam_array
 
@@ -467,6 +478,28 @@ class RECORDER:
         elif platform.system() == "Windows":
             # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
             return cv2.waitKeyEx(1)
+
+    def change_cam(self, cam_num):
+
+        if isinstance(cam_num, self.CAM_VALS):
+            if cam_num == self.CAM_VALS.NEXT:
+                self.which_display += 1
+                if self.which_display >= len(cam_array):
+                    self.which_display = -2
+            elif cam_num == self.CAM_VALS.PREV:
+                self.which_display -= 1
+                if self.which_display < -2:
+                    self.which_display = len(cam_array) - 1
+            elif cam_num == self.CAM_VALS.ALL:
+                # Convert from Enum type to integer
+                self.which_display = cam_num.value
+            else:
+                # Unrecognized Enum
+                return
+        else:
+            self.which_display = cam_num
+
+        self.print_current_display_id()
 
     # Print message indicating which camera is displaying to screen.
     def print_current_display_id(self):
