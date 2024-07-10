@@ -220,7 +220,7 @@ print()
 
 if num_cameras_found == 0:
     printt("NO CAMERAS FOUND")
-    exit()
+    # exit()
 else:
     printt(f"Found {num_cameras_found} cameras")
 
@@ -404,6 +404,9 @@ class RECORDER:
                 if c.order >= 0:
                     self.which_display = c.order - FIRST_CAMERA_ID
                     break
+
+        # Place in top left corner of screen
+        self.root.geometry("+%d+%d" % (5, 35))
 
         # Force window to show, so we can get width/height
         self.root.update()
