@@ -257,6 +257,7 @@ class RECORDER:
         Nothing = 0
         StartRecord = 1
         EndRecord = 2
+        Exiting = 3
         DebugMode = 4
 
     pendingActionVar = PendingAction.Nothing
@@ -410,8 +411,6 @@ class RECORDER:
         # Set min window size, to prevent too much squashing of components
         self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
 
-        self.exiting = False
-        
         self.update_image()
 
     def browse_data_folder(self):
@@ -424,12 +423,12 @@ class RECORDER:
     def confirm_quit(self, widget, value):
         widget.destroy()
         if value:
-            self.root.after(0, self.cleanup)
+            self.pendingActionVar = self.PendingAction.Exiting
 
     def show_quit_dialog(self):
 
         if not any_camera_recording(self.cam_array):
-            self.root.after(0, self.cleanup)
+            self.pendingActionVar = self.PendingAction.Exiting
             return
 
         w = tk.Toplevel(self.root)
@@ -558,9 +557,10 @@ class RECORDER:
 
     def update_image(self):
 
-        if self.exiting:
+        if self.pendingActionVar == self.PendingAction.Exiting:
+            self.cleanup()
             return
-        
+
         for idx, cam_obj in enumerate(self.cam_array):
             # Read camera frame
             cam_obj.read()
@@ -603,6 +603,7 @@ class RECORDER:
         else:
             img = None
 
+        # This calls waitkey() which also runs cv2 message pump.
         key = self.imshow(img)
 
         if self.pendingActionVar == self.PendingAction.StartRecord:
@@ -648,6 +649,10 @@ class RECORDER:
         if key != -1:
             self.handle_keypress(key, key >> 16, CV2KEY=True)
 
+        if self.pendingActionVar == self.PendingAction.Exiting:
+            self.cleanup()
+            return
+
         lag_ms = (time.time() - self.next_frame) * 1000
         if lag_ms > 50:
             # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
@@ -657,8 +662,7 @@ class RECORDER:
 
             # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
             self.next_frame = time.time() + self.FRAME_INTERVAL
-            if not self.exiting:
-                self.root.after(0, self.update_image)
+            self.root.after(0, self.update_image)
         else:
             # We are done with loop, but not ready to request next frame. Wait a bit.
             advance_ms = (self.next_frame - time.time()) * 1000
@@ -669,8 +673,7 @@ class RECORDER:
             if advance_ms < 0:
                 advance_ms = 1
 
-            if not self.exiting:
-                self.root.after(int(advance_ms), self.update_image)
+            self.root.after(int(advance_ms), self.update_image)
 
     def cleanup(self):
 
