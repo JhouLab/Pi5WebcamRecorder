@@ -427,8 +427,12 @@ class RECORDER:
 
         cv2.namedWindow(DISPLAY_WINDOW_NAME)  # Create a named window
         cv2.imshow(DISPLAY_WINDOW_NAME, make_blank_frame(""))  # Must show something or else moveWindow fails on Pi
+        cv2.waitKey(1)
+        # Well, the following doesn't seem to work in Pi.
+        # Apparently the Wayland display server doesn't support it.
         cv2.moveWindow(DISPLAY_WINDOW_NAME, 20, 220)  # Start video in top left, below control bar
-
+        cv2.waitKey(1)
+        
         self.update_image()
 
     def browse_data_folder(self):
