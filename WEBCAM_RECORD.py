@@ -425,6 +425,9 @@ class RECORDER:
         # Set min window size, to prevent too much squashing of components
         self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
 
+        cv2.namedWindow(DISPLAY_WINDOW_NAME)  # Create a named window
+        cv2.moveWindow(DISPLAY_WINDOW_NAME, 20, 220)  # Start video in top left, below control bar
+
         self.update_image()
 
     def browse_data_folder(self):
