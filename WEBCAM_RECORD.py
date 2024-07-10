@@ -458,7 +458,13 @@ class RECORDER:
     def imshow(self, img):
         if img is not None:
             cv2.imshow(DISPLAY_WINDOW_NAME, img)
-            cv2.waitKey(1)
+            
+                # Check if any key has been pressed.
+        if platform.system() == "Linux":
+            return cv2.waitKey(1)
+        elif platform.system() == "Windows":
+            # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
+            return cv2.waitKeyEx(1)
 
     # Print message indicating which camera is displaying to screen.
     def print_current_display_id(self):
@@ -597,7 +603,7 @@ class RECORDER:
         else:
             img = None
 
-        self.imshow(img)
+        key = self.imshow(img)
 
         if self.pendingActionVar == self.PendingAction.StartRecord:
             cam_num = self.pendingActionCamera
@@ -638,13 +644,6 @@ class RECORDER:
 
                 if self.frame_count % 50 == 0:
                     self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB")
-
-        # Check if any key has been pressed.
-        if platform.system() == "Linux":
-            key = cv2.waitKey(1)
-        elif platform.system() == "Windows":
-            # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
-            key = cv2.waitKeyEx(1)
 
         if key != -1:
             self.handle_keypress(key, key >> 16, CV2KEY=True)
