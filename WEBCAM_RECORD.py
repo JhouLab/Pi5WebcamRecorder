@@ -268,6 +268,18 @@ class RECORDER:
 
     pendingActionVar = PendingAction.Nothing
 
+    class WidgetSet:
+
+        StartButton: tk.Button = None
+        StopButton: tk.Button = None
+        StatusLabel: tk.Label = None
+
+        def __init__(self):
+
+            pass
+
+    widget_array: List[WidgetSet]
+
     def onKeyPress(self, event):
 
         self.handle_keypress(event.char, event.keycode)
@@ -336,12 +348,14 @@ class RECORDER:
     pendingActionCamera = -1
     pendingActionID = ""
 
-    def __init__(self, _cam_array):
+    def __init__(self, _cam_array: List[CamObj]):
 
         self.root = tk.Tk()
         self.root.bind('<KeyPress>', self.onKeyPress)
         self.root.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
         self.root.title("Pi5 Camera recorder control bar")
+
+        self.widget_array = [self.WidgetSet() for _ in range(4)]
 
         # Frame1 holds entire control bar (status and control buttons)
         frame1 = tk.Frame(self.root)  # , borderwidth=1, relief="solid")
@@ -352,22 +366,27 @@ class RECORDER:
         frame2.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
 
         # Add up to four status lines, one for each camera. Each line also has two buttons to start/stop recording.
-        self.message_labels: List[tk.Label | None] = [None] * 4
-        for idx in range(len(_cam_array)):
-            cam_obj = _cam_array[idx]
+        for idx, cam_obj in enumerate(_cam_array):
+
+            # Set callback that updates button state whenever called
+            cam_obj.set_button_state_callback = partial(self.set_button_state_callback, idx)
+
+            w = self.widget_array[idx]
+
             if cam_obj is None or cam_obj.cam is None:
                 continue
             f3 = tk.Frame(frame2)
             f3.pack(fill=tk.X)
             b = tk.Button(f3, text=f"Record cam #{FIRST_CAMERA_ID + idx}", command=partial(self.show_start_record_dialog, idx))
             b.pack(side=tk.LEFT, ipadx=2)
-            cam_obj.start_button = b
+            w.StartButton = b
             b = tk.Button(f3, text="Stop", command=partial(self.show_stop_dialog, idx))
             b.pack(side=tk.LEFT, ipadx=10)
             b["state"] = tk.DISABLED
-            cam_obj.stop_button = b
-            self.message_labels[idx] = tk.Label(f3, text=f"", width=60, anchor=tk.W)
-            self.message_labels[idx].pack(side=tk.LEFT, fill=tk.X)
+            w.StopButton = b
+            l = tk.Label(f3, text=f"", width=60, anchor=tk.W)
+            l.pack(side=tk.LEFT, fill=tk.X)
+            w.StatusLabel = l
 
         # Add disk free status line
         self.disk_free_label = tk.Label(frame1, text=f"Free disk space: {get_disk_free_space():.1f}GB")  # , borderwidth=1, relief="solid")
@@ -447,13 +466,17 @@ class RECORDER:
             os.system("pcmanfm \"%s\"" % DATA_FOLDER)
 
     def confirm_quit(self, widget, value):
-        widget.destroy()
+
+        # We get here if user clicks "OK" on quit dialog, thereby confirming they really want to quit.
+
+        widget.destroy()   # Close the quit dialog
         if value:
             self.pendingActionVar = self.PendingAction.Exiting
 
     def show_quit_dialog(self):
 
         if not any_camera_recording(self.cam_array):
+            # If nothing is recording, then don't bother to ask for confirmation, just go ahead and set the quit flag
             self.pendingActionVar = self.PendingAction.Exiting
             return
 
@@ -693,12 +716,12 @@ class RECORDER:
             if any_camera_recording(cam_array):
                 for idx, cam in enumerate(cam_array):
                     # Print elapsed time for each camera that is actively recording.
-                    msg = self.message_labels[idx]
+                    l = self.widget_array[idx].StatusLabel
                     if cam.IsRecording:
                         s = cam.get_elapsed_recording_time()
-                        msg.config(text=s)
-                    elif msg is not None:
-                        msg.config(text="--")
+                        l.config(text=s)
+                    elif l is not None:
+                        l.config(text="--")
 
                 if self.frame_count % 50 == 0:
                     self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB")
@@ -733,13 +756,31 @@ class RECORDER:
 
             self.root.after(int(advance_ms), self.update_image)
 
+    def set_button_state_callback(self, cam_num):
+
+        # This might be called from CamObj.stop_record_thread(), which is not the main
+        # GUI thread. In that case, changing button state will pass a message back to main GUI
+        # thread, so we have to make sure the GUI thread is not waiting for the lock object used
+        # by stop_record_thread()
+
+        if self.pendingActionVar == self.PendingAction.Exiting:
+            # When exiting, the main GUI thread will be blocked in CamObj.close(), waiting for
+            # thread to finish. So we need to avoid changing button state, as that will deadlock.
+            return
+
+        isRecording = self.cam_array[cam_num].IsRecording
+        w = self.widget_array[cam_num]
+
+        if w.StartButton is not None:
+            w.StartButton["state"] = tk.DISABLED if isRecording else tk.NORMAL
+        if w.StopButton is not None:
+            w.StopButton["state"] = tk.NORMAL if isRecording else tk.DISABLED
+
     def cleanup(self):
 
-        self.exiting = True
-        self.root.destroy()
-
-        # All done. Close up windows and files
+        # Delete the OpenCV window (where video is shown)
         cv2.destroyAllWindows()
+
         for cam_obj in self.cam_array:
             if cam_obj is None:
                 continue
@@ -750,8 +791,12 @@ class RECORDER:
                 continue
             cam_obj.close()
 
-        printt("Exiting", close_file=True)
+        # Destroy the tkinter window (control bar)
+        self.root.destroy()
+
 
 
 rec_obj = RECORDER(cam_array)
 rec_obj.root.mainloop()
+
+printt("Exiting", close_file=True)

@@ -221,8 +221,7 @@ class CamObj:
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
 
-        self.start_button: tk.Button | None = None
-        self.stop_button: tk.Button | None = None
+        self.set_button_state_callback = None
 
         if cam is None:
             # Use blank frame for this object if no camera object is specified
@@ -452,19 +451,20 @@ class CamObj:
                 # Not recording, and only detected a single TTL pulse. Just ignore.
                 return
 
-            # Calculate TTL timestamp relative to session start
-            gpio_time_relative = gpio_time - self.start_time
-
-            self.TTL_num += 1
-            if self.fid_TTL is not None:
-                try:
-                    self.fid_TTL.write(f"{self.TTL_num}\t{gpio_time_relative}\n")
-                except:
-                    print(f"Unable to write TTL timestamp file for camera {self.order}")
             else:
-                # We shouldn't ever get here. If so, something usually has gone wrong with file system,
-                # e.g. USB drive has come unplugged.
-                print(f"Missing TTL timestamp file for camera {self.order}")
+                # Calculate TTL timestamp relative to session start
+                gpio_time_relative = gpio_time - self.start_time
+
+                self.TTL_num += 1
+                if self.fid_TTL is not None:
+                    try:
+                        self.fid_TTL.write(f"{self.TTL_num}\t{gpio_time_relative}\n")
+                    except:
+                        print(f"Unable to write TTL timestamp file for camera {self.order}")
+                else:
+                    # We shouldn't ever get here. If so, something usually has gone wrong with file system,
+                    # e.g. USB drive has come unplugged.
+                    print(f"Missing TTL timestamp file for camera {self.order}")
 
         # By now lock has been released, and we are guaranteed to be recording.
 
@@ -559,10 +559,7 @@ class CamObj:
 
                 printt(f"Started recording camera {self.order} to file '{self.filename_video}'")
 
-                if self.start_button is not None:
-                    self.start_button["state"] = tk.DISABLED
-                if self.stop_button is not None:
-                    self.stop_button["state"] = tk.NORMAL
+                self.set_button_state_callback()
 
                 return True
 
@@ -581,11 +578,6 @@ class CamObj:
             # Acquire lock to avoid starting a new recording
             # in the middle of stopping the old one.
 
-            if self.start_button is not None:
-                self.start_button["state"] = tk.NORMAL
-            if self.stop_button is not None:
-                self.stop_button["state"] = tk.DISABLED
-
             self.TTL_animal_ID = 0
 
             if self.IsRecording:
@@ -596,6 +588,8 @@ class CamObj:
                 if USE_FFMPEG:
                     self.process.stdin.close()
                     self.process.wait()
+
+            self.set_button_state_callback()
 
             if self.Writer is not None:
                 try:

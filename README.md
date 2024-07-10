@@ -1,15 +1,12 @@
 
 # HOW TO USE:
 
-Instructions version 1.3
+Instructions version 1.4.1
 
-Updated July 5, 2024.
+Updated July 10, 2024.
 
-For best results, run this on a Raspberry Pi 5, which can easily handle 4 simultaneous cameras
+For best results, run on a Raspberry Pi 5, which can handle 4 simultaneous cameras
 at 640x480 and 10 frames per second, whereas the Pi 4 struggles with even 2 cameras.
-
-Pi 5 can handle higher frame rates (e.g. 15fps) if you restrict recording to just 2 cameras or
-if you change the codec from h264 to mp4v. For details, see below under "CONFIGURING".
 
 
 # GETTING STARTED:
@@ -17,19 +14,19 @@ if you change the codec from h264 to mp4v. For details, see below under "CONFIGU
 Hopefully someone has already installed all files and libraries for you. If not, skip to the bottom
 "Installing on a new machine", then come back here when you are done.
 
-Locate the directory where the program resides. If not sure where that is, look here first:
+By default, program saves to the program directory. If not sure where that is, look here first:
 
     /home/jhoulab/Documents/github/Pi5WebcamRecorder
 
-This can be changed, e.g. if you plug in an external drive (see below under "CONFIGURING").
+To change save folder (e.g. to external drive) see below under "CONFIGURING".
 Now launch the program with one of the following methods:
 
-    Method 1: From command line. Open command prompt, "cd" to program directory, then type:
+    Method 1: From command line (must be in program folder):
 
       python -m WEBCAM_RECORD
 
-    Method 2: From GUI. Open Thonny (Pi's built-in Python IDE). Open WEBCAM_RECORD.py,
-    then hit the "Run" button (green circle with white triangle).
+    Method 2: From Thonny (Pi's pre-installed Python IDE). Open WEBCAM_RECORD.py,
+    then hit "Run" button (green circle with white triangle).
 
 
 Upon launch, it will scan the system for up to 4 connected USB cameras, then display them
@@ -42,7 +39,8 @@ The cameras are numbered 1-4, in the following order:
     |  3  |  4  |
     -------------
 
-Once running, it will respond to the following keyboard keys:
+Once running, a control bar will appear in the top left corner of screen.
+You can also use the following keyboard keys:
 
     "Q":            Stops any ongoing recordings, and quits program
     Left cursor:    Cycles through cameras in descending order
@@ -54,22 +52,16 @@ This program also monitors GPIO pins 4-7, which are used to start/stop recording
 trial start times. See below under "GPIO PROTOCOL".
 
 Each camera recording generates its own files, and there is no data mixing between cameras.
-There are three recorded files for each session, as listed below. All filenames begin with the
-date in YYYY-MM-DD-HHMM format, followed by camera number, and data type:
+Each session creates the following three files, having names starting with date in
+YYYY-MM-DD-HHMM format, followed by camera number, and data type:
 
     2024-06-12_1738_Cam1_Frames.txt        # Tab-delimited text file with timestamps of each video frame
     2024-06-12_1738_Cam1_TTLs.txt          # Tab-delimited text file with timestamps of each TTL pulse
     2024-06-12_1738_Cam1_Video.avi         # Video file.
 
 By default, the software records at 10 frames per second and 640x480 resolution, using
-the H264 codec. To override the defaults, read the instructions in file "config_example1", which
-explains how to create a "config.txt" file, or skip to the next section below, "CONFIGURING".
-
-I have tested this program with the following two codecs. There may be others available but they
-are not tested yet:
-
-    H264:  makes small files (<2MB per minute) but is computationally demanding. May drop frames at higher fps.
-    MP4V:  is computationally less demanding, allowing higher frame rates. But files are 2-5x larger
+the H264 codec. To override defaults, read the instructions in file "config_example1",
+or skip to the next section below, "CONFIGURING".
 
 Estimated storage requirements for H264 files at 10fps are below. Obviously, if you use a higher
 frame rate, or a less efficient codec, then storage requirements will increase.
@@ -105,6 +97,11 @@ whenever it starts up. The following options are available:
     WIDTH                                  # X-resolution. Default 640
     HEIGHT                                 # Y-resolution. Default 480
     DATA_FOLDER                            # Folder for saving. Default /home/jhoulab/Videos/
+
+The setting "FOURCC" specifies the codec. I have tested the following two options:
+
+    H264:  makes small files (<2MB per minute) but is computationally demanding. May drop frames at higher fps.
+    MP4V:  is computationally less demanding, allowing higher frame rates. But files are 2-5x larger
 
 
 # GPIO TIMING PROTOCOL
