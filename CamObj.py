@@ -259,6 +259,9 @@ class CamObj:
         
         if elapsed > 0.1:
             # Burst TTLs must have ~50ms gap.
+            if 0.5 > elapsed > 0.3:
+                # Note that old MedPC had 0.4s gap between 0.1s pulses. Check that for back-compatibility
+                return
             self.num_consec_TTLs = 0
             if VERBOSE:
                 printt(f'Num consec TTLs: 0')
