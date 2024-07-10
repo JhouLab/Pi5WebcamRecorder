@@ -6,7 +6,7 @@
 
 
 import os
-import psutil
+import psutil        # This is used to obtain disk free space
 import numpy as np
 import time
 import datetime
@@ -16,13 +16,15 @@ from sys import gettrace
 import configparser
 from enum import Enum
 
+# Need this because start/stop recording functions need to enable/disable the GUI buttons
+import tkinter as tk
+
 USE_FFMPEG = False
 
 if USE_FFMPEG:
     # Experimental feature ... I had hoped this would give more flexibility for saving greyscale to
-    # reduce file sizes. But haven't figured out how to make it work with greyscale, and haven't figured
-    # out how to install on Raspberry Pi. Note also that ffmpeg-python is just a wrapper for ffmpeg,
-    # which must already be installed separately. This isn't worth the trouble, it should probably go away.
+    # reduce file sizes. But it doesn't seem to help, and doesn't install at all on Raspberry Pi.
+    # Note also that ffmpeg-python is just a wrapper for ffmpeg, which must already be installed separately.
     import ffmpeg      # On Pycharm/Windows, install ffmpeg-python from Karl Kroening.
 
 if platform.system() == "Linux":
@@ -210,6 +212,7 @@ class CamObj:
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
 
     def __init__(self, cam, id_num, order, max_fps, GPIO_pin=-1):
+        self.process = None   # This is used if calling FF_MPEG directly. Probably won't use this in the future.
         self.cam = cam
         self.id_num = id_num
         self.order = order
@@ -217,6 +220,9 @@ class CamObj:
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
+
+        self.start_button: tk.Button | None = None
+        self.stop_button: tk.Button | None = None
 
         if cam is None:
             # Use blank frame for this object if no camera object is specified
@@ -552,6 +558,12 @@ class CamObj:
                 self.start_time = time.time()
 
                 printt(f"Started recording camera {self.order} to file '{self.filename_video}'")
+
+                if self.start_button is not None:
+                    self.start_button["state"] = tk.DISABLED
+                if self.stop_button is not None:
+                    self.stop_button["state"] = tk.NORMAL
+
                 return True
 
     def stop_record(self):
@@ -568,6 +580,11 @@ class CamObj:
 
             # Acquire lock to avoid starting a new recording
             # in the middle of stopping the old one.
+
+            if self.start_button is not None:
+                self.start_button["state"] = tk.NORMAL
+            if self.stop_button is not None:
+                self.stop_button["state"] = tk.DISABLED
 
             self.TTL_animal_ID = 0
 

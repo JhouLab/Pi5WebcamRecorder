@@ -2,6 +2,7 @@ from __future__ import annotations   # Need this for type hints to work on older
 
 from typing import List
 import time
+import os
 
 # On Raspberry pi, need to type:
 # sudo apt-get install python3-pil.imagetk
@@ -350,8 +351,8 @@ class RECORDER:
         frame2 = tk.Frame(frame1, borderwidth=1, relief="solid")
         frame2.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
 
-        # Add up to four status lines, one for each camera
-        self.message_widget: List[tk.Label | None] = [None] * 4
+        # Add up to four status lines, one for each camera. Each line also has two buttons to start/stop recording.
+        self.message_labels: List[tk.Label | None] = [None] * 4
         for idx in range(len(_cam_array)):
             cam_obj = _cam_array[idx]
             if cam_obj is None or cam_obj.cam is None:
@@ -360,16 +361,19 @@ class RECORDER:
             f3.pack(fill=tk.X)
             b = tk.Button(f3, text=f"Record cam #{FIRST_CAMERA_ID + idx}", command=partial(self.show_start_record_dialog, idx))
             b.pack(side=tk.LEFT, ipadx=2)
+            cam_obj.start_button = b
             b = tk.Button(f3, text="Stop", command=partial(self.show_stop_dialog, idx))
             b.pack(side=tk.LEFT, ipadx=10)
-            self.message_widget[idx] = tk.Label(f3, text=f"", width=60, anchor=tk.W)
-            self.message_widget[idx].pack(side=tk.LEFT, fill=tk.X)
+            b["state"] = tk.DISABLED
+            cam_obj.stop_button = b
+            self.message_labels[idx] = tk.Label(f3, text=f"", width=60, anchor=tk.W)
+            self.message_labels[idx].pack(side=tk.LEFT, fill=tk.X)
 
         # Add disk free status line
         self.disk_free_label = tk.Label(frame1, text=f"Free disk space: {get_disk_free_space():.1f}GB")  # , borderwidth=1, relief="solid")
         self.disk_free_label.pack(side=tk.TOP, fill=tk.X, expand=True, pady=5)
 
-        # frame3 holds buttons
+        # frame3 holds two rows of buttons
         frame3 = tk.Frame(frame1)
         frame3.pack(side=tk.TOP, fill=tk.X, expand=True)
         frame3.columnconfigure("all", weight=1, uniform="1")
@@ -569,6 +573,14 @@ class RECORDER:
         b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
 
     def confirm_start(self, widget, cam_num, animal_id_var, result, _event):
+        #
+        # We get here if user clicks "OK" in the start dialog, thereby confirming that
+        # session will indeed start.
+        #
+        # This will set a flag so that the next "update_image" call will start the session.
+        #
+        # We could probably simplify by directly starting recording here.
+        #
         # We ignore _event, which is there for compatibility with the bind('<Return>') statement
         # which mandates that we send that event
         widget.destroy()
@@ -681,7 +693,7 @@ class RECORDER:
             if any_camera_recording(cam_array):
                 for idx, cam in enumerate(cam_array):
                     # Print elapsed time for each camera that is actively recording.
-                    msg = self.message_widget[idx]
+                    msg = self.message_labels[idx]
                     if cam.IsRecording:
                         s = cam.get_elapsed_recording_time()
                         msg.config(text=s)
