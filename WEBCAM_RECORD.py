@@ -10,7 +10,7 @@ import os
 from PIL import Image, ImageTk  # Need to import pillow from Jeffrey A. Clark
 import numpy as np
 import math
-from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt, DATA_FOLDER
+from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space
 from get_hardware_info import *
 import cv2
 from sys import gettrace
@@ -324,15 +324,15 @@ class RECORDER:
         self.root.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
         self.root.title("Pi5 Camera recorder control bar")
 
-        # Frame1 holds status and control buttons
+        # Frame1 holds entire control bar (status and control buttons)
         frame1 = tk.Frame(self.root)  # , borderwidth=1, relief="solid")
         frame1.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # Frame2 holds status labels
+        # Frame2 holds a vertical stack of up to 4 status labels
         frame2 = tk.Frame(frame1, borderwidth=1, relief="solid")
         frame2.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
 
-        # Add four status lines, one for each camera
+        # Add up to four status lines, one for each camera
         self.message_widget = [None] * 4
         for idx in range(len(_cam_array)):
             cam_obj = _cam_array[idx]
@@ -346,6 +346,10 @@ class RECORDER:
             b.pack(side=tk.LEFT, ipadx=10)
             self.message_widget[idx] = tk.Label(f3, text=f"", width=60, anchor=tk.W)
             self.message_widget[idx].pack(side=tk.LEFT, fill=tk.X)
+
+        # Add disk free status line
+        self.disk_free_label = tk.Label(frame1, text=f"Free disk space: {get_disk_free_space():.1f}GB")  # , borderwidth=1, relief="solid")
+        self.disk_free_label.pack(side=tk.TOP, fill=tk.X, expand=True, pady=5)
 
         b_list = [
             ("         Close        ", self.show_quit_dialog),
@@ -610,10 +614,12 @@ class RECORDER:
                     # Print elapsed time for each camera that is actively recording.
                     msg = self.message_widget[idx]
                     if cam.IsRecording:
-                        s = cam.print_elapsed()
+                        s = cam.get_elapsed_recording_time()
                         msg.config(text=s)
                     elif msg is not None:
                         msg.config(text="--")
+            if self.frame_count % 50 == 0:
+                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB")
 
         lag_ms = (time.time() - self.next_frame) * 1000
         if lag_ms > 50:

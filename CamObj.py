@@ -6,6 +6,7 @@
 
 
 import os
+import psutil
 import numpy as np
 import time
 import datetime
@@ -151,13 +152,21 @@ def printt(txt, omit_date_time=False, close_file=False):
         pass
 
 
+def get_disk_free_space():
+
+    path = DATA_FOLDER
+    bytes_avail = psutil.disk_usage(path).free
+    gigabytes_avail = bytes_avail / 1024 / 1024 / 1024
+    return gigabytes_avail
+
+
 class CamObj:
     cam = None   # this is the opencv camera object
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
     order = -1  # User-friendly camera ID. Will usually be USB port position, and also position on screen
     status = -1  # True if camera is operational and connected
     frame = None  # Most recently obtained video frame. If camera lost connection, this will be a black frame with some text
-    filename = "Video.avi"
+    filename_video = "Video.avi"
     filename_timestamp = "Timestamp.txt"
     filename_timestamp_TTL = "Timestamp_TTL.txt"
 
@@ -489,28 +498,28 @@ class CamObj:
                 self.TTL_num = 0
 
                 prefix = DATA_FOLDER + self.get_filename_prefix(animal_ID)
-                self.filename = prefix + "_Video.avi"
+                self.filename_video = prefix + "_Video.avi"
                 self.filename_timestamp = prefix + "_Frames.txt"
                 self.filename_timestamp_TTL = prefix + "_TTLs.txt"
 
                 try:
                     # Create video file
                     if USE_FFMPEG:
-                        self.process = self.save_video(self.filename, FRAME_RATE_PER_SECOND)
+                        self.process = self.save_video(self.filename_video, FRAME_RATE_PER_SECOND)
                     else:
-                        self.Writer = cv2.VideoWriter(self.filename,
+                        self.Writer = cv2.VideoWriter(self.filename_video,
                                                       self.codec,
                                                       FRAME_RATE_PER_SECOND,
                                                       self.resolution,
                                                       RECORD_COLOR)
                 except:
-                    print(f"Warning: unable to create video file: '{self.filename}'")
+                    print(f"Warning: unable to create video file: '{self.filename_video}'")
                     return False
 
                 if not USE_FFMPEG:
                     if not self.Writer.isOpened():
                         # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
-                        print(f"Warning: unable to create video file: '{self.filename}'")
+                        print(f"Warning: unable to create video file: '{self.filename_video}'")
                         return False
 
                 try:
@@ -539,7 +548,7 @@ class CamObj:
                 self.IsRecording = True
                 self.start_time = time.time()
 
-                printt(f"Started recording camera {self.order} to file '{self.filename}'")
+                printt(f"Started recording camera {self.order} to file '{self.filename_video}'")
                 return True
 
     def stop_record(self):
@@ -703,9 +712,13 @@ class CamObj:
             # Camera is not available.
             return 0, None
 
-    def print_elapsed(self):
+    def get_elapsed_recording_time(self, include_cam_num=False):
 
-        str1 = f"   Camera {self.order} elapsed: " + self.get_elapsed_time_string()
+        file_stats = os.stat(self.filename_video)
+        if include_cam_num:
+            str1 = f"Camera {self.order} elapsed: {self.get_elapsed_time_string()}, {file_stats.st_size / (1024 * 1024)}MB"
+        else:
+            str1 = f"Elapsed: {self.get_elapsed_time_string()}, {file_stats.st_size / (1024 * 1024)}MB"
         return str1
 
     def get_elapsed_time_string(self):
