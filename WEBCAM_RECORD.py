@@ -262,12 +262,22 @@ class RECORDER:
     pendingActionVar = PendingAction.Nothing
 
     def onKeyPress(self, event):
-        print(event.char)
-        if event.char == 'q':
+
+        self.handle_keypress(event.char, event.keycode)
+
+    def handle_keypress(self, key, keycode, CV2KEY=False):
+
+        if CV2KEY:
+            key2 = key >> 16  # On Windows, arrow keys are encoded here
+            key1 = (key >> 8) & 0xFF  # This always seems to be 0
+            key = key & 0xFF  # On Raspberry Pi, arrow keys are coded here along with all other keys
+
+        print(key)
+        if (not CV2KEY and (key == 'q')) or (CV2KEY and key == ord('q')):
             self.show_quit_dialog()
-        elif "0" <= event.char <= "9":
+        elif (not CV2KEY and ("0" <= key <= "9")) or (CV2KEY and (ord('0') <= key <= ord('9'))):
             # Start/stop recording for specified camera
-            cam_num = ord(event.char) - ord("0")
+            cam_num = ord(key) - ord("0")
             cam_idx = cam_num - FIRST_CAMERA_ID
             if cam_idx < 0 or cam_idx >= len(self.cam_array):
                 print(f"Camera number {cam_num} does not exist, won't record.")
@@ -285,16 +295,21 @@ class RECORDER:
                         if res:
                             cam_obj.stop_record()
         else:
-            isLeftArrow = False
-            isRightArrow = False
-            if event.keycode == 37 or event.keycode == 113:
-                # Left arrow
-                isLeftArrow = True
-            elif event.keycode == 39 or event.keycode == 114:
-                # Right arrow
-                isRightArrow = True
+            if CV2KEY:
+                if platform.system() == "Linux":
+                    # Raspberry Pi encodes arrow keys in lowest byte
+                    isLeftArrow = key == 81
+                    isRightArrow = key == 83
+                elif platform.system() == "Windows":
+                    # Windows encodes arrow keys in highest byte
+                    isLeftArrow = keycode == 37
+                    isRightArrow = keycode == 39
+                else:
+                    isLeftArrow = False
+                    isRightArrow = False
             else:
-                print(event.char)
+                isLeftArrow = (keycode == 37 or keycode == 113)
+                isRightArrow = (keycode == 39 or keycode == 114)
 
             if isLeftArrow:  # Left arrow key
                 self.which_display -= 1
@@ -535,7 +550,6 @@ class RECORDER:
             else:
                 tk.messagebox.showinfo("Warning", "Camera is not recording")
 
-
     def update_image(self):
 
         if self.exiting:
@@ -621,8 +635,19 @@ class RECORDER:
                         msg.config(text=s)
                     elif msg is not None:
                         msg.config(text="--")
-            if self.frame_count % 50 == 0:
-                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB")
+
+                if self.frame_count % 50 == 0:
+                    self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB")
+
+        # Check if any key has been pressed.
+        if platform.system() == "Linux":
+            key = cv2.waitKey(1)
+        elif platform.system() == "Windows":
+            # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
+            key = cv2.waitKeyEx(1)
+
+        if key != -1:
+            self.handle_keypress(key, key >> 16, CV2KEY=True)
 
         lag_ms = (time.time() - self.next_frame) * 1000
         if lag_ms > 50:
