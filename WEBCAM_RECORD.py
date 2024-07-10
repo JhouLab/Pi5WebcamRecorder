@@ -237,9 +237,9 @@ for idx1, cam_obj1 in enumerate(cam_array):
             f"Camera in USB port position {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num} and serial '{get_cam_serial(cam_obj1.id_num)}'",
             omit_date_time=True)
     else:
-        printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}", omit_date_time=True)
+        printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}")
         
-    printt(f"    Frames per second: {cam_obj1.max_fps}")
+    printt(f"    Max possible fps from this camera: {cam_obj1.max_fps}")
     if 0 < cam_obj1.max_fps < min_fps:
         # Should issue warning here ...
         min_fps = cam_obj1.max_fps
@@ -509,24 +509,28 @@ class RECORDER:
     # Print message indicating which camera is displaying to screen.
     def print_current_display_id(self):
         if self.which_display == self.CAM_VALS.INSTRUCTIONS.value:
-            print("TURNING OFF CAMERA DISPLAY.")
+            if VERBOSE:
+                print("CAMERA DISPLAY OFF.")
             self.imshow(INSTRUCTION_FRAME)
             return
 
         if self.which_display == self.CAM_VALS.ALL.value:
-            print("Multi-frame display")
+            if VERBOSE:
+                print("Multi-frame display")
             return
 
         cam = cam_array[self.which_display]
         cam_position = cam.order
         if cam is None or cam.cam is None:
-            print(f"Camera in position {cam_position} is disconnected")
+            if VERBOSE:
+                print(f"Camera in position {cam_position} is not available")
             if cam is not None:
                 # Show the blank frame now, since it will not be updated in timer loop.
                 # Otherwise we will see leftover image from last good camera
                 self.imshow(cam.frame)
         else:
-            print(f"Showing camera {cam_position}")
+            if VERBOSE:
+                print(f"Showing camera {cam_position}")
 
     def show_start_record_dialog(self, cam_num):
 

@@ -614,106 +614,108 @@ class CamObj:
 
     # Reads a single frame from CamObj class and writes it to file
     def read(self):
+        
+        with self.lock:
 
-        if self.cam is not None and self.cam.isOpened():
+            if self.cam is not None and self.cam.isOpened():
 
-            if not self.read_one_frame():
+                if not self.read_one_frame():
 
-                # Read failed. Remove this camera so we won't attempt to read it later.
-                # Should we set a flag to try to periodically reconnect?
+                    # Read failed. Remove this camera so we won't attempt to read it later.
+                    # Should we set a flag to try to periodically reconnect?
 
-                if self.IsRecording:
-                    self.stop_record()  # Close file writers
+                    if self.IsRecording:
+                        self.stop_record()  # Close file writers
 
-                self.frame = make_blank_frame(f"{self.order} Camera lost connection")
-                # Warn user that something is wrong.
-                printt(f"Unable to read video from camera with ID {self.order}. Will remove camera from available list, and stop any ongoing recordings.")
+                    self.frame = make_blank_frame(f"{self.order} Camera lost connection")
+                    # Warn user that something is wrong.
+                    printt(f"Unable to read video from camera with ID {self.order}. Will remove camera from available list, and stop any ongoing recordings.")
 
-                # Remove camera resources
-                self.cam.release()
-                self.cam = None
-                self.status = 0
-                return 0, self.frame
+                    # Remove camera resources
+                    self.cam.release()
+                    self.cam = None
+                    self.status = 0
+                    return 0, self.frame
 
-            if self.frames_to_mark_GPIO > 0:
-                # Add blue dot to indicate that GPIO was recently detected
-                self.frames_to_mark_GPIO -= 1
-                cv2.circle(self.frame,
-                           (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position
-                           int(8 * FONT_SCALE),  # Radius
-                           (255, 0, 0),     # Blue dot (color is in BGR order)
-                           -1)   # -1 thickness fills circle
+                if self.frames_to_mark_GPIO > 0:
+                    # Add blue dot to indicate that GPIO was recently detected
+                    self.frames_to_mark_GPIO -= 1
+                    cv2.circle(self.frame,
+                               (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position
+                               int(8 * FONT_SCALE),  # Radius
+                               (255, 0, 0),     # Blue dot (color is in BGR order)
+                               -1)   # -1 thickness fills circle
 
-            if self.pending_start_timer > 0:
-                # Add dark red dot to indicate that a start might be pending
-                self.pending_start_timer -= 1
-                cv2.circle(self.frame,
-                           (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
-                           int(8 * FONT_SCALE),  # Radius
-                           (0, 0, 96),     # Dark red dot (color is in BGR order)
-                           -1)   # -1 thickness fills circle
+                if self.pending_start_timer > 0:
+                    # Add dark red dot to indicate that a start might be pending
+                    self.pending_start_timer -= 1
+                    cv2.circle(self.frame,
+                               (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
+                               int(8 * FONT_SCALE),  # Radius
+                               (0, 0, 96),     # Dark red dot (color is in BGR order)
+                               -1)   # -1 thickness fills circle
 
-            if self.TTL_mode == self.TTL_type.Debug:
-                # Green dot indicates we are in TTL DEBUG mode
-                cv2.circle(self.frame,
-                           (int(20 * FONT_SCALE), int(110 * FONT_SCALE)),  # x-y position
-                           int(8 * FONT_SCALE),  # Radius
-                           (0, 255, 0),     # color is in BGR order
-                           -1)   # -1 thickness fills circle
+                if self.TTL_mode == self.TTL_type.Debug:
+                    # Green dot indicates we are in TTL DEBUG mode
+                    cv2.circle(self.frame,
+                               (int(20 * FONT_SCALE), int(110 * FONT_SCALE)),  # x-y position
+                               int(8 * FONT_SCALE),  # Radius
+                               (0, 255, 0),     # color is in BGR order
+                               -1)   # -1 thickness fills circle
 
-            if self.TTL_animal_ID > 0:
-                # Add animal ID to video
-                cv2.putText(self.frame, str(self.TTL_animal_ID),
-                            (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
-                            cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
-                            round(FONT_SCALE + 0.5))  # Line thickness
-            elif self.TTL_animal_ID < 0:
-                # Animal ID checksum failed
-                cv2.putText(self.frame, "Unknown",
-                            (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
-                            cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
-                            round(FONT_SCALE + 0.5))  # Line thickness
+                if self.TTL_animal_ID > 0:
+                    # Add animal ID to video
+                    cv2.putText(self.frame, str(self.TTL_animal_ID),
+                                (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
+                                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
+                                round(FONT_SCALE + 0.5))  # Line thickness
+                elif self.TTL_animal_ID < 0:
+                    # Animal ID checksum failed
+                    cv2.putText(self.frame, "Unknown",
+                                (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
+                                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
+                                round(FONT_SCALE + 0.5))  # Line thickness
 
-            if not RECORD_COLOR and self.frame is not None:
-                self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
+                if not RECORD_COLOR and self.frame is not None:
+                    self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
 
-            if self.frame is not None and self.IsRecording:
-                if self.fid is not None and self.start_time > 0:
-                    # Write timestamp to text file. Do this before writing AVI so that
-                    # timestamp will not be delayed by latency required to compress video. This
-                    # ensures most accurate possible timestamp.
-                    try:
-                        time_elapsed = time.time() - self.start_time
-                        self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
-                    except:
-                        print(f"Unable to write text file for camera f{self.order}. Will stop recording")
-                        self.stop_record()
-                        return 0, None
+                if self.frame is not None and self.IsRecording:
+                    if self.fid is not None and self.start_time > 0:
+                        # Write timestamp to text file. Do this before writing AVI so that
+                        # timestamp will not be delayed by latency required to compress video. This
+                        # ensures most accurate possible timestamp.
+                        try:
+                            time_elapsed = time.time() - self.start_time
+                            self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
+                        except:
+                            print(f"Unable to write text file for camera f{self.order}. Will stop recording")
+                            self.stop_record()
+                            return 0, None
 
-                self.frame_num += 1
+                    self.frame_num += 1
 
-                if self.IsRecording:
-                    try:
-                        # Write frame to AVI video file if possible
-                        if USE_FFMPEG:
-                            if RECORD_COLOR:
-                                self.process.stdin.write(
-                                    cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
-                                    .astype(np.uint8)
-                                    .tobytes()
-                                )
+                    if self.IsRecording:
+                        try:
+                            # Write frame to AVI video file if possible
+                            if USE_FFMPEG:
+                                if RECORD_COLOR:
+                                    self.process.stdin.write(
+                                        cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
+                                        .astype(np.uint8)
+                                        .tobytes()
+                                    )
+                                else:
+                                    self.process.stdin.write(self.frame.astype(np.uint8).tobytes())
                             else:
-                                self.process.stdin.write(self.frame.astype(np.uint8).tobytes())
-                        else:
-                            self.Writer.write(self.frame)
-                    except:
-                        print(f"Unable to write video file for camera {self.order}. Will stop recording")
-                        self.stop_record()
+                                self.Writer.write(self.frame)
+                        except:
+                            print(f"Unable to write video file for camera {self.order}. Will stop recording")
+                            self.stop_record()
 
-            return self.status, self.frame
-        else:
-            # Camera is not available.
-            return 0, None
+                return self.status, self.frame
+            else:
+                # Camera is not available.
+                return 0, None
 
     def get_elapsed_recording_time(self, include_cam_num=False):
 
