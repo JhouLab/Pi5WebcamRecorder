@@ -238,15 +238,12 @@ for idx, cam_obj in enumerate(cam_array):
         printt(f"Camera {FIRST_CAMERA_ID + idx} has ID {cam_obj.id_num}", omit_date_time=True)
         
     printt(f"    Frames per second: {cam_obj.max_fps}")
-    if cam_obj.max_fps < min_fps:
+    if 0 < cam_obj.max_fps < min_fps:
         # Should issue warning here ...
         min_fps = cam_obj.max_fps
 
 # Lower frame rate to whatever is the lowest of all 4 cameras.
 FRAME_RATE_PER_SECOND = min_fps
-
-# Can use either canvas or Label object to display frame in Tkinter. Let's see which one is faster.
-USE_LABEL = True
 
 print()
 printt("Starting display")
@@ -325,22 +322,9 @@ class RECORDER:
         self.root = tk.Tk()
         self.root.bind('<KeyPress>', self.onKeyPress)
         self.root.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
-        self.root.title("Pi5 Camera recorder")
+        self.root.title("Pi5 Camera recorder control bar")
 
-        if USE_LABEL:
-            frame_label = tk.Frame(self.root)
-            frame_label.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
-            
-            self.label = tk.Label(self.root)
-            self.label.pack()
-        else:
-            frame_canvas = tk.Frame(self.root, borderwidth=1, relief='solid')
-            frame_canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
-
-            self.canvas = tkinter.Canvas(frame_canvas, width=SCREEN_RESOLUTION[0], height=SCREEN_RESOLUTION[1])
-            self.canvas.pack()
-
-        # Frame1 goes below canvas, and holds status and control buttons
+        # Frame1 holds status and control buttons
         frame1 = tk.Frame(self.root)  # , borderwidth=1, relief="solid")
         frame1.pack(side=tk.BOTTOM, fill=tk.X)
 
@@ -350,9 +334,18 @@ class RECORDER:
 
         # Add four status lines, one for each camera
         self.message_widget = [None] * 4
-        for idx in range(4):
-            self.message_widget[idx] = tk.Label(frame2, text=f"", anchor=tk.W)
-            self.message_widget[idx].pack(fill=tk.X)
+        for idx in range(len(_cam_array)):
+            cam_obj = _cam_array[idx]
+            if cam_obj is None or cam_obj.cam is None:
+                continue
+            f3 = tk.Frame(frame2)
+            f3.pack(fill=tk.X)
+            b = tk.Button(f3, text=f"Record cam #{FIRST_CAMERA_ID + idx}", command=partial(self.show_start_record_dialog, idx))
+            b.pack(side=tk.LEFT, ipadx=2)
+            b = tk.Button(f3, text="Stop", command=partial(self.show_stop_dialog, idx))
+            b.pack(side=tk.LEFT, ipadx=10)
+            self.message_widget[idx] = tk.Label(f3, text=f"", width=60, anchor=tk.W)
+            self.message_widget[idx].pack(side=tk.LEFT, fill=tk.X)
 
         b_list = [
             ("         Close        ", self.show_quit_dialog),
@@ -438,23 +431,8 @@ class RECORDER:
         return
 
     def imshow(self, img):
-        if img is None:
-            return
-
-        # cv2.imshow(DISPLAY_WINDOW_NAME, img)   # This is very fast, but not compatible with Tk windows
-        
-        # photo_img must be class variable, as it needs to persist after method returns
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # This takes <1ms usually
-        self.photo_img = ImageTk.PhotoImage(image=Image.fromarray(img))   # This takes 6-7ms usually
-        t1 = time.time()
-        
-        # Both label and canvas options take about 30-45ms on average. Yikes.
-        if USE_LABEL:
-            self.label.configure(image=self.photo_img)
-        else:
-            self.canvas.create_image(0, 0, image=self.photo_img, anchor=tkinter.NW)
-        t2 = time.time() - t1
-        print(t2)
+        if img is not None:
+            cv2.imshow(DISPLAY_WINDOW_NAME, img)
 
     # Print message indicating which camera is displaying to screen.
     def print_current_display_id(self):
@@ -479,6 +457,16 @@ class RECORDER:
             print(f"Showing camera {cam_position}")
 
     def show_start_record_dialog(self, cam_num):
+
+        cam_obj = self.cam_array[cam_num]
+
+        if cam_obj is None:
+            return
+
+        if cam_obj.IsRecording:
+            tk.messagebox.showinfo("Warning", f"Camera {FIRST_CAMERA_ID+cam_num} is already recording.")
+            return
+
         w = tk.Toplevel(self.root)
         w.title("Start recording?")
 
@@ -489,10 +477,10 @@ class RECORDER:
         f = tk.Frame(w)  # , highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
         f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
 
-        l1 = tk.Label(f, text=f"Enter animal ID for camera #{cam_num}", anchor="e")
+        l1 = tk.Label(f, text=f"Enter animal ID for camera #{cam_num + FIRST_CAMERA_ID}", anchor="e")
         l1.pack(side=tk.TOP)
 
-        s = tk.StringVar(value=f"Cam{cam_num}")
+        s = tk.StringVar(value=f"Cam{cam_num + FIRST_CAMERA_ID}")
         e = tk.Entry(f, textvariable=s)
         e.pack(side=tk.TOP)
 
@@ -514,6 +502,14 @@ class RECORDER:
         self.pendingActionVar = self.PendingAction.StartRecord
         self.pendingActionID = animal_id_var.get()
         self.pendingActionCamera = cam_num - FIRST_CAMERA_ID
+
+    def show_stop_dialog(self, cam_num):
+
+        cam_obj = self.cam_array[cam_num]
+        if cam_obj is not None and cam_obj.IsRecording:
+            res = mb.askyesno('Stop?', f'Stop recording camera {FIRST_CAMERA_ID + cam_num}?')
+            if res:
+                cam_obj.stop_record()
 
     def update_image(self):
 
@@ -567,7 +563,7 @@ class RECORDER:
             if not cam_obj.start_record(self.pendingActionID):
                 # Recording was attempted, but did not succeed. Usually this is
                 # because of file error, or missing codec.
-                print(f"Unable to start recording camera {cam_num}.")
+                print(f"Unable to start recording camera {cam_num + FIRST_CAMERA_ID}.")
             self.pendingActionVar = self.PendingAction.Nothing
 
         if self.frame_count == 0:
@@ -624,7 +620,7 @@ class RECORDER:
         self.root.destroy()
 
         # All done. Close up windows and files
-        # cv2.destroyAllWindows()
+        cv2.destroyAllWindows()
         for cam_obj in self.cam_array:
             if cam_obj is None:
                 continue
