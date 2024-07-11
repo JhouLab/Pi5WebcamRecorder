@@ -753,7 +753,14 @@ class CamObj:
         else:
             elapsed_min = elapsed_sec / 60
             str1 = f"{elapsed_min:.2f} minutes"
-        return str1 + f", {self.frame_num} frames"
+
+        str1 += f", {self.frame_num} frames"
+
+        if elapsed_sec > 5:
+            fps = self.frame_num / elapsed_sec
+            return str1 + f", {fps:.2f} fps"
+        else:
+            return str1
 
     def take_snapshot(self):
         if self.cam is None or self.frame is None:
