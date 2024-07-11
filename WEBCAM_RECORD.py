@@ -416,6 +416,16 @@ class RECORDER:
         for idx, _b in enumerate(b_list2):
             tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=1, column=idx, ipadx=5, ipady=5, sticky="ew")
 
+        if DEBUG:
+            # Extra row of buttons in debug mode
+            b_list_debug = [
+                ("STRESS TEST (mock record all, no files)", partial(self.show_start_record_dialog, self.CAM_VALS.ALL))
+            ]
+
+            for idx, _b in enumerate(b_list_debug):
+                tk.Button(frame3, text=_b[0], command=_b[1], fg='blue').\
+                    grid(row=2, column=idx, columnspan=3, ipadx=5, ipady=5, sticky="ew")
+
         self.frame_count = 0
 
         self.FRAME_INTERVAL = 1.0 / FRAME_RATE_PER_SECOND
@@ -560,6 +570,11 @@ class RECORDER:
 
     def show_start_record_dialog(self, cam_num):
 
+        if cam_num == self.CAM_VALS.ALL:
+            self.pendingActionVar = self.PendingAction.StartRecord
+            self.pendingActionCamera = self.CAM_VALS.ALL
+            return
+
         cam_obj = self.cam_array[cam_num]
 
         if cam_obj is None:
@@ -701,11 +716,18 @@ class RECORDER:
 
         if self.pendingActionVar == self.PendingAction.StartRecord:
             cam_num = self.pendingActionCamera
-            cam_obj = self.cam_array[cam_num]
-            if not cam_obj.start_record(self.pendingActionID):
-                # Recording was attempted, but did not succeed. Usually this is
-                # because of file error, or missing codec.
-                print(f"Unable to start recording camera {cam_num + FIRST_CAMERA_ID}.")
+            if cam_num == self.CAM_VALS.ALL:
+                # Start stress-test on all 4 cameras
+                for cam_obj in self.cam_array:
+                    if cam_obj is None:
+                        continue
+                    cam_obj.start_record(stress_test_mode=True)
+            else:
+                cam_obj = self.cam_array[cam_num]
+                if cam_obj is None or not cam_obj.start_record(self.pendingActionID):
+                    # Recording was attempted, but did not succeed. Usually this is
+                    # because of file error, or missing codec.
+                    print(f"Unable to start recording camera {cam_num + FIRST_CAMERA_ID}.")
             self.pendingActionVar = self.PendingAction.Nothing
 
         if self.frame_count == 0:

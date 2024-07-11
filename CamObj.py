@@ -469,7 +469,9 @@ class CamObj:
                 else:
                     # We shouldn't ever get here. If so, something usually has gone wrong with file system,
                     # e.g. USB drive has come unplugged.
-                    print(f"Missing TTL timestamp file for camera {self.order}")
+                    if not DEBUG:
+                        # In debug mode, we might be performing stress test, so skip warning
+                        print(f"Missing TTL timestamp file for camera {self.order}")
 
         # By now lock has been released, and we are guaranteed to be recording.
 
@@ -498,7 +500,7 @@ class CamObj:
 
         return process
 
-    def start_record(self, animal_ID=None):
+    def start_record(self, animal_ID=None, stress_test_mode=False):
 
         if self.cam is None or not self.cam.isOpened():
             print(f"Camera {self.order} is not available for recording.")
@@ -516,49 +518,54 @@ class CamObj:
                 self.filename_timestamp = prefix + "_Frames.txt"
                 self.filename_timestamp_TTL = prefix + "_TTLs.txt"
 
-                try:
-                    # Create video file
-                    if USE_FFMPEG:
-                        self.process = self.save_video(self.filename_video, FRAME_RATE_PER_SECOND)
-                    else:
-                        # PyCharm intellisense gives warning on next line, but it is fine.
-                        self.Writer = cv2.VideoWriter(self.filename_video,
-                                                      self.codec,
-                                                      FRAME_RATE_PER_SECOND,
-                                                      self.resolution,
-                                                      RECORD_COLOR == 1)
-                except:
-                    print(f"Warning: unable to create video file: '{self.filename_video}'")
-                    return False
-
-                if not USE_FFMPEG:
-                    if not self.Writer.isOpened():
-                        # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
+                if stress_test_mode:
+                    self.Writer = None
+                    self.fid = None
+                    self.fid_TTL = None
+                else:
+                    try:
+                        # Create video file
+                        if USE_FFMPEG:
+                            self.process = self.save_video(self.filename_video, FRAME_RATE_PER_SECOND)
+                        else:
+                            # PyCharm intellisense gives warning on next line, but it is fine.
+                            self.Writer = cv2.VideoWriter(self.filename_video,
+                                                          self.codec,
+                                                          FRAME_RATE_PER_SECOND,
+                                                          self.resolution,
+                                                          RECORD_COLOR == 1)
+                    except:
                         print(f"Warning: unable to create video file: '{self.filename_video}'")
                         return False
 
-                try:
-                    # Create text file for frame timestamps
-                    self.fid = open(self.filename_timestamp, 'w')
-                    self.fid.write('Frame_number\tTime_in_seconds\n')
-                except:
-                    print("Warning: unable to create text file for frame timestamps")
-                    
-                    # Close the previously-created writer objects
-                    self.Writer.release()
-                    return False
+                    if not USE_FFMPEG:
+                        if not self.Writer.isOpened():
+                            # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
+                            print(f"Warning: unable to create video file: '{self.filename_video}'")
+                            return False
 
-                try:
-                    # Create text file for TTL timestamps
-                    self.fid_TTL = open(self.filename_timestamp_TTL, 'w')
-                    self.fid_TTL.write('TTL_event_number\tTime_in_seconds\n')
-                except:
-                    print("Warning: unable to create text file for TTL timestamps")
-                    
-                    # Close the previously-created writer objects
-                    self.fid.close()
-                    self.Writer.release()
-                    return False
+                    try:
+                        # Create text file for frame timestamps
+                        self.fid = open(self.filename_timestamp, 'w')
+                        self.fid.write('Frame_number\tTime_in_seconds\n')
+                    except:
+                        print("Warning: unable to create text file for frame timestamps")
+
+                        # Close the previously-created writer objects
+                        self.Writer.release()
+                        return False
+
+                    try:
+                        # Create text file for TTL timestamps
+                        self.fid_TTL = open(self.filename_timestamp_TTL, 'w')
+                        self.fid_TTL.write('TTL_event_number\tTime_in_seconds\n')
+                    except:
+                        print("Warning: unable to create text file for TTL timestamps")
+
+                        # Close the previously-created writer objects
+                        self.fid.close()
+                        self.Writer.release()
+                        return False
 
                 self.IsRecording = True
                 self.start_time = time.time()
@@ -725,7 +732,8 @@ class CamObj:
                                 else:
                                     self.process.stdin.write(self.frame.astype(np.uint8).tobytes())
                             else:
-                                self.Writer.write(self.frame)
+                                if self.Writer is not None:
+                                    self.Writer.write(self.frame)
                         except:
                             print(f"Unable to write video file for camera {self.order}. Will stop recording")
                             self.stop_record()
@@ -737,11 +745,16 @@ class CamObj:
 
     def get_elapsed_recording_time(self, include_cam_num=False):
 
-        file_stats = os.stat(self.filename_video)
-        if include_cam_num:
-            str1 = f"Camera {self.order} elapsed: {self.get_elapsed_time_string()}, {file_stats.st_size / (1024 * 1024)}MB"
+        if self.Writer is not None:
+            file_stats = os.stat(self.filename_video)
+            file_size = file_stats.st_size
         else:
-            str1 = f"Elapsed: {self.get_elapsed_time_string()}, {file_stats.st_size / (1024 * 1024)}MB"
+            file_size = 0
+
+        if include_cam_num:
+            str1 = f"Camera {self.order} elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
+        else:
+            str1 = f"Elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
         return str1
 
     def get_elapsed_time_string(self):
