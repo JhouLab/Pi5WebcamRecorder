@@ -157,9 +157,14 @@ def printt(txt, omit_date_time=False, close_file=False):
 def get_disk_free_space():
 
     path = DATA_FOLDER
-    bytes_avail = psutil.disk_usage(path).free
-    gigabytes_avail = bytes_avail / 1024 / 1024 / 1024
-    return gigabytes_avail
+    if path == "":
+        path = "./"
+    if os.path.exists(path):
+        bytes_avail = psutil.disk_usage(path).free
+        gigabytes_avail = bytes_avail / 1024 / 1024 / 1024
+        return gigabytes_avail
+    else:
+        return None
 
 
 class CamObj:
@@ -265,7 +270,8 @@ class CamObj:
         if elapsed > 0.1:
             # Burst TTLs must have ~50ms gap.
             if 0.5 > elapsed > 0.3:
-                # Note that old MedPC had 0.4s gap between 0.1s pulses. Check that for back-compatibility
+                # Note that old MedPC had 0.4s gap between 0.1s pulses.
+                # Check for back-compatibility
                 return
             self.num_consec_TTLs = 0
             if VERBOSE:

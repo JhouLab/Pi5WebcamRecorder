@@ -350,6 +350,8 @@ class RECORDER:
 
     def __init__(self, _cam_array: List[CamObj]):
 
+        self.cam_array = _cam_array
+
         self.root = tk.Tk()
         self.root.bind('<KeyPress>', self.onKeyPress)
         self.root.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
@@ -389,8 +391,10 @@ class RECORDER:
             w.StatusLabel = l
 
         # Add disk free status line
-        self.disk_free_label = tk.Label(frame1, text=f"Free disk space: {get_disk_free_space():.1f}GB")  # , borderwidth=1, relief="solid")
+        self.disk_free_label = tk.Label(frame1, text=f"")  # , borderwidth=1, relief="solid")
         self.disk_free_label.pack(side=tk.TOP, fill=tk.X, expand=True, pady=5)
+
+        self.show_disk_space()
 
         # frame3 holds two rows of buttons
         frame3 = tk.Frame(frame1)
@@ -414,8 +418,6 @@ class RECORDER:
 
         for idx, _b in enumerate(b_list2):
             tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=1, column=idx, ipadx=5, ipady=5, sticky="ew")
-
-        self.cam_array = _cam_array
 
         self.frame_count = 0
 
@@ -635,6 +637,16 @@ class RECORDER:
             else:
                 tk.messagebox.showinfo("Warning", "Camera is not recording")
 
+    def show_disk_space(self):
+        disk_space = get_disk_free_space()
+        if disk_space is not None:
+            if any_camera_recording(self.cam_array):
+                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB")
+            else:
+                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.1f}GB")
+        else:
+            self.disk_free_label.config(text=f"Disk path \"{DATA_FOLDER}\" invalid.")
+
     def update_image(self):
 
         if self.pendingActionVar == self.PendingAction.Exiting:
@@ -724,7 +736,7 @@ class RECORDER:
                         l.config(text="--")
 
                 if self.frame_count % 50 == 0:
-                    self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB")
+                    self.show_disk_space()
 
         if key != -1:
             self.handle_keypress(key, key >> 16, CV2KEY=True)
