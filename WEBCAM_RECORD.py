@@ -719,7 +719,7 @@ class RECORDER:
 
         self.frame_count = self.frame_count + 1
 
-        if self.frame_count % 10 == 0:
+        if self.frame_count % FRAME_RATE_PER_SECOND == 0:
             # Print status periodically (frame # and frames per second)
             if VERBOSE:
                 elapsed = time.time() - self.start
@@ -736,7 +736,7 @@ class RECORDER:
                     elif l is not None:
                         l.config(text="--")
 
-                if self.frame_count % 50 == 0:
+                if self.frame_count % (FRAME_RATE_PER_SECOND * 5) == 0:
                     self.show_disk_space()
 
         if key != -1:
