@@ -370,9 +370,6 @@ class RECORDER:
         # Add up to four status lines, one for each camera. Each line also has two buttons to start/stop recording.
         for idx, cam_obj in enumerate(_cam_array):
 
-            # Set callback that updates button state whenever called
-            cam_obj.set_button_state_callback = partial(self.set_button_state_callback, idx)
-
             w = self.widget_array[idx]
 
             if cam_obj is None or cam_obj.cam is None:
@@ -656,6 +653,10 @@ class RECORDER:
         for idx, cam_obj in enumerate(self.cam_array):
             # Read camera frame
             cam_obj.read()
+
+            if cam_obj.need_update_button_state_flag:
+                self.set_button_state_callback(idx)
+                cam_obj.need_update_button_state_flag = False
 
             if cam_obj.status:
                 # Add text to top left to show camera number. This will NOT show in recording

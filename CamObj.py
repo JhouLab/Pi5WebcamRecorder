@@ -1,10 +1,12 @@
+from __future__ import annotations   # Need this for type hints to work on older Python versions
+
 #
 # This file is intended to be imported by webcam_recorder.py
 #
 # It mainly contains the CamObj class, which helps manage independent
 # USB cameras.
 
-
+from typing import List
 import os
 import psutil        # This is used to obtain disk free space
 import numpy as np
@@ -15,9 +17,6 @@ import threading
 from sys import gettrace
 import configparser
 from enum import Enum
-
-# Need this because start/stop recording functions need to enable/disable the GUI buttons
-import tkinter as tk
 
 USE_FFMPEG = False
 
@@ -68,7 +67,7 @@ if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
         # just leave the empty string as is, so that we can default to the program directory.
         DATA_FOLDER = DATA_FOLDER + "/"
 
-FRAME_RATE_PER_SECOND = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=10)
+FRAME_RATE_PER_SECOND: float = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=10)
 HEIGHT = configParser.getint('options', 'HEIGHT', fallback=480)
 WIDTH = configParser.getint('options', 'WIDTH', fallback=640)
 if platform.system() == "Linux":
@@ -81,7 +80,7 @@ else:
 
 NUM_TTL_PULSES_TO_START_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_START_SESSION', fallback=2)
 NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=3)
-RECORD_COLOR = configParser.getint('options', 'RECORD_COLOR', fallback=1)
+RECORD_COLOR: int = configParser.getint('options', 'RECORD_COLOR', fallback=1)
 
 # Number of seconds to discriminate between binary 0 and 1
 BINARY_BIT_PULSE_THRESHOLD = 0.05
@@ -173,7 +172,7 @@ class CamObj:
     order = -1  # User-friendly camera ID. Will usually be USB port position, and also position on screen
     status = -1  # True if camera is operational and connected
     frame = None  # Most recently obtained video frame. If camera lost connection, this will be a black frame with some text
-    filename_video = "Video.avi"
+    filename_video: str = "Video.avi"
     filename_timestamp = "Timestamp.txt"
     filename_timestamp_TTL = "Timestamp_TTL.txt"
 
@@ -206,8 +205,9 @@ class CamObj:
     most_recent_gpio_falling_edge_time = -1
     num_consec_TTLs = 0   # Use this to track double and triple pulses
 
+    # PyCharm intellisense gives warning on the next line, but it is fine.
     codec = cv2.VideoWriter_fourcc(*FOURCC)  # What codec to use. Usually h264
-    resolution = (WIDTH, HEIGHT)
+    resolution: List[int] = (WIDTH, HEIGHT)
     
     helper_thread = None  # This is used to close files without blocking main thread
 
@@ -217,6 +217,7 @@ class CamObj:
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
 
     def __init__(self, cam, id_num, order, max_fps, GPIO_pin=-1):
+        self.need_update_button_state_flag = None
         self.process = None   # This is used if calling FF_MPEG directly. Probably won't use this in the future.
         self.cam = cam
         self.id_num = id_num
@@ -225,8 +226,6 @@ class CamObj:
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
-
-        self.set_button_state_callback = None
 
         if cam is None:
             # Use blank frame for this object if no camera object is specified
@@ -522,11 +521,12 @@ class CamObj:
                     if USE_FFMPEG:
                         self.process = self.save_video(self.filename_video, FRAME_RATE_PER_SECOND)
                     else:
+                        # PyCharm intellisense gives warning on next line, but it is fine.
                         self.Writer = cv2.VideoWriter(self.filename_video,
                                                       self.codec,
                                                       FRAME_RATE_PER_SECOND,
                                                       self.resolution,
-                                                      RECORD_COLOR)
+                                                      RECORD_COLOR == 1)
                 except:
                     print(f"Warning: unable to create video file: '{self.filename_video}'")
                     return False
@@ -565,7 +565,8 @@ class CamObj:
 
                 printt(f"Started recording camera {self.order} to file '{self.filename_video}'")
 
-                self.set_button_state_callback()
+                # This allows us to change button state
+                self.need_update_button_state_flag = True
 
                 return True
 
@@ -595,7 +596,7 @@ class CamObj:
                     self.process.stdin.close()
                     self.process.wait()
 
-            self.set_button_state_callback()
+            self.need_update_button_state_flag = True
 
             if self.Writer is not None:
                 try:
