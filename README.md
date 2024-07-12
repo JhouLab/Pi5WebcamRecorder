@@ -86,16 +86,17 @@ frame rate, or a less efficient codec, then storage requirements will increase.
 
 # CONFIGURING:
 
-I created two instructional files called "config_example1" and "config_example2" that
-explain possible configuration options:
+Most parameters (frame rate, codec, save directory) have reasonable defaults. You can
+override any of these by creating a "config.txt" file. I've included two working examples of
+such files called "config_example1" and "config_example2":
 
     config_example1      This lists of all configuration settings, along with brief
                          explanations of why you would choose one over the other
     config_example2      This is a bare-bones file with the most commonly used options 
 
-You can open either of the above files in any text editor, then "save as" and choose filename
-"config.txt". You can then edit "config.txt" to your liking. The program will read this config
-file whenever it starts up. The following options are available:
+To use these, open in any text editor, then "save as" and enter filename "config.txt".
+You can then edit "config.txt" to your liking. The program will read this config file
+whenever it starts up. The following options are available:
 
     FRAME_RATE_PER_SECOND                  # Frame rate of recorded video. Default 10
     FOURCC                                 # What codec to use. Default h264. Can change to mp4v
