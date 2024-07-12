@@ -513,59 +513,58 @@ class CamObj:
                 self.frame_num = 0
                 self.TTL_num = 0
 
-                prefix = DATA_FOLDER + self.get_filename_prefix(animal_ID)
+                if stress_test_mode:
+                    prefix = DATA_FOLDER + f"stress_test_cam{self.order}"
+                else:
+                    prefix = DATA_FOLDER + self.get_filename_prefix(animal_ID)
+                    
                 self.filename_video = prefix + "_Video.avi"
                 self.filename_timestamp = prefix + "_Frames.txt"
                 self.filename_timestamp_TTL = prefix + "_TTLs.txt"
 
-                if stress_test_mode:
-                    self.Writer = None
-                    self.fid = None
-                    self.fid_TTL = None
-                else:
-                    try:
-                        # Create video file
-                        if USE_FFMPEG:
-                            self.process = self.save_video(self.filename_video, FRAME_RATE_PER_SECOND)
-                        else:
-                            # PyCharm intellisense gives warning on next line, but it is fine.
-                            self.Writer = cv2.VideoWriter(self.filename_video,
-                                                          self.codec,
-                                                          FRAME_RATE_PER_SECOND,
-                                                          self.resolution,
-                                                          RECORD_COLOR == 1)
-                    except:
+                try:
+                    # Create video file
+                    if USE_FFMPEG:
+                        self.process = self.save_video(self.filename_video, FRAME_RATE_PER_SECOND)
+                    else:
+                        # PyCharm intellisense gives warning on next line, but it is fine.
+                        self.Writer = cv2.VideoWriter(self.filename_video,
+                                                      self.codec,
+                                                      FRAME_RATE_PER_SECOND,
+                                                      self.resolution,
+                                                      RECORD_COLOR == 1)
+                except:
+                    print(f"Warning: unable to create video file: '{self.filename_video}'")
+                    return False
+
+                if not USE_FFMPEG:
+                    if not self.Writer.isOpened():
+                        # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
                         print(f"Warning: unable to create video file: '{self.filename_video}'")
                         return False
 
-                    if not USE_FFMPEG:
-                        if not self.Writer.isOpened():
-                            # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
-                            print(f"Warning: unable to create video file: '{self.filename_video}'")
-                            return False
+                try:
+                    # Create text file for frame timestamps
+                    self.fid = open(self.filename_timestamp, 'w')
+                    self.fid.write('Frame_number\tTime_in_seconds\n')
+                except:
+                    print("Warning: unable to create text file for frame timestamps")
 
-                    try:
-                        # Create text file for frame timestamps
-                        self.fid = open(self.filename_timestamp, 'w')
-                        self.fid.write('Frame_number\tTime_in_seconds\n')
-                    except:
-                        print("Warning: unable to create text file for frame timestamps")
+                    # Close the previously-created writer objects
+                    self.Writer.release()
+                    return False
 
-                        # Close the previously-created writer objects
-                        self.Writer.release()
-                        return False
+                try:
+                    # Create text file for TTL timestamps
+                    self.fid_TTL = open(self.filename_timestamp_TTL, 'w')
+                    self.fid_TTL.write('TTL_event_number\tTime_in_seconds\n')
+                except:
+                    print("Warning: unable to create text file for TTL timestamps")
 
-                    try:
-                        # Create text file for TTL timestamps
-                        self.fid_TTL = open(self.filename_timestamp_TTL, 'w')
-                        self.fid_TTL.write('TTL_event_number\tTime_in_seconds\n')
-                    except:
-                        print("Warning: unable to create text file for TTL timestamps")
-
-                        # Close the previously-created writer objects
-                        self.fid.close()
-                        self.Writer.release()
-                        return False
+                    # Close the previously-created writer objects
+                    self.fid.close()
+                    self.Writer.release()
+                    return False
 
                 self.IsRecording = True
                 self.start_time = time.time()

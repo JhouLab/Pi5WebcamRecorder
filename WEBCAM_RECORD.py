@@ -419,7 +419,7 @@ class RECORDER:
         if DEBUG:
             # Extra row of buttons in debug mode
             b_list_debug = [
-                ("STRESS TEST (mock record all, no files)", partial(self.show_start_record_dialog, self.CAM_VALS.ALL))
+                ("STRESS TEST (record all cams)", partial(self.show_start_record_dialog, self.CAM_VALS.ALL))
             ]
 
             for idx, _b in enumerate(b_list_debug):
