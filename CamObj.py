@@ -169,7 +169,7 @@ def get_disk_free_space():
 class CamObj:
     cam = None   # this is the opencv camera object
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
-    order = -1  # User-friendly camera ID. Will usually be USB port position, and also position on screen
+    box_id = -1  # User-friendly camera ID. Will usually be USB port position/screen position, starting from 1
     status = -1  # True if camera is operational and connected
     frame = None  # Most recently obtained video frame. If camera lost connection, this will be a black frame with some text
     filename_video: str = "Video.avi"
@@ -216,20 +216,20 @@ class CamObj:
     frames_to_mark_GPIO = 0    # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
 
-    def __init__(self, cam, id_num, order, max_fps, GPIO_pin=-1):
+    def __init__(self, cam, id_num, box_id, max_fps, GPIO_pin=-1):
         self.need_update_button_state_flag = None
         self.process = None   # This is used if calling FF_MPEG directly. Probably won't use this in the future.
         self.cam = cam
         self.id_num = id_num
-        self.order = order
-        self.max_fps = max_fps
+        self.box_id = box_id   # This is a user-friendly unique identifier for each box.
+        self.max_fps = max_fps   # This is stored from value obtained from camera. It does not seem to be reliable.
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
 
         if cam is None:
             # Use blank frame for this object if no camera object is specified
-            self.frame = make_blank_frame(f"{order} - No camera found")
+            self.frame = make_blank_frame(f"{box_id} - No camera found")
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
@@ -348,7 +348,7 @@ class CamObj:
                 # 75ms pulse indicates ONE
                 checksum = 1
             else:
-                printt(f"Received animal ID {self.TTL_tmp_ID} for box {self.order}, but checksum duration too long ({on_time} instead of 0-0.075s).")
+                printt(f"Received animal ID {self.TTL_tmp_ID} for box {self.box_id}, but checksum duration too long ({on_time} instead of 0-0.075s).")
                 self.TTL_animal_ID = -1
                 self.TTL_mode = self.TTL_type.Normal
                 return
@@ -356,9 +356,9 @@ class CamObj:
             if self.TTL_checksum == checksum:
                 # Successfully received TTL ID
                 self.TTL_animal_ID = self.TTL_tmp_ID
-                printt(f'Received animal ID {self.TTL_animal_ID} for box {self.order}')
+                printt(f'Received animal ID {self.TTL_animal_ID} for box {self.box_id}')
             else:
-                printt(f"Received animal ID {self.TTL_tmp_ID} but checksum failed for box {self.order}")
+                printt(f"Received animal ID {self.TTL_tmp_ID} but checksum failed for box {self.box_id}")
                 self.TTL_animal_ID = -1
 
             self.TTL_mode = self.TTL_type.Normal
@@ -417,7 +417,7 @@ class CamObj:
 
         if not self.start_record():
             # Start recording failed, so don't record TTLs
-            print(f"Unable to start recording camera {self.order} in response to GPIO input")
+            print(f"Unable to start recording camera {self.box_id} in response to GPIO input")
             return
 
         if not self.IsRecording:
@@ -465,13 +465,13 @@ class CamObj:
                     try:
                         self.fid_TTL.write(f"{self.TTL_num}\t{gpio_time_relative}\n")
                     except:
-                        print(f"Unable to write TTL timestamp file for camera {self.order}")
+                        print(f"Unable to write TTL timestamp file for camera {self.box_id}")
                 else:
                     # We shouldn't ever get here. If so, something usually has gone wrong with file system,
                     # e.g. USB drive has come unplugged.
                     if not DEBUG:
                         # In debug mode, we might be performing stress test, so skip warning
-                        print(f"Missing TTL timestamp file for camera {self.order}")
+                        print(f"Missing TTL timestamp file for camera {self.box_id}")
 
         # By now lock has been released, and we are guaranteed to be recording.
 
@@ -485,7 +485,7 @@ class CamObj:
             if self.TTL_animal_ID > 0:
                 animal_ID = str(self.TTL_animal_ID)
             else:
-                animal_ID = f"Cam{self.order}"
+                animal_ID = f"Cam{self.box_id}"
         return get_date_string() + "_" + animal_ID
 
     def save_video(self, saving_file_name, fps):
@@ -503,7 +503,7 @@ class CamObj:
     def start_record(self, animal_ID=None, stress_test_mode=False):
 
         if self.cam is None or not self.cam.isOpened():
-            print(f"Camera {self.order} is not available for recording.")
+            print(f"Camera {self.box_id} is not available for recording.")
             return False
 
         # Because this function might be called from the GPIO callback thread, we need to
@@ -514,7 +514,7 @@ class CamObj:
                 self.TTL_num = 0
 
                 if stress_test_mode:
-                    prefix = DATA_FOLDER + f"stress_test_cam{self.order}"
+                    prefix = DATA_FOLDER + f"stress_test_cam{self.box_id}"
                 else:
                     prefix = DATA_FOLDER + self.get_filename_prefix(animal_ID)
                     
@@ -569,7 +569,7 @@ class CamObj:
                 self.IsRecording = True
                 self.start_time = time.time()
 
-                printt(f"Started recording camera {self.order} to file '{self.filename_video}'")
+                printt(f"Started recording camera {self.box_id} to file '{self.filename_video}'")
 
                 # This allows us to change button state
                 self.need_update_button_state_flag = True
@@ -595,7 +595,7 @@ class CamObj:
 
             if self.IsRecording:
                 self.IsRecording = False
-                printt(f"Stopping recording camera {self.order} after " + self.get_elapsed_time_string())
+                printt(f"Stopping recording camera {self.box_id} after " + self.get_elapsed_time_string())
 
                 # Close Video file
                 if USE_FFMPEG:
@@ -651,9 +651,9 @@ class CamObj:
                     if self.IsRecording:
                         self.stop_record()  # Close file writers
 
-                    self.frame = make_blank_frame(f"{self.order} Camera lost connection")
+                    self.frame = make_blank_frame(f"{self.box_id} Camera lost connection")
                     # Warn user that something is wrong.
-                    printt(f"Unable to read video from camera with ID {self.order}. Will remove camera from available list, and stop any ongoing recordings.")
+                    printt(f"Unable to read video from camera with ID {self.box_id}. Will remove camera from available list, and stop any ongoing recordings.")
 
                     # Remove camera resources
                     self.cam.release()
@@ -712,7 +712,7 @@ class CamObj:
                             time_elapsed = time.time() - self.start_time
                             self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
                         except:
-                            print(f"Unable to write text file for camera f{self.order}. Will stop recording")
+                            print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
                             self.stop_record()
                             return 0, None
 
@@ -734,7 +734,7 @@ class CamObj:
                                 if self.Writer is not None:
                                     self.Writer.write(self.frame)
                         except:
-                            print(f"Unable to write video file for camera {self.order}. Will stop recording")
+                            print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
                             self.stop_record()
 
                 return self.status, self.frame
@@ -751,7 +751,7 @@ class CamObj:
             file_size = 0
 
         if include_cam_num:
-            str1 = f"Camera {self.order} elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
+            str1 = f"Camera {self.box_id} elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
         else:
             str1 = f"Elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
         return str1

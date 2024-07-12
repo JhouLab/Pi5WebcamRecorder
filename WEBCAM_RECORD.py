@@ -104,6 +104,9 @@ def setup_cam(id):
             print(f"MJPG not supported. Please edit code.")
         tmp.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
         tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+
+        # fps readout does not seem to be reliable. On Linux, we always seem to get 30fps, even if camera
+        # can't do it. On Windows, always seem to get 0.
         fps = tmp.get(cv2.CAP_PROP_FPS)
         if not tmp.isOpened():
             print(f"Resolution {WIDTH}x{HEIGHT} not supported. Please change config.txt.")
@@ -239,14 +242,15 @@ for idx1, cam_obj1 in enumerate(cam_array):
             omit_date_time=True)
     else:
         printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}")
-        
-    printt(f"    Max possible fps from this camera: {cam_obj1.max_fps}")
+
+    # This does not seem to be reliable. On Linux, we always seem to get 30fps. On Windows, we always seem to get 0.
+#    printt(f"    Max possible fps from this camera: {cam_obj1.max_fps}")
     if 0 < cam_obj1.max_fps < min_fps:
         # Should issue warning here ...
         min_fps = cam_obj1.max_fps
 
 # Lower frame rate to whatever is the lowest of all 4 cameras.
-FRAME_RATE_PER_SECOND = min_fps
+# FRAME_RATE_PER_SECOND = min_fps
 
 print()
 printt(f"Starting display. Frame rate for display and recording is {FRAME_RATE_PER_SECOND}")
@@ -340,10 +344,10 @@ class RECORDER:
                     if cam_obj is not None:
                         if cam_obj.TTL_mode == cam_obj.TTL_type.Normal:
                             cam_obj.TTL_mode = cam_obj.TTL_type.Debug
-                            printt(f'Entering DEBUG TTL mode for camera {cam_obj.order}')
+                            printt(f'Entering DEBUG TTL mode for camera {cam_obj.box_id}')
                         elif cam_obj.TTL_mode == cam_obj.TTL_type.Debug:
                             cam_obj.TTL_mode = cam_obj.TTL_type.Normal
-                            printt(f'Exiting DEBUG TTL mode for camera {cam_obj.order}')
+                            printt(f'Exiting DEBUG TTL mode for camera {cam_obj.box_id}')
 
     pendingActionCamera = -1
     pendingActionID = ""
@@ -444,8 +448,8 @@ class RECORDER:
             for c in _cam_array:
                 if c is None or c.cam is None:
                     continue
-                if c.order >= 0:
-                    self.which_display = c.order - FIRST_CAMERA_ID
+                if c.box_id >= 0:
+                    self.which_display = c.box_id - FIRST_CAMERA_ID
                     break
 
         # Place in top left corner of screen
@@ -556,7 +560,7 @@ class RECORDER:
             return
 
         cam = cam_array[self.which_display]
-        cam_position = cam.order
+        cam_position = cam.box_id
         if cam is None or cam.cam is None:
             if VERBOSE:
                 print(f"Camera in position {cam_position} is not available")
