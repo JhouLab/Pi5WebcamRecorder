@@ -62,7 +62,7 @@ DATA_FOLDER = configParser.get('options', 'DATA_FOLDER', fallback='')
 
 if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
     # Data folder doesn't end with either forward or backward slash
-    if len(DATA_FOLDER) > 0:
+    if len(DATA_FOLDER) > 0 and DATA_FOLDER != ".":
         # Only append slash if data folder is not the empty string. Otherwise,
         # just leave the empty string as is, so that we can default to the program directory.
         DATA_FOLDER = DATA_FOLDER + "/"
@@ -489,28 +489,15 @@ class CamObj:
         day = '{:02d}'.format(now.day)
         date = '{}-{}-{}'.format(year, month, day)
 
-        flg = False
-        path = DATA_FOLDER
+        target_path = os.path.join(DATA_FOLDER, date)
         try:
-            if path is not None:
-                # look through directories in designated file path
-                for root, dirs, files in os.walk(path):
-                    for name in dirs:
-                        if name == date:
-                            flg = True
-                            path = os.path.join(path, name)
-                            print("Found folder at: ", path)
-                # if the folder does not exist, create it
-                if flg == False:
-                    path = os.path.join(path, date)
-                    os.mkdir(path)
-                    print("Folder was not found, but created at: ", path)
-                return path
-
-            else:
-                raise Exception("Error: Data folder was not specified in config file")
-        except:
-            print("Error: An unspecified error has occured")
+            if not os.path.isdir(target_path):
+                os.mkdir(target_path)
+                print("Folder was not found, but created at: ", target_path)
+            return target_path
+        except Exception as ex:
+            print(f"Error while attempting to create folder {target_path}")
+            print("    Error type is: ", ex.__class__.__name__)
 
     def get_filename_prefix(self, animal_ID=None):
         path = self.verify_directory()
@@ -549,7 +536,7 @@ class CamObj:
                 self.frame_num = 0
                 self.TTL_num = 0
 
-                prefix = DATA_FOLDER + self.get_filename_prefix(animal_ID)
+                prefix = self.get_filename_prefix(animal_ID)
                 self.filename_video = prefix + "_Video.avi"
                 self.filename_timestamp = prefix + "_Frames.txt"
                 self.filename_timestamp_TTL = prefix + "_TTLs.txt"
