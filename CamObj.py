@@ -480,13 +480,49 @@ class CamObj:
             # start and stop of session.
             self.stop_record()
 
+    #verifies that there is an appropriate directory to save the recording in. if there is not, create it and save that as location
+    def verify_directory(self):
+        # get custom version of datetime for folder search/create
+        now = datetime.datetime.now()
+        year = '{:04d}'.format(now.year)
+        month = '{:02d}'.format(now.month)
+        day = '{:02d}'.format(now.day)
+        date = '{}-{}-{}'.format(year, month, day)
+
+        flg = False
+        path = DATA_FOLDER
+        try:
+            if path is not None:
+                # look through directories in designated file path
+                for root, dirs, files in os.walk(path):
+                    for name in dirs:
+                        if name == date:
+                            flg = True
+                            path = os.path.join(path, name)
+                            print("Found folder at: ", path)
+                # if the folder does not exist, create it
+                if flg == False:
+                    path = os.path.join(path, date)
+                    os.mkdir(path)
+                    print("Folder was not found, but created at: ", path)
+                return path
+
+            else:
+                raise Exception("Error: Data folder was not specified in config file")
+        except:
+            print("Error: An unspecified error has occured")
+
     def get_filename_prefix(self, animal_ID=None):
+        path = self.verify_directory()
+
         if animal_ID is None or animal_ID == "":
             if self.TTL_animal_ID > 0:
                 animal_ID = str(self.TTL_animal_ID)
             else:
                 animal_ID = f"Cam{self.order}"
-        return get_date_string() + "_" + animal_ID
+
+        filename = get_date_string() + "_" + animal_ID
+        return os.path.join(path, filename)
 
     def save_video(self, saving_file_name, fps):
 
