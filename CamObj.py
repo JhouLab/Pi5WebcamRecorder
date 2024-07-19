@@ -537,7 +537,7 @@ class CamObj:
                 self.TTL_num = 0
 
                 if stress_test_mode:
-                    prefix = f"stress_test_cam{self.box_id}"
+                    prefix = os.path.join(DATA_FOLDER, f"stress_test_cam{self.box_id}")
                 else:
                     prefix = self.get_filename_prefix(animal_ID)
                     
