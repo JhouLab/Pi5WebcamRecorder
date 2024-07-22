@@ -292,8 +292,13 @@ class CamObj:
         elif self.TTL_mode == self.TTL_type.Debug:
             # In debug mode, all gaps should be 25ms
             elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
-            if elapsed < 0.015 or elapsed > 0.035:
+            if elapsed > 1:
+                # Cancel debug mode
+                self.TTL_mode = self.TTL_type.Normal
+                printt(f'Exiting DEBUG TTL mode with pause length {elapsed}')
+            elif elapsed < 0.015 or elapsed > 0.035:
                 printt(f'{self.TTL_debug_count} off time {elapsed}, expected 0.025')
+                
         return
 
     def GPIO_callback2(self, param):
@@ -335,7 +340,7 @@ class CamObj:
             elif on_time > 2.0 and DEBUG:
                 # Extra long pulse starts debug testing mode
                 self.TTL_mode = self.TTL_type.Debug
-                printt('Entering DEBUG TTL mode')
+                printt(f'Entering DEBUG TTL mode with pulse length {on_time}s')
                 self.TTL_debug_count = 0
 
             return
