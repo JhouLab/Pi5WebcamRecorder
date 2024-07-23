@@ -50,6 +50,14 @@ if IS_LINUX:
         pass
 
 if IS_PI5:
+    #
+    # Note that the standard RPi.GPIO library does NOT work on Pi5 (only Pi4).
+    # On Pi5, please uninstall the standard library and install the following
+    # drop-in replacement:
+    #
+    # sudo apt remove python3-rpi.gpio
+    # sudo apt install python3-rpi-lgpio
+    #
     import RPi.GPIO as GPIO
 
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found. This statement must occur before importing cv2
@@ -529,6 +537,7 @@ class CamObj:
         except Exception as ex:
             print(f"Error while attempting to create folder {target_path}")
             print("    Error type is: ", ex.__class__.__name__)
+            return ''    # This will force file to go to program folder
 
     def get_filename_prefix(self, animal_ID=None):
         path = self.verify_directory()
