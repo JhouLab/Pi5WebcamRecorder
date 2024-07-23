@@ -59,6 +59,9 @@ DEBUG = gettrace() is not None
 
 # OpenCV install instructions:
 #
+# Note that OpenCV doesn't yet work with numpy2, which was released March 2024.
+# Recommend using Numpy 1.26.4, which was the last released numpy <2.0, on Feb 5, 2024.
+#
 # On Pi5, look here: https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
 #     This is what worked for me:
 #     sudo apt-get install libopencv-dev

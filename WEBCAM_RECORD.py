@@ -4,18 +4,25 @@ from typing import List
 import time
 import os
 
-# On Raspberry pi, need to type:
-# sudo apt-get install python3-pil.imagetk
-# from PIL import Image, ImageTk  # Need to import pillow from Jeffrey A. Clark
+# We no longer need PIL, since we are using OpenCV to render images, which is MUCH faster.
+#
+# If we ever had to bring it back, would have to install PIL on the PI this way:
+#   sudo apt-get install python3-pil.imagetk
+# from PIL import Image, ImageTk  # Import pillow from Jeffrey A. Clark
+
 import numpy as np
 import math
 from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5
 from get_hardware_info import *
+
+# Note that
 import cv2
 from sys import gettrace
 from enum import Enum
 from functools import partial
 
+# On WSL, install tkinter this way:
+#   sudo apt install python3-tk
 import tkinter as tk
 from tkinter import messagebox
 
