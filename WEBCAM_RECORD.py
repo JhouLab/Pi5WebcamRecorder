@@ -9,7 +9,7 @@ import os
 # from PIL import Image, ImageTk  # Need to import pillow from Jeffrey A. Clark
 import numpy as np
 import math
-from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space
+from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5
 from get_hardware_info import *
 import cv2
 from sys import gettrace
@@ -30,7 +30,7 @@ DEBUG = gettrace() is not None
 if DEBUG:
     printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
 
-if platform.system() == "Linux":
+if IS_PI5:
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
 
     # Identify camera via USB port position, rather than ID number which is unpredictable.
@@ -57,6 +57,7 @@ if platform.system() == "Linux":
             print("    sudo apt remove python3-rpi.gpio")
             print("    sudo apt install python3-rpi-lgpio")
             exit()
+
 else:
     # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = False
@@ -77,8 +78,9 @@ else:
     SCREEN_RESOLUTION_INSET = (WIDTH >> 1, HEIGHT >> 1)
 
 # Reading from webcam using MJPG generally allows higher frame rates
+# This definitely works on PI5, not tested elsewhere.
 # USE_MJPG = (WIDTH > 640)
-USE_MJPG = True
+USE_MJPG = IS_PI5
 
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.

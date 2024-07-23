@@ -5,6 +5,14 @@ from __future__ import annotations   # Need this for type hints to work on older
 #
 # It mainly contains the CamObj class, which helps manage independent
 # USB cameras.
+#
+# On Raspberry Pi and Windows, this just works.
+#
+# On Windows Subsystem for Linux (WSL), need to first install usbipd-win:
+# https://learn.microsoft.com/en-us/windows/wsl/connect-usb#prerequisites
+# Then you might have to install kernel drivers:
+# https://github.com/dorssel/usbipd-win/wiki/WSL-support
+# https://github.com/dorssel/usbipd-win/wiki/WSL-support
 
 from typing import List
 import os
@@ -14,6 +22,7 @@ import time
 import datetime
 import platform
 import threading
+import subprocess
 from sys import gettrace
 import configparser
 from enum import Enum
@@ -25,8 +34,22 @@ if USE_FFMPEG:
     # reduce file sizes. But it doesn't seem to help, and doesn't install at all on Raspberry Pi.
     # Note also that ffmpeg-python is just a wrapper for ffmpeg, which must already be installed separately.
     import ffmpeg      # On Pycharm/Windows, install ffmpeg-python from Karl Kroening.
+    
 
-if platform.system() == "Linux":
+PLATFORM = platform.system().lower()
+IS_LINUX = (PLATFORM == 'linux')
+IS_PI5 = False
+
+if IS_LINUX:
+
+    try:
+        r = subprocess.run(['uname', '-m'], stdout=subprocess.PIPE)
+        cpu_type = r.stdout
+        IS_PI5 = cpu_type.startswith(b'aarch64')
+    except:
+        pass
+
+if IS_PI5:
     import RPi.GPIO as GPIO
 
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found. This statement must occur before importing cv2
