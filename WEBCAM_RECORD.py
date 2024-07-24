@@ -34,6 +34,8 @@ FIRST_CAMERA_ID = 1
 
 DEBUG = gettrace() is not None
 
+DEBUG_DIAGNOSTIC_FRAME_INTERVAL = FRAME_RATE_PER_SECOND * 2
+
 if DEBUG:
     printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
 
@@ -486,6 +488,8 @@ class RECORDER:
         # Apparently the Wayland display server doesn't support it.
         cv2.moveWindow(DISPLAY_WINDOW_NAME, 20, 220)  # Start video in top left, below control bar
         cv2.waitKey(1)
+        
+        self.skipped_display_frames = 0
 
         self.start = time.time()
         # This is actually target time for the frame AFTER the next, since the next one will be read immediately
@@ -705,16 +709,36 @@ class RECORDER:
                                (0, 0, 255),  # Red dot (color is in BGR order)
                                -1)  # -1 thickness fills circle
 
+        # If this number is positive, we are late for the next frame
+        # and should skip all non-essential activities
+        # If this number is negative, we are OK
         lag_ms = (time.time() - self.next_frame) * 1000
+        
+        skip_display = False
+        
+        # Raspberry Pi5 takes 10-25ms to show frame to screen, and 2-5ms
+        # to print status updates (frame rate, file size). So if CPU lag
+        # is > -25, we skip showing frames reduce risk of dropped frames)
 
-        if lag_ms > -5:
-            # If operating at 20fps, then we have 50ms between frames.
-            # It should take about 5ms to show frame to screen. If we have <5ms
-            # before next frame, then skip display
+        # Show timing diagnostics in DEBUG mode every 3 seconds or so
+        show_timing_diagnostics = DEBUG and ((self.frame_count + 1) % DEBUG_DIAGNOSTIC_FRAME_INTERVAL == 0)
+
+        if lag_ms > -25:
+            # If user sets frame rate too high, then this will always be true,
+            # and UI will appear to completely freeze. So we allow frame to show
+            # once per second
+            if self.frame_count % FRAME_RATE_PER_SECOND != 0:
+                skip_display = True
+            
+        if skip_display:
+            # We are in danger of running late, so skip display.
+            # Note that AVI/text files have already been written, so data is safe.
             key = -1
+            self.skipped_display_frames += 1
         else:
-            if DEBUG and self.frame_count % 10 == 0:
-                print(f"CPU lag {lag_ms:.2f} ms, ", end='')
+            # Timing is OK, go ahead and show video to screen
+            if show_timing_diagnostics:
+                print(f"Frame: {self.frame_count}, skipped display {self.skipped_display_frames}, CPU lag {lag_ms:.3f}, ", end='')
             if self.which_display >= 0:
                 # Show just one of the 4 cameras
                 cam_obj = self.cam_array[self.which_display]
@@ -742,11 +766,12 @@ class RECORDER:
             # This shows image to screen
             self.imshow(img)
 
-            if DEBUG and self.frame_count % 10 == 0:
-                print(f" {lag_ms:.2f} ms before/after imshow")
-
             # Checks if key is pressed. Also runs cv2 message pump, which will update screen
             key = get_key()
+
+            if show_timing_diagnostics:
+                lag_ms = (time.time() - self.next_frame) * 1000
+                print(f"{lag_ms:.3f}, ", end='')
 
         if self.pendingActionVar == self.PendingAction.StartRecord:
             cam_num = self.pendingActionCamera
@@ -766,7 +791,9 @@ class RECORDER:
             self.pendingActionVar = self.PendingAction.Nothing
 
         self.frame_count = self.frame_count + 1
-
+        
+        # Now print status updates, such as elapsed recording time, file size.
+        # This takes 2-5ms
         if self.frame_count % FRAME_RATE_PER_SECOND == 0:
             # Print status periodically (frame # and frames per second)
             if VERBOSE:
@@ -787,6 +814,14 @@ class RECORDER:
                 if self.frame_count % (FRAME_RATE_PER_SECOND * 5) == 0:
                     self.show_disk_space()
 
+            if show_timing_diagnostics:
+                lag_ms = (time.time() - self.next_frame) * 1000
+                print(f"{lag_ms:.3f}ms before/after imshow, after status report")
+        else:
+            if show_timing_diagnostics:
+                lag_ms = (time.time() - self.next_frame) * 1000
+                print(f"{lag_ms:.3f}ms before/after imshow, at loop end")
+
         if key != -1:
             self.handle_keypress(key, key >> 16, CV2KEY=True)
 
@@ -796,6 +831,7 @@ class RECORDER:
             return
 
         lag_ms = (time.time() - self.next_frame) * 1000
+       
         if lag_ms > 50:
             # At 20fps, we have 50ms between frames. If we are lagging slightly, we can maybe still catch up,
             # but if we are an entire frame late, then warn of possible missed frames.
