@@ -116,6 +116,10 @@ NUM_TTL_PULSES_TO_START_SESSION = configParser.getint('options', 'NUM_TTL_PULSES
 NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=3)
 RECORD_COLOR: int = configParser.getint('options', 'RECORD_COLOR', fallback=1)
 
+SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', fallback=1)
+SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
+
+
 # Number of seconds to discriminate between binary 0 and 1
 BINARY_BIT_PULSE_THRESHOLD = 0.05
 
@@ -134,8 +138,14 @@ def get_date_string():
     return day_month_year
 
 
-def make_blank_frame(txt):
-    tmp = np.zeros((HEIGHT, WIDTH, 3), dtype="uint8")
+def make_blank_frame(txt, resolution=None):
+    if resolution is not None:
+        w = resolution[0]
+        h = resolution[1]
+    else:
+        w = WIDTH
+        h = HEIGHT
+    tmp = np.zeros((h, w, 3), dtype="uint8")
     cv2.putText(tmp, txt, (int(10 * FONT_SCALE), int(30 * FONT_SCALE)), cv2.FONT_HERSHEY_SIMPLEX,
                 FONT_SCALE, (255, 255, 255),
                 round(FONT_SCALE + 0.5))   # Line thickness
@@ -839,10 +849,14 @@ class CamObj:
 
     def take_snapshot(self):
         if self.cam is None or self.frame is None:
-            return
+            return False
         if self.cam.isOpened():
             fname = self.get_filename_prefix() + "_snapshot.jpg"
             cv2.imwrite(fname, self.frame)
+            printt(f'Wrote snapshot to file {fname}')
+            return True
+        else:
+            return False
 
     def close(self):
 

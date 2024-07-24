@@ -12,7 +12,9 @@ import os
 
 import numpy as np
 import math
-from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame, FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5
+from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame,\
+    FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5,\
+    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON
 from get_hardware_info import *
 
 # Note that
@@ -31,6 +33,11 @@ VERBOSE = False
 
 # First camera ID number
 FIRST_CAMERA_ID = 1
+
+# Expand window for stereotaxic camera?
+# Isn't practical because window becomes too big.
+EXPAND_VIDEO = True
+
 
 DEBUG = gettrace() is not None
 
@@ -72,20 +79,27 @@ else:
     # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = False
     INPUT_PIN_LIST = [None] * 4  # List of input pins for the four cameras
-
-if WIDTH > 1024:
-    # Downsample large video frames to something more reasonable
-    ratio = WIDTH / 1024
-    SCREEN_RESOLUTION = (1024, int(HEIGHT / ratio))
-    SCREEN_RESOLUTION_INSET = (512, SCREEN_RESOLUTION[1] >> 1)
-elif WIDTH < 640:
-    # Upsample small frames
-    ratio = 640 / WIDTH
-    SCREEN_RESOLUTION = (640, int(HEIGHT * ratio))
-    SCREEN_RESOLUTION_INSET = (320, SCREEN_RESOLUTION[1] >> 1)
-else:
+    
+if EXPAND_VIDEO:
     SCREEN_RESOLUTION = (WIDTH, HEIGHT)
-    SCREEN_RESOLUTION_INSET = (WIDTH >> 1, HEIGHT >> 1)
+    # This applies to the stereotax only
+    # Upsample small frames to 640 width
+    ratio = 1.5
+    SCREEN_RESOLUTION = (int(WIDTH * ratio), int(HEIGHT * ratio))
+else:
+    if WIDTH > 1024:
+        # Downsample large video frames to 1024 width
+        ratio = WIDTH / 1024
+        SCREEN_RESOLUTION = (1024, int(HEIGHT / ratio))
+        SCREEN_RESOLUTION_INSET = (512, SCREEN_RESOLUTION[1] >> 1)
+    elif WIDTH < 640:
+        # Upsample small frames to 640 width
+        ratio = 640 / WIDTH
+        SCREEN_RESOLUTION = (640, int(HEIGHT * ratio))
+    else:
+        SCREEN_RESOLUTION = (WIDTH, HEIGHT)
+
+SCREEN_RESOLUTION_INSET = (SCREEN_RESOLUTION[0] >> 1, SCREEN_RESOLUTION[1] >> 1)
 
 # Reading from webcam using MJPG generally allows higher frame rates
 # This definitely works on PI5, not tested elsewhere.
@@ -401,13 +415,20 @@ class RECORDER:
                 continue
             f3 = tk.Frame(frame2)
             f3.pack(fill=tk.X)
-            b = tk.Button(f3, text=f"Record cam #{FIRST_CAMERA_ID + idx}", command=partial(self.show_start_record_dialog, idx))
-            b.pack(side=tk.LEFT, ipadx=2)
-            w.StartButton = b
-            b = tk.Button(f3, text="Stop", command=partial(self.show_stop_dialog, idx))
-            b.pack(side=tk.LEFT, ipadx=10)
-            b["state"] = tk.DISABLED
-            w.StopButton = b
+            
+            if SHOW_RECORD_BUTTON:
+                b = tk.Button(f3, text=f"Record cam #{FIRST_CAMERA_ID + idx}", command=partial(self.show_start_record_dialog, idx))
+                b.pack(side=tk.LEFT, ipadx=2)
+                w.StartButton = b
+                b = tk.Button(f3, text="Stop", command=partial(self.show_stop_dialog, idx))
+                b.pack(side=tk.LEFT, ipadx=10)
+                b["state"] = tk.DISABLED
+                w.StopButton = b
+            if SHOW_SNAPSHOT_BUTTON:
+                b = tk.Button(f3, text=f"Snapshot cam #{FIRST_CAMERA_ID + idx}", command=partial(self.snapshot, idx))
+                b.pack(side=tk.LEFT, ipadx=2)
+                w.StartButton = b
+                
             l = tk.Label(f3, text=f"", width=60, anchor=tk.W)
             l.pack(side=tk.LEFT, fill=tk.X)
             w.StatusLabel = l
@@ -483,7 +504,7 @@ class RECORDER:
         self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
 
         cv2.namedWindow(DISPLAY_WINDOW_NAME)  # Create a named window
-        cv2.imshow(DISPLAY_WINDOW_NAME, make_blank_frame(""))  # Must show something or else moveWindow fails on Pi
+        cv2.imshow(DISPLAY_WINDOW_NAME, make_blank_frame("", SCREEN_RESOLUTION))  # Must show something or else moveWindow fails on Pi
         cv2.waitKey(1)
         # Well, the following doesn't seem to work in Pi.
         # Apparently the Wayland display server doesn't support it.
@@ -590,6 +611,11 @@ class RECORDER:
         else:
             if VERBOSE:
                 print(f"Showing camera {cam_position}")
+                
+    def snapshot(self, cam_num):
+        
+        cam_obj = self.cam_array[cam_num]
+        cam_obj.take_snapshot()
 
     def show_start_record_dialog(self, cam_num):
 

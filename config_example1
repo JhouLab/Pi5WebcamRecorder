@@ -68,3 +68,7 @@ HEIGHT = 480
 ; Windows folders can use either backward or forward slash.
 DATA_FOLDER = /home/jhoulab/Videos/
 ; DATA_FOLDER = C:/Users/TomJhou/Videos/
+
+; Determines which buttons are shown on GUI. Can either show video recording, still snapshot, or both.
+SHOW_RECORD_BUTTON = 1
+SHOW_SNAPSHOT_BUTTON = 0
