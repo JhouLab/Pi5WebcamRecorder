@@ -265,6 +265,15 @@ print()
 printt(f"Starting display. Frame rate for display and recording is {FRAME_RATE_PER_SECOND}")
 
 
+def get_key():
+    # waitKey checks if any key has been pressed, and also runs cv2 message pump so that screen will update
+    if platform.system() == "Linux":
+        return cv2.waitKey(1)
+    elif platform.system() == "Windows":
+        # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
+        return cv2.waitKeyEx(1)
+
+
 class RECORDER:
     class PendingAction(Enum):
         Nothing = 0
@@ -477,7 +486,10 @@ class RECORDER:
         # Apparently the Wayland display server doesn't support it.
         cv2.moveWindow(DISPLAY_WINDOW_NAME, 20, 220)  # Start video in top left, below control bar
         cv2.waitKey(1)
-        
+
+        self.start = time.time()
+        # This is actually target time for the frame AFTER the next, since the next one will be read immediately
+        self.next_frame = self.start + self.FRAME_INTERVAL
         self.update_image()
 
     def browse_data_folder(self):
@@ -528,13 +540,6 @@ class RECORDER:
     def imshow(self, img):
         if img is not None:
             cv2.imshow(DISPLAY_WINDOW_NAME, img)
-            
-                # Check if any key has been pressed.
-        if platform.system() == "Linux":
-            return cv2.waitKey(1)
-        elif platform.system() == "Windows":
-            # wakeKeyEx can read cursor keys on Windows, whereas waitKey() can't
-            return cv2.waitKeyEx(1)
 
     def change_cam(self, cam_num):
 
@@ -700,32 +705,45 @@ class RECORDER:
                                (0, 0, 255),  # Red dot (color is in BGR order)
                                -1)  # -1 thickness fills circle
 
-        if self.which_display >= 0:
-            # Show just one of the 4 cameras
-            cam_obj = self.cam_array[self.which_display]
-            if cam_obj.status:
-                if SCREEN_RESOLUTION[0] == WIDTH:
-                    img = cam_obj.frame
+        lag_ms = (time.time() - self.next_frame) * 1000
+
+        if lag_ms > -5:
+            # If operating at 20fps, then we have 50ms between frames.
+            # It should take about 5ms to show frame to screen. If we have <5ms
+            # before next frame, then skip display
+            key = -1
+        else:
+            if DEBUG and self.frame_count % 10 == 0:
+                printt(f"CPU lag {lag_ms:.2f} ms. Negative numbers are good here.")
+            if self.which_display >= 0:
+                # Show just one of the 4 cameras
+                cam_obj = self.cam_array[self.which_display]
+                if cam_obj.status:
+                    if SCREEN_RESOLUTION[0] == WIDTH:
+                        img = cam_obj.frame
+                    else:
+                        img = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
                 else:
-                    img = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
+                    img = None
+            elif self.which_display == self.CAM_VALS.ALL.value:
+                # Show all 4 cameras on one screen (downsized 2x)
+                for index, elt in enumerate(self.cam_array):
+                    if elt is not None and elt.frame is not None:
+                        # Downsize
+                        subframes[index] = cv2.resize(elt.frame, SCREEN_RESOLUTION_INSET)
+
+                # Concatenate 4 images into 1
+                im_top = cv2.hconcat([subframes[0], subframes[1]])
+                im_bot = cv2.hconcat([subframes[2], subframes[3]])
+                img = cv2.vconcat([im_top, im_bot])
             else:
                 img = None
-        elif self.which_display == self.CAM_VALS.ALL.value:
-            # Show all 4 cameras on one screen (downsized 2x)
-            for index, elt in enumerate(self.cam_array):
-                if elt is not None and elt.frame is not None:
-                    # Downsize
-                    subframes[index] = cv2.resize(elt.frame, SCREEN_RESOLUTION_INSET)
 
-            # Concatenate 4 images into 1
-            im_top = cv2.hconcat([subframes[0], subframes[1]])
-            im_bot = cv2.hconcat([subframes[2], subframes[3]])
-            img = cv2.vconcat([im_top, im_bot])
-        else:
-            img = None
+            # This shows image to screen
+            self.imshow(img)
 
-        # This calls waitkey() which also runs cv2 message pump.
-        key = self.imshow(img)
+            # Checks if key is pressed. Also runs cv2 message pump, which will update screen
+            key = get_key()
 
         if self.pendingActionVar == self.PendingAction.StartRecord:
             cam_num = self.pendingActionCamera
@@ -736,21 +754,13 @@ class RECORDER:
                         continue
                     cam_obj.start_record(stress_test_mode=True)
             else:
+                # Start recording of a single camera
                 cam_obj = self.cam_array[cam_num]
                 if cam_obj is None or not cam_obj.start_record(self.pendingActionID):
                     # Recording was attempted, but did not succeed. Usually this is
                     # because of file error, or missing codec.
                     print(f"Unable to start recording camera {cam_num + FIRST_CAMERA_ID}.")
             self.pendingActionVar = self.PendingAction.Nothing
-
-        if self.frame_count == 0:
-            # Now that the first frame is done, we can start timer and should get stable FPS readings
-            # Another 40ms sleep to ensure frame is present
-            time.sleep(.04)
-            self.start = time.time()
-
-            # This is actually target time for the frame AFTER the next, since the next one will be read immediately
-            self.next_frame = self.start + self.FRAME_INTERVAL
 
         self.frame_count = self.frame_count + 1
 
@@ -784,10 +794,11 @@ class RECORDER:
 
         lag_ms = (time.time() - self.next_frame) * 1000
         if lag_ms > 50:
-            # We are more than 20ms late for next frame. If recording, warn of possible missed frames.
+            # At 20fps, we have 50ms between frames. If we are lagging slightly, we can maybe still catch up,
+            # but if we are an entire frame late, then warn of possible missed frames.
             if any_camera_recording(cam_array):
-                printt(
-                    f"Warning: CPU lag {lag_ms:.2f} ms. Might drop up to {int(math.ceil(lag_ms / 100))} frame(s).")
+                num_frames = math.ceil(lag_ms * FRAME_RATE_PER_SECOND / 1000)
+                printt(f"Warning: CPU lag {lag_ms:.2f} ms. Might drop up to {int(num_frames)} frame(s).")
 
             # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
             self.next_frame = time.time() + self.FRAME_INTERVAL
@@ -800,7 +811,7 @@ class RECORDER:
             self.next_frame += self.FRAME_INTERVAL
 
             if advance_ms < 0:
-                advance_ms = 1
+                advance_ms = 0
 
             self.root.after(int(advance_ms), self.update_image)
 
