@@ -714,7 +714,7 @@ class RECORDER:
             key = -1
         else:
             if DEBUG and self.frame_count % 10 == 0:
-                printt(f"CPU lag {lag_ms:.2f} ms before imshow")
+                print(f"CPU lag {lag_ms:.2f} ms, ", end='')
             if self.which_display >= 0:
                 # Show just one of the 4 cameras
                 cam_obj = self.cam_array[self.which_display]
@@ -743,7 +743,7 @@ class RECORDER:
             self.imshow(img)
 
             if DEBUG and self.frame_count % 10 == 0:
-                printt(f"CPU lag {lag_ms:.2f} ms after imshow")
+                print(f" {lag_ms:.2f} ms before/after imshow")
 
             # Checks if key is pressed. Also runs cv2 message pump, which will update screen
             key = get_key()
