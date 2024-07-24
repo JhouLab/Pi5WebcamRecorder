@@ -336,7 +336,7 @@ class RECORDER:
             self.show_quit_dialog()
         elif (not CV2KEY and ("0" <= key <= "9")) or (CV2KEY and (ord('0') <= key <= ord('9'))):
             # Start/stop recording for specified camera
-            cam_num = ord(key) - ord("0")
+            cam_num = key - ord("0")
             cam_idx = cam_num - FIRST_CAMERA_ID
             if cam_idx < 0 or cam_idx >= len(self.cam_array):
                 print(f"Camera number {cam_num} does not exist, won't record.")
@@ -347,7 +347,7 @@ class RECORDER:
                 else:
                     if not cam_obj.IsRecording:
 
-                        self.show_start_record_dialog(cam_num)
+                        self.show_start_record_dialog(cam_idx)
 
                     else:
                         res = messagebox.askyesno('Stop?', f'Stop recording camera {cam_num}?')
