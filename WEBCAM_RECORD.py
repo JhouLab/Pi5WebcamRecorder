@@ -36,7 +36,7 @@ FIRST_CAMERA_ID = 1
 
 # Expand window for stereotaxic camera?
 # Isn't practical because window becomes too big.
-EXPAND_VIDEO = True
+EXPAND_VIDEO = False
 
 
 DEBUG = gettrace() is not None
@@ -330,7 +330,8 @@ class RECORDER:
             key1 = (key >> 8) & 0xFF  # This always seems to be 0
             key = key & 0xFF  # On Raspberry Pi, arrow keys are coded here along with all other keys
 
-        print(key)
+        if DEBUG:
+            print(f"Keypress: {key}")
         if (not CV2KEY and (key == 'q')) or (CV2KEY and key == ord('q')):
             self.show_quit_dialog()
         elif (not CV2KEY and ("0" <= key <= "9")) or (CV2KEY and (ord('0') <= key <= ord('9'))):
@@ -573,10 +574,11 @@ class RECORDER:
             if cam_num == self.CAM_VALS.NEXT:
                 self.which_display += 1
                 if self.which_display >= len(cam_array):
-                    self.which_display = self.CAM_VALS.INSTRUCTIONS.value
+                    self.which_display = self.CAM_VALS.ALL.value
+#                    self.which_display = self.CAM_VALS.INSTRUCTIONS.value
             elif cam_num == self.CAM_VALS.PREV:
                 self.which_display -= 1
-                if self.which_display < self.CAM_VALS.INSTRUCTIONS.value:
+                if self.which_display < self.CAM_VALS.ALL.value:
                     self.which_display = len(cam_array) - 1
             else:
                 # Convert from Enum type to integer
