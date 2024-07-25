@@ -14,7 +14,7 @@ import numpy as np
 import math
 from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5,\
-    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON
+    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON
 from get_hardware_info import *
 
 # Note that
@@ -37,7 +37,6 @@ FIRST_CAMERA_ID = 1
 # Expand window for stereotaxic camera?
 # Isn't practical because window becomes too big.
 EXPAND_VIDEO = False
-
 
 DEBUG = gettrace() is not None
 
@@ -443,7 +442,7 @@ class RECORDER:
 
         self.show_disk_space()
 
-        # frame3 holds two rows of buttons
+        # frame3 holds top rows of buttons
         frame3 = tk.Frame(frame1)
         frame3.pack(side=tk.TOP, fill=tk.X, expand=True)
         frame3.columnconfigure("all", weight=1, uniform="1")
@@ -454,17 +453,28 @@ class RECORDER:
             ("Next cam", partial(self.change_cam, self.CAM_VALS.NEXT)),
         ]
 
+        if SHOW_ZOOM_BUTTON:
+            b_list1.append(
+                ("Zoom center", self.toggle_zoom),
+            )
+
         for idx, _b in enumerate(b_list1):
             tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=0, column=idx, ipadx=5, ipady=5, sticky="ew")
 
+        # frame3b holds next rows of buttons
         b_list2 = [
             ("Stop all recording", partial(self.show_stop_dialog, -1)),
             ("Browse data folder", self.browse_data_folder),
-            ("         Close        ", self.show_quit_dialog),
+            ("        Close        ", self.show_quit_dialog),
         ]
 
         for idx, _b in enumerate(b_list2):
-            tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=1, column=idx, ipadx=5, ipady=5, sticky="ew")
+            colspan = 1
+            if idx == len(b_list2) - 1:
+                colspan = len(b_list1) - len(b_list2) + 1
+                if colspan <= 0:
+                    colspan = 1
+            tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=1, column=idx, columnspan=colspan, ipadx=5, ipady=5, sticky="ew")
 
         if DEBUG:
             # Extra row of buttons in debug mode
@@ -474,7 +484,7 @@ class RECORDER:
 
             for idx, _b in enumerate(b_list_debug):
                 tk.Button(frame3, text=_b[0], command=_b[1], fg='blue').\
-                    grid(row=2, column=idx, columnspan=3, ipadx=5, ipady=5, sticky="ew")
+                    grid(row=2, column=idx, columnspan=len(b_list1), ipadx=5, ipady=5, sticky="ew")
 
         self.frame_count = 0
 
@@ -516,6 +526,7 @@ class RECORDER:
         cv2.waitKey(1)
         
         self.skipped_display_frames = 0
+        self.zoom_center = False
 
         self.start = time.time()
         # This is actually target time for the frame AFTER the next, since the next one will be read immediately
@@ -528,6 +539,10 @@ class RECORDER:
             os.startfile(DATA_FOLDER)
         elif p == "Linux":
             os.system("pcmanfm \"%s\"" % DATA_FOLDER)
+
+    def toggle_zoom(self):
+
+        self.zoom_center = not self.zoom_center
 
     def confirm_quit(self, widget, value):
 
@@ -779,10 +794,16 @@ class RECORDER:
                 # Show just one of the 4 cameras
                 cam_obj = self.cam_array[self.which_display]
                 if cam_obj.status:
-                    if SCREEN_RESOLUTION[0] == WIDTH:
-                        img = cam_obj.frame
-                    else:
-                        img = cv2.resize(cam_obj.frame, SCREEN_RESOLUTION)
+                    img = cam_obj.frame
+                    if self.zoom_center:
+                        x1 = WIDTH >> 2
+                        x2 = x1 * 3
+                        y1 = HEIGHT >> 2
+                        y2 = y1 * 3
+                        img = img[y1:y2, x1:x2]
+                        img = cv2.resize(img, [WIDTH, HEIGHT])
+                    if SCREEN_RESOLUTION[0] != WIDTH:
+                        img = cv2.resize(img, SCREEN_RESOLUTION)
                 else:
                     img = None
             elif self.which_display == self.CAM_VALS.ALL.value:

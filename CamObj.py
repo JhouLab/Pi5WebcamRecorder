@@ -118,6 +118,7 @@ RECORD_COLOR: int = configParser.getint('options', 'RECORD_COLOR', fallback=1)
 
 SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', fallback=1)
 SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
+SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
 
 
 # Number of seconds to discriminate between binary 0 and 1
