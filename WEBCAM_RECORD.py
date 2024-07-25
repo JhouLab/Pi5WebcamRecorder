@@ -41,7 +41,7 @@ EXPAND_VIDEO = False
 DEBUG = gettrace() is not None
 
 # Add offset of 10 so that we sometimes overlap with recording status updates and sometimes not
-DEBUG_DIAGNOSTIC_FRAME_INTERVAL = FRAME_RATE_PER_SECOND * 2 + 10
+DEBUG_DIAGNOSTIC_FRAME_INTERVAL = FRAME_RATE_PER_SECOND * 2 + (int(FRAME_RATE_PER_SECOND) >> 1)
 
 if DEBUG:
     printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
@@ -774,10 +774,8 @@ class RECORDER:
             print(f"Frame: {self.frame_count}, skipped display {self.skipped_display_frames}, CPU lag {lag_ms:.3f}, ", end='')
 
         # If CPU lag is > -20, we skip showing frames.
-        if lag_ms > -20:
-            # If user sets frame rate too high, then this will always be true,
-            # and UI will appear to completely freeze. So we allow frame to show
-            # once per second
+        if -20 < lag_ms < 10:
+            # If user sets frame rate too high, then lag value will be extremely high
             if self.frame_count % FRAME_RATE_PER_SECOND != 0:
                 skip_display = True
             
