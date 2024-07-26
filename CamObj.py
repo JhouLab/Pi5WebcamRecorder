@@ -852,12 +852,22 @@ class CamObj:
         if self.cam is None or self.frame is None:
             return False
         if self.cam.isOpened():
-            fname = self.get_filename_prefix() + "_snapshot.jpg"
+            
+            index = 1
+            while True:
+                fname = self.get_filename_prefix() + "_snapshot_" + str(index) + ".jpg"
+                
+                if not os.path.exists(fname):
+                    break
+                
+                index += 1
+            
             cv2.imwrite(fname, self.frame)
+            
             printt(f'Wrote snapshot to file {fname}')
-            return True
+            return fname
         else:
-            return False
+            return None
 
     def close(self):
 
