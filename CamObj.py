@@ -18,6 +18,7 @@ from typing import List
 import os
 import psutil        # This is used to obtain disk free space
 import numpy as np
+import math
 import time
 import datetime
 import platform
@@ -781,15 +782,17 @@ class CamObj:
             estimated_frame_rate = 30
         elif estimated_frame_rate > 12:
             estimated_frame_rate = 15
-        elif estimated_frame_rate > 8:
+        elif estimated_frame_rate > 8.5:
             estimated_frame_rate = 10
+        elif estimated_frame_rate > 6.5:
+            estimated_frame_rate = 7.5
         else:
             estimated_frame_rate = 5
 
         printt(f'Rounded frame rate to {estimated_frame_rate}')
         count = 0
         old_time = time.time()
-        count_interval = estimated_frame_rate / FRAME_RATE_PER_SECOND
+        count_interval = math.ceil(estimated_frame_rate / FRAME_RATE_PER_SECOND)
 
         while not self.stop_pending:
 
