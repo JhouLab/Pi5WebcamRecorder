@@ -753,6 +753,7 @@ class CamObj:
 
         if self.cam is None or not self.cam.isOpened():
             # No camera connected
+            printt(f"Camera {self.box_id} not connected.")
             return
 
         self.read_one_frame()
@@ -765,6 +766,8 @@ class CamObj:
 
             if not self.read_one_frame():
                 self.release()
+                # No camera connected
+                printt(f"Camera {self.box_id} failed during profiling.")
                 return
 
         new_time = time.time()
@@ -792,6 +795,8 @@ class CamObj:
 
             if self.cam is None or not self.cam.isOpened():
                 # Camera is disconnected, or program is exiting
+                # No camera connected
+                printt(f"Lost connection to camera {self.box_id}.")
                 break
 
             new_time = time.time()
