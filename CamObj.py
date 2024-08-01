@@ -256,7 +256,8 @@ class CamObj:
     
     helper_thread = None  # This is used to close files without blocking main thread
 
-    lock = None
+    lock = None           # This lock object is local to this instance
+    global_lock = threading.RLock()   # This lock is global to ALL instances, and is used to generate unique filenames
 
     frames_to_mark_GPIO = 0    # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
@@ -265,7 +266,7 @@ class CamObj:
         self.need_update_button_state_flag = None
         self.process = None   # This is used if calling FF_MPEG directly. Probably won't use this in the future.
         self.cam = cam
-        self.id_num = id_num
+        self.id_num = id_num   # ID number assigned by operating system. We don't use this anymore, as it is unpredictable.
         self.box_id = box_id   # This is a user-friendly unique identifier for each box.
         self.max_fps = max_fps   # This is stored from value obtained from camera. It does not seem to be reliable.
         self.GPIO_pin = GPIO_pin
@@ -530,7 +531,8 @@ class CamObj:
             # start and stop of session.
             self.stop_record()
 
-    #verifies that there is an appropriate directory to save the recording in. if there is not, create it and save that as location
+    # Creates directory with current date in yyyy-mm-dd format.
+    # Then verifies that directory exists, and if not, creates it
     def verify_directory(self):
         # get custom version of datetime for folder search/create
         now = datetime.datetime.now()
@@ -555,8 +557,11 @@ class CamObj:
 
         if animal_ID is None or animal_ID == "":
             if self.TTL_animal_ID > 0:
+                # If animal ID is known from transmitted TTL, then use it for filename prefix
+                # What happens if
                 animal_ID = str(self.TTL_animal_ID)
             else:
+                # No TTL-transmitted animal ID, just use box ID in filename
                 animal_ID = f"Cam{self.box_id}"
 
         filename = get_date_string() + "_" + animal_ID
@@ -564,6 +569,8 @@ class CamObj:
 
     def save_video(self, saving_file_name, fps):
 
+        # This is no longer used ... it was part of our FFMPEG experiment, but this was too hard to get
+        # working on the Raspberry Pi.
         process = (
             ffmpeg
             .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'.format(WIDTH, HEIGHT))
@@ -575,6 +582,15 @@ class CamObj:
         return process
 
     def start_record(self, animal_ID=None, stress_test_mode=False):
+        # If animal ID is not specified, will first look for TTL
+        # transmission, and if that is also not present, will use camera
+        # ID number.
+        #
+        # If stress_test_mode is True, will save to "stress_test_camX.avi" file
+        # in top level of data folder, where X is the camera ID number.
+        # In this mode, all animal ID info is ignored, and save file
+        # location is the same regardless of date. This allows rapid
+        # starting of all 4 cameras without having to enter an ID for each.
 
         if self.cam is None or not self.cam.isOpened():
             print(f"Camera {self.box_id} is not available for recording.")
@@ -588,28 +604,66 @@ class CamObj:
                 self.TTL_num = 0
 
                 if stress_test_mode:
+                    # Stress test saves to same location every time, ignoring date and animal ID.
                     prefix = os.path.join(DATA_FOLDER, f"stress_test_cam{self.box_id}")
                 else:
+                    # Generate filename prefix, which will be date string plus animal ID (or box ID
+                    # if no animal ID is available).
                     prefix = self.get_filename_prefix(animal_ID)
                     
-                self.filename_video = prefix + "_Video.avi"
-                self.filename_timestamp = prefix + "_Frames.txt"
-                self.filename_timestamp_TTL = prefix + "_TTLs.txt"
+                prefix_extra = ""
+                suffix_count = -1
 
                 try:
-                    # Create video file
-                    if USE_FFMPEG:
-                        self.process = self.save_video(self.filename_video, FRAME_RATE_PER_SECOND)
-                    else:
-                        # PyCharm intellisense gives warning on next line, but it is fine.
-                        self.Writer = cv2.VideoWriter(self.filename_video,
-                                                      self.codec,
-                                                      FRAME_RATE_PER_SECOND,
-                                                      self.resolution,
-                                                      RECORD_COLOR == 1)
+
+                    with self.global_lock:
+                        # Acquire global lock to make sure we get a filename that is not already in use
+                        # and is also unique to all instances
+                        #
+                        # In stress-test mode, don't bother to find unique filename, it is OK to overwrite
+                        # previous files.
+                        while True:
+                            # Iterate until we get a unique filename
+                            if suffix_count == 0:
+                                # When first conflict is encountered, add cam number, which
+                                # makes this filename unique relative to other cameras
+                                prefix_extra = f"_cam{self.box_id}"
+                            elif suffix_count > 0:
+                                # If adding cam number still doesn't give unique filename,
+                                # then add
+                                prefix_extra = f"_cam{self.box_id}_{suffix_count}"
+
+                            self.filename_video = prefix + prefix_extra + "_Video.avi"
+
+                            if stress_test_mode:
+                                # In stress test mode, don't need to check if filename is unique, as it
+                                # is OK to overwrite previous files.
+                                break
+
+                            if not os.path.isfile(self.filename_video):
+                                # Make sure file doesn't already exist
+                                break
+                            suffix_count += 1
+
+                        # Create video file
+                        if USE_FFMPEG:
+                            # This was an experimental feature that we no longer use. The original
+                            # intention was to gain more control over the compression algorithm, e.g.
+                            # to specify color vs monochrome, bitrate, etc.
+                            self.process = self.save_video(self.filename_video, FRAME_RATE_PER_SECOND)
+                        else:
+                            # Create video file
+                                self.Writer = cv2.VideoWriter(self.filename_video,
+                                                              self.codec,
+                                                              FRAME_RATE_PER_SECOND,
+                                                              self.resolution,
+                                                              RECORD_COLOR == 1)
                 except:
                     print(f"Warning: unable to create video file: '{self.filename_video}'")
                     return False
+
+                self.filename_timestamp = prefix + prefix_extra + "_Frames.txt"
+                self.filename_timestamp_TTL = prefix + prefix_extra + "_TTLs.txt"
 
                 if not USE_FFMPEG:
                     if not self.Writer.isOpened():
