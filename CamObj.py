@@ -27,14 +27,6 @@ from sys import gettrace
 import configparser
 from enum import Enum
 
-USE_FFMPEG = False
-
-if USE_FFMPEG:
-    # Experimental feature ... I had hoped this would give more flexibility for saving greyscale to
-    # reduce file sizes. But it doesn't seem to help, and doesn't install at all on Raspberry Pi.
-    # Note also that ffmpeg-python is just a wrapper for ffmpeg, which must already be installed separately.
-    import ffmpeg      # On Pycharm/Windows, install ffmpeg-python from Karl Kroening.
-    
 
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
@@ -176,7 +168,7 @@ except:
     print("Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and that you have permission to write to it.")
 
 
-# Writes text to both screen and log file. The log file helps us retrospectively figure out what happened when debugging.
+# Write text to both screen and log file. The log file helps retrospectively figure out what happened when debugging.
 def printt(txt, omit_date_time=False, close_file=False):
     # Get the current date and time
     if not omit_date_time:
@@ -263,6 +255,11 @@ class CamObj:
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
 
     def __init__(self, cam, id_num, box_id, max_fps, GPIO_pin=-1):
+        self.stop_pending = False
+        self.cached_frame_time = None
+        self.cached_frame = None
+        self.stable_frame = None
+        self.cam_lock = threading.RLock()
         self.need_update_button_state_flag = None
         self.process = None   # This is used if calling FF_MPEG directly. Probably won't use this in the future.
         self.cam = cam
@@ -280,6 +277,11 @@ class CamObj:
         if GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
             GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+
+        self.frame = make_blank_frame(f"{self.box_id} Starting up ...")
+
+        t = threading.Thread(target=self.read_camera_continuous)
+        t.start()
 
     def GPIO_callback_both(self, param):
     
@@ -570,20 +572,6 @@ class CamObj:
         filename = get_date_string() + "_" + animal_ID
         return os.path.join(path, filename)
 
-    def save_video(self, saving_file_name, fps):
-
-        # This is no longer used ... it was part of our FFMPEG experiment, but this was too hard to get
-        # working on the Raspberry Pi.
-        process = (
-            ffmpeg
-            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'.format(WIDTH, HEIGHT))
-            .output(saving_file_name, pix_fmt='yuv420p', vcodec='libx264', r=fps, crf=28)  # Lower CRF values give better quality. Valid range is 1-51
-            .overwrite_output()
-            .run_async(pipe_stdin=True)
-        )
-
-        return process
-
     def start_record(self, animal_ID=None, stress_test_mode=False):
         # If animal ID is not specified, will first look for TTL
         # transmission, and if that is also not present, will use camera
@@ -649,18 +637,11 @@ class CamObj:
                             suffix_count += 1
 
                         # Create video file
-                        if USE_FFMPEG:
-                            # This was an experimental feature that we no longer use. The original
-                            # intention was to gain more control over the compression algorithm, e.g.
-                            # to specify color vs monochrome, bitrate, etc.
-                            self.process = self.save_video(self.filename_video, FRAME_RATE_PER_SECOND)
-                        else:
-                            # Create video file
-                                self.Writer = cv2.VideoWriter(self.filename_video,
-                                                              self.codec,
-                                                              FRAME_RATE_PER_SECOND,
-                                                              self.resolution,
-                                                              RECORD_COLOR == 1)
+                        self.Writer = cv2.VideoWriter(self.filename_video,
+                                                      self.codec,
+                                                      FRAME_RATE_PER_SECOND,
+                                                      self.resolution,
+                                                      RECORD_COLOR == 1)
                 except:
                     print(f"Warning: unable to create video file: '{self.filename_video}'")
                     return False
@@ -668,11 +649,10 @@ class CamObj:
                 self.filename_timestamp = prefix + prefix_extra + "_Frames.txt"
                 self.filename_timestamp_TTL = prefix + prefix_extra + "_TTLs.txt"
 
-                if not USE_FFMPEG:
-                    if not self.Writer.isOpened():
-                        # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
-                        print(f"Warning: unable to create video file: '{self.filename_video}'")
-                        return False
+                if not self.Writer.isOpened():
+                    # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
+                    print(f"Warning: unable to create video file: '{self.filename_video}'")
+                    return False
 
                 try:
                     # Create text file for frame timestamps
@@ -728,11 +708,6 @@ class CamObj:
                 self.IsRecording = False
                 printt(f"Stopping recording camera {self.box_id} after " + self.get_elapsed_time_string())
 
-                # Close Video file
-                if USE_FFMPEG:
-                    self.process.stdin.close()
-                    self.process.wait()
-
             self.need_update_button_state_flag = True
 
             if self.Writer is not None:
@@ -760,12 +735,98 @@ class CamObj:
             self.helper_thread = None
 
     def read_one_frame(self):
+
         try:
             # Read frame if camera is available and open
-            self.status, self.frame = self.cam.read()
+            self.status, tmp_frame = self.cam.read()
+            tmp_time = time.time() - self.start_time
+
+            with self.cam_lock:
+                self.cached_frame = tmp_frame
+                self.cached_frame_time = tmp_time
+
             return self.cam.isOpened() and self.status
         except:
             return False
+
+    def read_camera_continuous(self):
+
+        if self.cam is None or not self.cam.isOpened():
+            # No camera connected
+            return
+
+        self.read_one_frame()
+        self.read_one_frame()
+
+        old_time = time.time()
+
+        # Read 30 frames to estimate frame rate
+        for f in range(60):
+
+            if not self.read_one_frame():
+                self.release()
+                return
+
+        new_time = time.time()
+        elapsed = new_time - old_time
+        estimated_frame_rate = 30.0 / elapsed
+
+        printt(f'Estimated frame rate {estimated_frame_rate}')
+        if estimated_frame_rate > 50:
+            estimated_frame_rate = 60
+        elif estimated_frame_rate > 25:
+            estimated_frame_rate = 30
+        elif estimated_frame_rate > 12:
+            estimated_frame_rate = 15
+        elif estimated_frame_rate > 8:
+            estimated_frame_rate = 10
+        else:
+            estimated_frame_rate = 5
+
+        printt(f'Rounded frame rate to {estimated_frame_rate}')
+        count = 0
+        old_time = time.time()
+        count_interval = estimated_frame_rate / FRAME_RATE_PER_SECOND
+
+        while not self.stop_pending:
+
+            if self.cam is None or not self.cam.isOpened():
+                # Camera is disconnected, or program is exiting
+                break
+
+            new_time = time.time()
+            elapsed = new_time - old_time
+            old_time = new_time
+
+            if not self.read_one_frame():
+
+                if self.stop_pending:
+                    break
+
+                # Read failed. Remove this camera so we won't attempt to read it later.
+                # Should we set a flag to try to periodically reconnect?
+
+                if self.IsRecording:
+                    self.stop_record()  # Close file writers
+
+                self.frame = make_blank_frame(f"{self.box_id} Camera lost connection")
+                # Warn user that something is wrong.
+                printt(
+                    f"Unable to read video from camera with ID {self.box_id}. Will remove camera from available list, and stop any ongoing recordings.")
+
+                # Remove camera resources
+                self.release()
+                return 0, self.frame
+
+            count += 1
+            if count == count_interval:
+                count = 0
+                self.read()
+
+    def release(self):
+        self.status = 0
+        self.cam.release()
+        self.cam = None
 
     # Reads a single frame from CamObj class and writes it to file
     def read(self):
@@ -774,26 +835,10 @@ class CamObj:
 
             if self.cam is not None and self.cam.isOpened():
 
-                if not self.read_one_frame():
-
-                    # Read failed. Remove this camera so we won't attempt to read it later.
-                    # Should we set a flag to try to periodically reconnect?
-
-                    if self.IsRecording:
-                        self.stop_record()  # Close file writers
-
-                    self.frame = make_blank_frame(f"{self.box_id} Camera lost connection")
-                    # Warn user that something is wrong.
-                    printt(f"Unable to read video from camera with ID {self.box_id}. Will remove camera from available list, and stop any ongoing recordings.")
-
-                    # Remove camera resources
-                    self.cam.release()
-                    self.cam = None
-                    self.status = 0
-                    return 0, self.frame
-
-                # Record timestamp that will be written into frames.txt file later
-                time_elapsed = time.time() - self.start_time
+                with self.cam_lock:
+                    # Grab whatever frame was most recently placed in cache, along with its timestamp
+                    self.frame = self.cached_frame
+                    time_elapsed = self.cached_frame_time
 
                 if self.GPIO_active > 0:
                     # Add blue dot to indicate that GPIO was recently detected
@@ -858,18 +903,8 @@ class CamObj:
                     if self.IsRecording:
                         try:
                             # Write frame to AVI video file if possible
-                            if USE_FFMPEG:
-                                if RECORD_COLOR:
-                                    self.process.stdin.write(
-                                        cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
-                                        .astype(np.uint8)
-                                        .tobytes()
-                                    )
-                                else:
-                                    self.process.stdin.write(self.frame.astype(np.uint8).tobytes())
-                            else:
-                                if self.Writer is not None:
-                                    self.Writer.write(self.frame)
+                            if self.Writer is not None:
+                                self.Writer.write(self.frame)
                         except:
                             print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
                             self.stop_record()
@@ -935,6 +970,10 @@ class CamObj:
     def close(self):
 
         # Only call this when exiting program. Will stop all recordings, and release camera resources
+        self.stop_pending = True
+
+        # Wait for the camera read thread to exit
+        time.sleep(0.1)
 
         self.stop_record()  # This will run in a separate thread, and will close all files.
         

@@ -746,9 +746,7 @@ class RECORDER:
             return
 
         for idx, cam_obj in enumerate(self.cam_array):
-            # Read camera frame
-            cam_obj.read()
-
+            # Check if any updates are needed
             if cam_obj.need_update_button_state_flag:
                 self.set_button_state_callback(idx)
                 cam_obj.need_update_button_state_flag = False
@@ -767,29 +765,12 @@ class RECORDER:
                                (0, 0, 255),  # Red dot (color is in BGR order)
                                -1)  # -1 thickness fills circle
 
-        # If this number is positive, we are late for the next frame
-        # and should skip all non-essential activities
-        # If this number is negative, we are OK
-        lag_ms = (time.time() - self.next_frame) * 1000
-        
         skip_display = False
         
         # When operated locally, Raspberry Pi5 takes about 10-15ms to show
         # frame to screen. When operated remotely, does this go up? Maybe to 20-25ms?
         # Also needs 2-5ms to print status updates (frame rate, file size).
         
-        # Show timing diagnostics in DEBUG mode every 3 seconds or so
-        show_timing_diagnostics = DEBUG and ((self.frame_count + 1) % DEBUG_DIAGNOSTIC_FRAME_INTERVAL == 0)
-
-        if show_timing_diagnostics:
-            print(f"Frame: {self.frame_count}, skipped display {self.skipped_display_frames}, CPU lag {lag_ms:.3f}, ", end='')
-
-        # If CPU lag is > -20, we skip showing frames.
-        if -20 < lag_ms < 10:
-            # If user sets frame rate too high, then lag value will be extremely high
-            if self.frame_count % FRAME_RATE_PER_SECOND != 0:
-                skip_display = True
-            
         if skip_display:
             # We are in danger of running late, so skip display.
             # Note that AVI/text files have already been written, so data is safe.
@@ -803,7 +784,9 @@ class RECORDER:
                 # Show just one of the 4 cameras
                 cam_obj = self.cam_array[self.which_display]
                 if cam_obj.status:
-                    img = cam_obj.frame
+                    with cam_obj.cam_lock:
+                        # Need to make a deep copy here
+                        img = cam_obj.frame
                     if self.zoom_center:
                         x1 = WIDTH >> 2
                         x2 = x1 * 3
@@ -834,10 +817,6 @@ class RECORDER:
             
             # Checks if key is pressed. Also runs cv2 message pump, which keeps UI responsive and updates screen if needed
             key = get_key()
-
-            if show_timing_diagnostics:
-                lag_ms = (time.time() - self.next_frame) * 1000
-                print(f"{lag_ms:.3f}, ", end='')
 
         if self.pendingActionVar == self.PendingAction.StartRecord:
             cam_num = self.pendingActionCamera
@@ -894,14 +873,6 @@ class RECORDER:
                         
                     # Run get_key() again so status updates show to screen to make diagnostic timing info more accurate.
                     key = get_key()                
-
-                if show_timing_diagnostics:
-                    lag_ms = (time.time() - self.next_frame) * 1000
-                    print(f"{lag_ms:.3f}ms before/after imshow, after status report")
-        else:
-            if show_timing_diagnostics:
-                lag_ms = (time.time() - self.next_frame) * 1000
-                print(f"{lag_ms:.3f}ms before/after imshow, at loop end")
 
         if key != -1:
             self.handle_keypress(key, key >> 16, CV2KEY=True)
@@ -963,12 +934,7 @@ class RECORDER:
         for cam_obj in self.cam_array:
             if cam_obj is None:
                 continue
-            cam_obj.stop_record()
-
-        for cam_obj in self.cam_array:
-            if cam_obj is None:
-                continue
-            cam_obj.close()
+            cam_obj.close()  # This stops recording, then closes camera
 
         # Destroy the tkinter window (control bar)
         self.root.destroy()
