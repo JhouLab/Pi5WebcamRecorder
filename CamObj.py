@@ -259,7 +259,7 @@ class CamObj:
     lock = None           # This lock object is local to this instance
     global_lock = threading.RLock()   # This lock is global to ALL instances, and is used to generate unique filenames
 
-    frames_to_mark_GPIO = 0    # Use this to add blue dot to frames when GPIO is detected
+    GPIO_active = 0    # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
 
     def __init__(self, cam, id_num, box_id, max_fps, GPIO_pin=-1):
@@ -311,7 +311,10 @@ class CamObj:
         # pulse or a LONG pulse that starts binary mode
         self.most_recent_gpio_rising_edge_time = time.time()
         elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
-        
+
+        # This is used to show blue dot on next frame.
+        self.GPIO_active = 1
+
         if elapsed > 0.1:
             # Burst TTLs must have ~50ms gap.
             if 0.5 > elapsed > 0.3:
@@ -351,6 +354,9 @@ class CamObj:
 
         # Detected falling edge
         self.most_recent_gpio_falling_edge_time = time.time()
+
+        # Cancel blue dot display on video
+        self.GPIO_active = 0
 
         if self.most_recent_gpio_rising_edge_time < 0:
             # Ignore falling edge if no rising edge was detected. Is this even possible, e.g. at program launch?
@@ -483,9 +489,6 @@ class CamObj:
         # Use rising edge time, since we don't get here until falling edge.
         # NOte that time.time() returns number of seconds since 1970, as a floating point number.
         gpio_time = self.most_recent_gpio_rising_edge_time
-
-        # This is used to show blue dot on next frame. (Can increase this value to show on several frames)
-        self.frames_to_mark_GPIO = 1
 
         # Because this function is called from the GPIO callback thread, we need to
         # acquire lock to make sure main thread isn't also accessing the same variables.
@@ -789,9 +792,12 @@ class CamObj:
                     self.status = 0
                     return 0, self.frame
 
-                if self.frames_to_mark_GPIO > 0:
+                # Record timestamp that will be written into frames.txt file later
+                time_elapsed = time.time() - self.start_time
+
+                if self.GPIO_active > 0:
                     # Add blue dot to indicate that GPIO was recently detected
-                    self.frames_to_mark_GPIO -= 1
+                    # Location is (20,70)
                     cv2.circle(self.frame,
                                (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position
                                int(8 * FONT_SCALE),  # Radius
@@ -800,6 +806,7 @@ class CamObj:
 
                 if self.pending_start_timer > 0:
                     # Add dark red dot to indicate that a start might be pending
+                    # Location is (20,50)
                     self.pending_start_timer -= 1
                     cv2.circle(self.frame,
                                (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
@@ -809,6 +816,7 @@ class CamObj:
 
                 if self.TTL_mode == self.TTL_type.Debug:
                     # Green dot indicates we are in TTL DEBUG mode
+                    # Location is (20,110)
                     cv2.circle(self.frame,
                                (int(20 * FONT_SCALE), int(110 * FONT_SCALE)),  # x-y position
                                int(8 * FONT_SCALE),  # Radius
@@ -817,8 +825,10 @@ class CamObj:
 
                 if self.TTL_animal_ID > 0:
                     # Add animal ID to video
+                    # Location is (10,100) ... used to be at (10,90), but tended to overlap blue dot at (20,70)
+                    #   so I moved it down slightly
                     cv2.putText(self.frame, str(self.TTL_animal_ID),
-                                (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
+                                (int(10 * FONT_SCALE), int(100 * FONT_SCALE)),
                                 cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
                                 round(FONT_SCALE + 0.5))  # Line thickness
                 elif self.TTL_animal_ID < 0:
@@ -837,7 +847,6 @@ class CamObj:
                         # timestamp will not be delayed by latency required to compress video. This
                         # ensures most accurate possible timestamp.
                         try:
-                            time_elapsed = time.time() - self.start_time
                             self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
                         except:
                             print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
