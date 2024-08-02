@@ -237,7 +237,7 @@ class CamObj:
     fid = None       # Writer for timestamp file
     fid_TTL = None   # Writer for TTL timestamp file
 
-    start_time = -1  # Timestamp (in seconds) when recording started.
+    start_recording_time = -1  # Timestamp (in seconds) when recording started.
     IsRecording = False
     GPIO_pin = -1    # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
 
@@ -279,6 +279,7 @@ class CamObj:
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
 
     def __init__(self, cam, id_num, box_id, GPIO_pin=-1):
+        self.CPU_lag_frames = 0
         self.pending = self.PendingAction.Nothing
         self.cached_frame_time = None
         self.cached_frame = None
@@ -540,7 +541,7 @@ class CamObj:
 
             else:
                 # Calculate TTL timestamp relative to session start
-                gpio_time_relative = gpio_time - self.start_time
+                gpio_time_relative = gpio_time - self.start_recording_time
 
                 self.TTL_num += 1
                 if self.fid_TTL is not None:
@@ -699,7 +700,7 @@ class CamObj:
                     self.Writer.release()
                     return False
 
-                self.start_time = time.time()
+                self.start_recording_time = time.time()
 
                 # Set this flag last
                 self.IsRecording = True
@@ -844,6 +845,7 @@ class CamObj:
             native_fps = NATIVE_FRAME_RATE
 
         count = 0
+        frame_count = 0
         old_time = time.time()
 
         # Downsampling interval. Must be integer, hence use of ceiling function
@@ -867,7 +869,7 @@ class CamObj:
             try:
                 # Read frame if camera is available and open
                 self.status, frame = self.cam.read()
-                frame_time = time.time() - self.start_time
+                frame_time = time.time() - self.start_recording_time
             except:
                 self.status = False
 
@@ -896,17 +898,41 @@ class CamObj:
                 count = 0
                 self.q.put((frame, frame_time))
 
+            frame_count += 1
+            if frame_count % (NATIVE_FRAME_RATE * 10) == 0:
+                if DEBUG:
+                    printt(f"Box {self.box_id} camera read loop is alive")
+
+        if DEBUG:
+            printt(f"Box {self.box_id} exiting camera read thread.")
+
     def process_loop(self):
 
+        last_warning_time = time.time()
+        frame_count = 0
         while not self.pending == self.PendingAction.Exiting:
             v = self.q.get()
 
-            self.process_frame(v[0], v[1])
+            # Do we need to deep-copy v? I assume not, but are we sure?
+            v0 = v[0]
+            v1 = v[1]
+            self.process_frame(v0, v1)
 
-            lag = (time.time() - self.start_time) - v[1]
-            self.CPU_usage = lag * RECORD_FRAME_RATE
-            if self.IsRecording and self.CPU_usage > 0.8:
-                printt(f"Warning: box{self.box_id} cpu usage {self.CPU_usage*100}%")
+            lag = (time.time() - self.start_recording_time) - v1
+            self.CPU_lag_frames = lag * RECORD_FRAME_RATE
+            if self.IsRecording and self.CPU_lag_frames > 2:
+                now = time.time()
+                if now - last_warning_time > 2.0:
+                    printt(f"Warning: box{self.box_id} cpu lag {self.CPU_lag_frames} frames")
+                    last_warning_time = now
+
+            frame_count += 1
+            if frame_count % (RECORD_FRAME_RATE * 5) == 0:
+                if DEBUG:
+                    printt(f"Box {self.box_id} process loop is alive")
+
+        if DEBUG:
+            printt(f"Box {self.box_id} exiting frame process thread.")
 
     def release(self):
         self.status = 0
@@ -986,7 +1012,7 @@ class CamObj:
                     self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
 
                 if self.frame is not None and self.IsRecording and time_elapsed >= 0:
-                    if self.fid is not None and self.start_time > 0:
+                    if self.fid is not None and self.start_recording_time > 0:
                         # Write timestamp to text file. Do this before writing AVI so that
                         # timestamp will not be delayed by latency required to compress video. This
                         # ensures most accurate possible timestamp.
@@ -995,7 +1021,6 @@ class CamObj:
                         except:
                             print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
                             self.stop_record()
-                            return 0, None
 
                     if self.IsRecording:
                         try:
@@ -1027,7 +1052,7 @@ class CamObj:
 
     def get_elapsed_time_string(self):
 
-        elapsed_sec = time.time() - self.start_time
+        elapsed_sec = time.time() - self.start_recording_time
         
         if elapsed_sec < 120:
             str1 = f"{elapsed_sec:.1f} seconds"
