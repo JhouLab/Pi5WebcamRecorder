@@ -574,11 +574,11 @@ class CamObj:
         if animal_ID is None or animal_ID == "":
             if self.TTL_animal_ID > 0:
                 # If animal ID is known from transmitted TTL, then use it for filename prefix
-                # What happens if
-                animal_ID = str(self.TTL_animal_ID)
+                # Box ID is still used,
+                animal_ID = f"Box{self.box_id}_" + str(self.TTL_animal_ID)
             else:
                 # No TTL-transmitted animal ID, just use box ID in filename
-                animal_ID = f"Cam{self.box_id}"
+                animal_ID = f"Box{self.box_id}"
 
         filename = get_date_string() + "_" + animal_ID
         return os.path.join(path, filename)
@@ -614,37 +614,31 @@ class CamObj:
                     prefix = self.get_filename_prefix(animal_ID)
                     
                 prefix_extra = ""
-                suffix_count = -1
+                suffix_count = 0
 
                 try:
 
                     with self.global_lock:
                         # Acquire global lock to make sure we get a filename that is not already in use
-                        # and is also unique to all instances
-                        #
-                        # In stress-test mode, don't bother to find unique filename, it is OK to overwrite
-                        # previous files.
+                        # and is also unique to all instances. Now that we have box ID number in filename
+                        # this is less essential, as that will keep filename unique across all cameras.
                         while True:
                             # Iterate until we get a unique filename
-                            if suffix_count == 0:
-                                # When first conflict is encountered, add cam number, which
-                                # makes this filename unique relative to other cameras
-                                prefix_extra = f"_cam{self.box_id}"
-                            elif suffix_count > 0:
-                                # If adding cam number still doesn't give unique filename,
-                                # then add
-                                prefix_extra = f"_cam{self.box_id}_{suffix_count}"
+                            if suffix_count > 0:
+                                # After first pass, we append suffixes _1, _2, _3, ...
+                                prefix_extra = f"_{suffix_count}"
 
                             self.filename_video = prefix + prefix_extra + "_Video.avi"
 
                             if stress_test_mode:
-                                # In stress test mode, don't need to check if filename is unique, as it
-                                # is OK to overwrite previous files.
+                                # In stress test mode, don't need to check if filename is unique,
+                                # as we intend to overwrite previous files.
                                 break
 
                             if not os.path.isfile(self.filename_video):
-                                # Make sure file doesn't already exist
+                                # We have now confirmed that file doesn't already exist, and can proceed
                                 break
+
                             suffix_count += 1
 
                         # Create video file

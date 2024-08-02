@@ -677,7 +677,7 @@ class RECORDER:
         l1 = tk.Label(f, text=f"Enter animal ID for camera #{cam_num + FIRST_CAMERA_ID}", anchor="e")
         l1.pack(side=tk.TOP)
 
-        s = tk.StringVar(value=f"Cam{cam_num + FIRST_CAMERA_ID}")
+        s = tk.StringVar(value=f"Box{cam_num + FIRST_CAMERA_ID}")
         e = tk.Entry(f, textvariable=s)
         e.pack(side=tk.TOP)
 
