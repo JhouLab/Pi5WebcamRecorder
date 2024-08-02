@@ -27,7 +27,7 @@ import subprocess
 from sys import gettrace
 import configparser
 from enum import Enum
-
+from ast import literal_eval as make_tuple    # Needed to parse resolution string in config
 
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
@@ -95,8 +95,18 @@ if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
         DATA_FOLDER = DATA_FOLDER + "/"
 
 FRAME_RATE_PER_SECOND: float = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=10)
-HEIGHT = configParser.getint('options', 'HEIGHT', fallback=480)
-WIDTH = configParser.getint('options', 'WIDTH', fallback=640)
+
+ResolutionString = configParser.get('options', 'RESOLUTION', fallback='')
+
+if ResolutionString == '':
+    HEIGHT = configParser.getint('options', 'HEIGHT', fallback=480)
+    WIDTH = configParser.getint('options', 'WIDTH', fallback=640)
+else:
+    # Parse height and width from string of type (WIDTH, HEIGHT)
+    tmp_r = make_tuple(ResolutionString)
+    WIDTH = tmp_r[0]
+    HEIGHT = tmp_r[1]
+
 if platform.system() == "Linux":
     FOURCC = configParser.get('options', 'FOURCC', fallback='h264')
 else:
@@ -757,13 +767,30 @@ class CamObj:
             printt(f"Camera {self.box_id} not connected.")
             return
 
+        # First frame always takes longer to read, so get it out of the way
+        # before conducting profiling
         self.read_one_frame()
-        self.read_one_frame()
+
+        # Subsequent frames might actually read too fast, if they are coming
+        # from internal memory buffer. So now clear out any frames in camera buffer
+        old_time = time.time()
+        while True:
+            self.read_one_frame()
+            new_time = time.time()
+            elapsed = new_time - old_time
+            old_time = new_time
+            print(f"Elapsed {elapsed}")
+            if elapsed > 0.01:
+                # Buffered frames will return very quickly. We wait until
+                # the return time is longer, indicating that buffer is now empty
+                break
 
         old_time = time.time()
+        target_time = old_time + 1
+        frame_count = 0
 
-        # Read 30 frames to estimate frame rate
-        for f in range(60):
+        # Read frames for 1 second to estimate frame rate
+        while time.time() < target_time:
 
             if not self.read_one_frame():
                 self.release()
@@ -771,16 +798,19 @@ class CamObj:
                 printt(f"Camera {self.box_id} failed during profiling.")
                 return
 
-        new_time = time.time()
-        elapsed = new_time - old_time
-        estimated_frame_rate = 30.0 / elapsed
+            frame_count += 1
+
+        elapsed = time.time() - old_time
+        estimated_frame_rate = frame_count / elapsed
 
         printt(f'Estimated frame rate {estimated_frame_rate}')
+
+        # Sometimes will get value slightly lower or higher than real frame rate, e.g. 29.9 or 30.2 instead of 30
         if estimated_frame_rate > 50:
             estimated_frame_rate = 60
-        elif estimated_frame_rate > 25:
+        elif estimated_frame_rate > 27:
             estimated_frame_rate = 30
-        elif estimated_frame_rate > 12:
+        elif estimated_frame_rate > 13:
             estimated_frame_rate = 15
         elif estimated_frame_rate > 8.5:
             estimated_frame_rate = 10
@@ -792,6 +822,8 @@ class CamObj:
         printt(f'Rounded frame rate to {estimated_frame_rate}')
         count = 0
         old_time = time.time()
+
+        # Downsampling interval. Must be integer, hence use of ceiling function
         count_interval = math.ceil(estimated_frame_rate / FRAME_RATE_PER_SECOND)
 
         while not self.stop_pending:
