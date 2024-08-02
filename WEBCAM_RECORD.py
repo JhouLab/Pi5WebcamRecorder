@@ -40,17 +40,19 @@ EXPAND_VIDEO = False
 
 DEBUG = gettrace() is not None
 
-# Add offset of 10 so that we sometimes overlap with recording status updates and sometimes not
-DEBUG_DIAGNOSTIC_FRAME_INTERVAL = FRAME_RATE_PER_SECOND * 2 + (int(FRAME_RATE_PER_SECOND) >> 1)
-
 if DEBUG:
     printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
+
+MAX_DISPLAY_FRAMES_PER_SECOND = FRAME_RATE_PER_SECOND
 
 if IS_PI5:
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
 
     # Identify camera via USB port position, rather than ID number which is unpredictable.
     IDENTIFY_CAMERA_BY_USB_PORT = True
+
+    # Reduce display frame rate, to avoid overloading CPU on Pi
+    MAX_DISPLAY_FRAMES_PER_SECOND = 12
 
     #
     # Note that the standard RPi.GPIO library does NOT work on Pi5 (only Pi4).
@@ -107,9 +109,9 @@ USE_MJPG = IS_PI5
 
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
-# If not successful (i.e. if there is no camera plugged in with that ID), will throw exception,
-# which unfortunately is the only way to enumerate what devices are connected. The caller needs
-# to catch the exception and handle it by excluding that ID from further consideration.
+# If no camera found with that ID, will throw exception, which unfortunately is the only
+# way to enumerate what devices are connected. The caller needs to catch the exception and
+# handle it by excluding that ID from further consideration.
 def setup_cam(id):
     if platform.system() == "Windows":
         tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
@@ -130,8 +132,8 @@ def setup_cam(id):
         tmp.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
         tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
 
-        # fps readout does not seem to be reliable. On Linux, we always seem to get 30fps, even if camera
-        # can't do it. On Windows, always seem to get 0.
+        # fps readout does not seem to be reliable. On Linux, we always get 30fps, even if camera
+        # is set to a high resolution that can't deliver that frame rate. On Windows, always seem to get 0.
         fps = tmp.get(cv2.CAP_PROP_FPS)
         if not tmp.isOpened():
             print(f"Resolution {WIDTH}x{HEIGHT} not supported. Please change config.txt.")
@@ -216,11 +218,10 @@ else:
     printt("Scanning for all available cameras. Please wait ...")
 
 num_cameras_found = 0
-min_fps = FRAME_RATE_PER_SECOND
 
 # Scan IDs to find cameras
 for cam_id in range(MAX_ID):
-    tmp, fps = setup_cam(cam_id)
+    tmp, _ = setup_cam(cam_id)
     print(".", end="", flush=True)
     if tmp.isOpened():
         if IDENTIFY_CAMERA_BY_USB_PORT:
@@ -240,14 +241,14 @@ for cam_id in range(MAX_ID):
                 printt(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
                 continue
             cam_array[port] = CamObj(tmp, cam_id,
-                                     FIRST_CAMERA_ID + port, fps, GPIO_pin=INPUT_PIN_LIST[port])
+                                     FIRST_CAMERA_ID + port, GPIO_pin=INPUT_PIN_LIST[port])
             num_cameras_found += 1
         else:
             # If not using USB port number, then cameras are put into array
             # in the order they are discovered. This could be unpredictable, but at least
             # it will work, and won't crash. In this case, we also ignore GPIO pin list, since
             # recordings will need to be started and stopped manually.
-            cam_array.append(CamObj(tmp, cam_id, FIRST_CAMERA_ID + len(cam_array), fps))
+            cam_array.append(CamObj(tmp, cam_id, FIRST_CAMERA_ID + len(cam_array)))
             num_cameras_found += 1
             
 
@@ -275,17 +276,12 @@ for idx1, cam_obj1 in enumerate(cam_array):
     else:
         printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}")
 
-    # This does not seem to be reliable. On Linux, we always seem to get 30fps. On Windows, we always seem to get 0.
-#    printt(f"    Max possible fps from this camera: {cam_obj1.max_fps}")
-    if 0 < cam_obj1.max_fps < min_fps:
-        # Should issue warning here ...
-        min_fps = cam_obj1.max_fps
 
-# Lower frame rate to whatever is the lowest of all 4 cameras.
-# FRAME_RATE_PER_SECOND = min_fps
+if MAX_DISPLAY_FRAMES_PER_SECOND > FRAME_RATE_PER_SECOND:
+    MAX_DISPLAY_FRAMES_PER_SECOND = FRAME_RATE_PER_SECOND
 
 print()
-printt(f"Starting display. Frame rate for display and recording is {FRAME_RATE_PER_SECOND}")
+printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
 
 
 def get_key():
@@ -493,12 +489,9 @@ class RECORDER:
                 tk.Button(frame3, text=_b[0], command=_b[1], fg='blue').\
                     grid(row=2, column=idx, columnspan=len(b_list1), ipadx=5, ipady=5, sticky="ew")
 
-        self.frame_count = 0
+        self.display_frame_count = 0
 
-        self.FRAME_INTERVAL = 1.0 / FRAME_RATE_PER_SECOND
-
-        # Report status every 30 seconds
-        self.STATUS_REPORT_INTERVAL = FRAME_RATE_PER_SECOND * 30
+        self.FRAME_INTERVAL = 1.0 / MAX_DISPLAY_FRAMES_PER_SECOND
 
         # Which camera to display initially. User can change this later with arrow keys.
         #
@@ -835,24 +828,24 @@ class RECORDER:
                     print(f"Unable to start recording camera {cam_num + FIRST_CAMERA_ID}.")
             self.pendingActionVar = self.PendingAction.Nothing
 
-        self.frame_count = self.frame_count + 1
+        self.display_frame_count = self.display_frame_count + 1
         
         # Now print status updates, such as elapsed recording time, file size.
         # This takes 2-5ms
-        if self.frame_count % FRAME_RATE_PER_SECOND == 0:
+        if self.display_frame_count % MAX_DISPLAY_FRAMES_PER_SECOND == 0:
             # Print status once per second
             
             skip_status_update = False
             lag_ms = (time.time() - self.next_frame) * 1000
             if lag_ms > -5:
-                if self.frame_count % (FRAME_RATE_PER_SECOND * 5) != 0:
+                if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 5) != 0:
                     skip_status_update = True
                     
             if not skip_status_update:
                 if VERBOSE:
                     elapsed = time.time() - self.start
-                    fps = self.frame_count / elapsed
-                    print(f"Frame count: {self.frame_count}, frames per second = {fps}")
+                    fps = self.display_frame_count / elapsed
+                    print(f"Frame count: {self.display_frame_count}, frames per second = {fps}")
 
                 if any_camera_recording(cam_array):
                     for idx, cam in enumerate(cam_array):
@@ -864,7 +857,7 @@ class RECORDER:
                         elif l is not None:
                             l.config(text="--")
 
-                    if self.frame_count % (FRAME_RATE_PER_SECOND * 5) == 0:
+                    if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 5) == 0:
                         # Show total remaining disk space
                         self.show_disk_space()
                         

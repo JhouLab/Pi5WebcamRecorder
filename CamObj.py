@@ -270,7 +270,7 @@ class CamObj:
     GPIO_active = 0    # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
 
-    def __init__(self, cam, id_num, box_id, max_fps, GPIO_pin=-1):
+    def __init__(self, cam, id_num, box_id, GPIO_pin=-1):
         self.pending = self.PendingAction.Nothing
         self.cached_frame_time = None
         self.cached_frame = None
@@ -281,7 +281,6 @@ class CamObj:
         self.cam = cam
         self.id_num = id_num   # ID number assigned by operating system. We don't use this anymore, as it is unpredictable.
         self.box_id = box_id   # This is a user-friendly unique identifier for each box.
-        self.max_fps = max_fps   # This is stored from value obtained from camera. It does not seem to be reliable.
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
