@@ -1,5 +1,13 @@
+; THIS IS A SAMPLE CONFIGURATION FILE
+;
+; This is a minimalist config file containing only the options that most
+; people will ever use.
+;
+; To use it, first save it as "config.txt", then edit it for your own
+; needs.
+
 [options]
 
-FRAME_RATE_PER_SECOND = 10
+RECORD_FRAME_RATE = 10
 
 DATA_FOLDER = /home/

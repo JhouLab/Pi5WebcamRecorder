@@ -28,6 +28,7 @@ from sys import gettrace
 import configparser
 from enum import Enum
 from ast import literal_eval as make_tuple    # Needed to parse resolution string in config
+from queue import Queue
 
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
@@ -97,8 +98,11 @@ if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
 # Native frame rate of camera(s). If not specified, will attempt to determine by profiling
 NATIVE_FRAME_RATE: float = configParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
 
-# This is the TARGET frame rate, which may be lower than the camera's NATIVE frame rate
-FRAME_RATE_PER_SECOND: float = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=10)
+# This is the targeted RECORD frame rate, which may be lower than the camera's NATIVE frame rate
+RECORD_FRAME_RATE: float = configParser.getfloat('options', 'RECORD_FRAME_RATE', fallback=0)
+if RECORD_FRAME_RATE == 0:
+    # If the above is not found, then check old defunct config option
+    RECORD_FRAME_RATE: float = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=10)
 
 ResolutionString = configParser.get('options', 'RESOLUTION', fallback='')
 
@@ -288,6 +292,7 @@ class CamObj:
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
+        self.q = Queue()
 
         if cam is None:
             # Use blank frame for this object if no camera object is specified
@@ -485,7 +490,7 @@ class CamObj:
         wait_interval_sec = 0.5
         
         # Calculate number of frames to show dark red "pending" dot
-        self.pending_start_timer = int(FRAME_RATE_PER_SECOND * wait_interval_sec + 1)
+        self.pending_start_timer = int(RECORD_FRAME_RATE * wait_interval_sec + 1)
 
         time.sleep(wait_interval_sec)
 
@@ -656,7 +661,7 @@ class CamObj:
                         # Create video file
                         self.Writer = cv2.VideoWriter(self.filename_video,
                                                       self.codec,
-                                                      FRAME_RATE_PER_SECOND,
+                                                      RECORD_FRAME_RATE,
                                                       self.resolution,
                                                       RECORD_COLOR == 1)
                 except:
@@ -753,32 +758,17 @@ class CamObj:
                     pass
                 self.fid_TTL = None
 
-    def read_one_frame(self):
-
-        try:
-            # Read frame if camera is available and open
-            self.status, tmp_frame = self.cam.read()
-            tmp_time = time.time() - self.start_time
-
-            with self.cam_lock:
-                self.cached_frame = tmp_frame
-                self.cached_frame_time = tmp_time
-
-            return self.cam.isOpened() and self.status
-        except:
-            return False
-        
     def profile_fps(self):
         
         # First frame always takes longer to read, so get it out of the way
         # before conducting profiling
-        self.read_one_frame()
+        self.cam.read()
 
         # Subsequent frames might actually read too fast, if they are coming
         # from internal memory buffer. So now clear out any frames in camera buffer
         old_time = time.time()
         while True:
-            self.read_one_frame()
+            self.cam.read()
             new_time = time.time()
             elapsed = new_time - old_time
             old_time = new_time
@@ -797,12 +787,8 @@ class CamObj:
         # Read frames for 1 second to estimate frame rate
         while time.time() < target_time:
 
-            if not self.read_one_frame():
-                self.release()
-                # No camera connected
-                printt(f"Camera {self.box_id} failed during profiling.")
-                return
-            
+            self.cam.read()
+
             new_time = time.time()
 
             frame_count += 1
@@ -823,14 +809,14 @@ class CamObj:
         else:
             # Unable to determine frame rate
             printt("Unable to determine frame rate, defaulting to config setting")
-            estimated_frame_rate = FRAME_RATE_PER_SECOND
+            estimated_frame_rate = RECORD_FRAME_RATE
 
         printt(f'Box {self.box_id} estimated frame rate {estimated_frame_rate}')
 
         # Sometimes will get value slightly lower or higher than real frame rate, e.g. 29.9 or 30.2 instead of 30
-        if estimated_frame_rate > 50:
+        if estimated_frame_rate > 55:
             estimated_frame_rate = 60
-        elif estimated_frame_rate > 25:
+        elif estimated_frame_rate > 28:
             estimated_frame_rate = 30
         elif estimated_frame_rate > 13:
             estimated_frame_rate = 15
@@ -843,7 +829,7 @@ class CamObj:
 
         printt(f'Rounded frame rate to {estimated_frame_rate}')
         
-        NATIVE_FRAME_RATE = estimated_frame_rate
+        return estimated_frame_rate
 
     def read_camera_continuous(self):
 
@@ -851,15 +837,20 @@ class CamObj:
             # No camera connected
             printt(f"Camera {self.box_id} not connected.")
             return
-        
+
         if NATIVE_FRAME_RATE == 0:
-            self.profile_fps()
+            native_fps = self.profile_fps()
+        else:
+            native_fps = NATIVE_FRAME_RATE
 
         count = 0
         old_time = time.time()
 
         # Downsampling interval. Must be integer, hence use of ceiling function
-        count_interval = math.ceil(NATIVE_FRAME_RATE / FRAME_RATE_PER_SECOND)
+        count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
+
+        t = threading.Thread(target=self.process_loop)
+        t.start()
 
         while not self.pending == self.PendingAction.Exiting:
 
@@ -873,7 +864,14 @@ class CamObj:
             elapsed = new_time - old_time
             old_time = new_time
 
-            if not self.read_one_frame():
+            try:
+                # Read frame if camera is available and open
+                self.status, frame = self.cam.read()
+                frame_time = time.time() - self.start_time
+            except:
+                self.status = False
+
+            if not self.status:
 
                 if self.pending == self.PendingAction.Exiting:
                     break
@@ -891,12 +889,24 @@ class CamObj:
 
                 # Remove camera resources
                 self.release()
-                return 0, self.frame
+                return 0
 
             count += 1
             if count == count_interval:
                 count = 0
-                self.process_frame()
+                self.q.put((frame, frame_time))
+
+    def process_loop(self):
+
+        while not self.pending == self.PendingAction.Exiting:
+            v = self.q.get()
+
+            self.process_frame(v[0], v[1])
+
+            lag = (time.time() - self.start_time) - v[1]
+            self.CPU_usage = lag * RECORD_FRAME_RATE
+            if self.IsRecording and self.CPU_usage > 0.8:
+                printt(f"Warning: box{self.box_id} cpu usage {self.CPU_usage*100}%")
 
     def release(self):
         self.status = 0
@@ -904,7 +914,7 @@ class CamObj:
         self.cam = None
 
     # Reads a single frame from CamObj class and writes it to file
-    def process_frame(self):
+    def process_frame(self, frame, time_elapsed):
         
         with self.lock:
 
@@ -916,10 +926,7 @@ class CamObj:
 
             if self.cam is not None and self.cam.isOpened():
 
-                with self.cam_lock:
-                    # Grab whatever frame was most recently placed in cache, along with its timestamp
-                    self.frame = self.cached_frame
-                    time_elapsed = self.cached_frame_time
+                self.frame = frame
 
                 if self.GPIO_active > 0:
                     # Add blue dot to indicate that GPIO was recently detected

@@ -5,34 +5,22 @@
 ;
 ; Because ".txt" files are not tracked by github in this repository,
 ; each machine can have its own config.txt file that will not be
-; overwritten by updates.
+; overwritten by git updates.
 ;
-; If any configuration option is missing, reasonable defaults will be
-; chosen. So having a "config.txt" file is optional unless you want to
-; override the defaults.
+; All entries are optional - if not specified, will revert to default value.
 ;
 ; LINES STARTING WITH SEMICOLONS (LIKE THIS ONE) ARE COMMENTS.
-; FEEL FREE TO DELETE THESE TO REDUCE CLUTTER
 ;
 [options]
 
-; Program runs an internal loop that requests one camera frame per loop.
-; This variable sets how often this loop runs, in frames per second.
-; Most webcams max out around 29-30fps, so loop won't run faster than that.
-; Because CPU needs time to compress frames, the practical limit is usually lower,
-; e.g. 15-20fps when recording 4 cameras on Pi5 with h264.
-FRAME_RATE_PER_SECOND = 10
+; Target record frame rate
+RECORD_FRAME_RATE = 10
 
-; Main choices for the FOURCC code are h264 and mp4v.
+; Codec type. Usually either h264 or mp4v.
 ; h264 is very efficient at compression (1-2MB/min) but somewhat CPU intensive.
 ; mp4v is less efficient (~5-10MB/min) but uses less CPU, allowing higher frame rates.
-; mjpg 
 FOURCC = h264
 ; FOURCC = mp4v
-
-; Specify how many grouped pulses to start/end session.
-NUM_TTL_PULSES_TO_START_SESSION = 2
-NUM_TTL_PULSES_TO_STOP_SESSION = 3
 
 ; Resolution to request from camera. Not all resolutions are supported by all cameras,
 ; and most cameras internally limit frame rate as resolution increases. Some examples:
@@ -59,8 +47,7 @@ NUM_TTL_PULSES_TO_STOP_SESSION = 3
 ;     1024x720   (64:45 aspect ratio that is close to 4:3 but not quite)
 ;     1280x960   (4:3 aspect ratio that actually captures at 16:9, which basically takes a widescreen and squashes it into a 4:3 screen)
 ; Strangely, logitech c920e does not support 1024x768 and 1280x1024 formats.
-WIDTH = 640
-HEIGHT = 480
+RESOLUTION = (640, 480)
 
 
 ; Base folder for data storage. Make sure there is a trailing slash at the end of any directory.

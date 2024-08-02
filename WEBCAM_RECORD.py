@@ -13,7 +13,7 @@ import os
 import numpy as np
 import math
 from CamObj import CamObj, WIDTH, HEIGHT, \
-    FRAME_RATE_PER_SECOND, NATIVE_FRAME_RATE, make_blank_frame,\
+    RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5,\
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON
 from get_hardware_info import *
@@ -44,7 +44,7 @@ DEBUG = gettrace() is not None
 if DEBUG:
     printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
 
-MAX_DISPLAY_FRAMES_PER_SECOND = FRAME_RATE_PER_SECOND
+MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
 
 if IS_PI5:
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
@@ -278,8 +278,8 @@ for idx1, cam_obj1 in enumerate(cam_array):
         printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}")
 
 
-if MAX_DISPLAY_FRAMES_PER_SECOND > FRAME_RATE_PER_SECOND:
-    MAX_DISPLAY_FRAMES_PER_SECOND = FRAME_RATE_PER_SECOND
+if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
+    MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
     
 if NATIVE_FRAME_RATE == 0:
     tk.messagebox.showinfo("Warning", "Config file does not specify native camera frame rate. Will try to determine it by profiling.")
@@ -891,7 +891,7 @@ class RECORDER:
             # At 20fps, we have 50ms between frames. If we are lagging slightly, we can maybe still catch up,
             # but if we are an entire frame late, then warn of possible missed frames.
             if any_camera_recording(cam_array):
-                num_frames = math.ceil(lag_ms * FRAME_RATE_PER_SECOND / 1000)
+                num_frames = math.ceil(lag_ms * RECORD_FRAME_RATE / 1000)
                 printt(f"Warning: CPU lag {lag_ms:.2f} ms. Might drop up to {int(num_frames)} frame(s).")
 
             # Next frame will actually be retrieved immediately. The following time is actually for the frame after that.
