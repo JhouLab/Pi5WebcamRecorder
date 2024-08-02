@@ -241,6 +241,13 @@ class CamObj:
         Checksum = 2
         Debug = 3
 
+    class PendingAction(Enum):
+        Nothing = 0
+        StartRecord = 1
+        EndRecord = 2
+        Exiting = 3
+
+
     # Class variables related to TTL handling
     TTL_num = -1               # Counts how many TTLs (usually indicating trial starts) have occurred in this session
     TTL_binary_bits = 0        # Ensures that we receive 16 binary bits
@@ -257,8 +264,6 @@ class CamObj:
     codec = cv2.VideoWriter_fourcc(*FOURCC)  # What codec to use. Usually h264
     resolution: List[int] = (WIDTH, HEIGHT)
     
-    helper_thread = None  # This is used to close files without blocking main thread
-
     lock = None           # This lock object is local to this instance
     global_lock = threading.RLock()   # This lock is global to ALL instances, and is used to generate unique filenames
 
@@ -266,7 +271,7 @@ class CamObj:
     pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
 
     def __init__(self, cam, id_num, box_id, max_fps, GPIO_pin=-1):
-        self.stop_pending = False
+        self.pending = self.PendingAction.Nothing
         self.cached_frame_time = None
         self.cached_frame = None
         self.stable_frame = None
@@ -598,8 +603,10 @@ class CamObj:
             print(f"Camera {self.box_id} is not available for recording.")
             return False
 
-        # Because this function might be called from the GPIO callback thread, we need to
-        # acquire lock to make sure it isn't also being called from the main thread.
+        # Camera reads occur on a dedicated thread for each cam object.
+        # However, start_record is usually called from either the main GUI thread,
+        # or the GPIO callback thread. So need to acquire locks to make sure
+        # the three threads don't conflict.
         with self.lock:
             if not self.IsRecording:
                 self.frame_num = 0
@@ -682,8 +689,10 @@ class CamObj:
                     self.Writer.release()
                     return False
 
-                self.IsRecording = True
                 self.start_time = time.time()
+
+                # Set this flag last
+                self.IsRecording = True
 
                 printt(f"Started recording camera {self.box_id} to file '{self.filename_video}'")
 
@@ -694,12 +703,14 @@ class CamObj:
 
     def stop_record(self):
 
-        # Close and release all file writers
-        # Do it on a separate thread to avoid dropping frames
-        self.helper_thread = threading.Thread(target=self.stop_record_thread)
-        self.helper_thread.start()
+        # Set flag so that camera loop will stop recording on the next frame
+        self.pending = self.PendingAction.EndRecord
 
     def stop_record_thread(self):
+
+        # Stop recording is performed on a thread to avoid blocking timing of the main thread
+        # Now that each camera has its own dedicated thread, this is no longer essential, and
+        # we no longer need a separate thread.
 
         # Close and release all file writers
         with self.lock:
@@ -736,8 +747,6 @@ class CamObj:
                 except:
                     pass
                 self.fid_TTL = None
-                
-            self.helper_thread = None
 
     def read_one_frame(self):
 
@@ -773,14 +782,15 @@ class CamObj:
             new_time = time.time()
             elapsed = new_time - old_time
             old_time = new_time
-            print(f"Elapsed {elapsed}")
+            if DEBUG:
+                print(f"Pre-profiling elapsed time {elapsed:.4f}s")
             if elapsed > 0.01:
                 # Buffered frames will return very quickly. We wait until
                 # the return time is longer, indicating that buffer is now empty
                 break
 
         old_time = time.time()
-        target_time = old_time + 1
+        target_time = old_time + 1.0  # When to stop profiling
         frame_count = 0
 
         # Read frames for 1 second to estimate frame rate
@@ -820,7 +830,7 @@ class CamObj:
         # Downsampling interval. Must be integer, hence use of ceiling function
         count_interval = math.ceil(estimated_frame_rate / FRAME_RATE_PER_SECOND)
 
-        while not self.stop_pending:
+        while not self.pending == self.PendingAction.Exiting:
 
             if self.cam is None or not self.cam.isOpened():
                 # Camera is disconnected, or program is exiting
@@ -834,7 +844,7 @@ class CamObj:
 
             if not self.read_one_frame():
 
-                if self.stop_pending:
+                if self.pending == self.PendingAction.Exiting:
                     break
 
                 # Read failed. Remove this camera so we won't attempt to read it later.
@@ -855,7 +865,7 @@ class CamObj:
             count += 1
             if count == count_interval:
                 count = 0
-                self.read()
+                self.process_frame()
 
     def release(self):
         self.status = 0
@@ -863,9 +873,15 @@ class CamObj:
         self.cam = None
 
     # Reads a single frame from CamObj class and writes it to file
-    def read(self):
+    def process_frame(self):
         
         with self.lock:
+
+            if self.pending == self.PendingAction.EndRecord:
+                self.IsRecording = False
+                self.stop_record_thread()
+            elif self.pending == self.PendingAction.StartRecord:
+                self.start_record()
 
             if self.cam is not None and self.cam.isOpened():
 
@@ -917,10 +933,21 @@ class CamObj:
                                 cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
                                 round(FONT_SCALE + 0.5))  # Line thickness
 
+                if self.IsRecording and time_elapsed >= 0:
+                    self.frame_num += 1
+
+                    # Add frame # to video
+                    # Location is (10,100) ... used to be at (10,90), but tended to overlap blue dot at (20,70)
+                    #   so I moved it down slightly
+                    cv2.putText(self.frame, str(self.frame_num),
+                                (int(10 * FONT_SCALE), int(140 * FONT_SCALE)),
+                                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE * .7, (255, 128, 128),
+                                round(FONT_SCALE + 0.5))  # Line thickness
+
                 if not RECORD_COLOR and self.frame is not None:
                     self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
 
-                if self.frame is not None and self.IsRecording:
+                if self.frame is not None and self.IsRecording and time_elapsed >= 0:
                     if self.fid is not None and self.start_time > 0:
                         # Write timestamp to text file. Do this before writing AVI so that
                         # timestamp will not be delayed by latency required to compress video. This
@@ -931,8 +958,6 @@ class CamObj:
                             print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
                             self.stop_record()
                             return 0, None
-
-                    self.frame_num += 1
 
                     if self.IsRecording:
                         try:
@@ -1004,7 +1029,7 @@ class CamObj:
     def close(self):
 
         # Only call this when exiting program. Will stop all recordings, and release camera resources
-        self.stop_pending = True
+        self.pending = self.PendingAction.Exiting
 
         # Wait for the camera read thread to exit
         time.sleep(0.1)
@@ -1022,14 +1047,6 @@ class CamObj:
         self.status = -1
         self.frame = None
         
-        # Now wait for helper thread to finish
-        with self.lock:
-            # Acquiring lock will block while helper thread is running.
-            # So by the time we acquire it, the helper thread will have
-            # already ended, and the following is probably superfluous.
-            if self.helper_thread is not None:
-                # Wait for helper thread to stop
-                self.helper_thread.join()
-        
+
 if __name__ == '__main__':
     print("CamObj.py is a helper file, intended to be imported from WEBCAM_RECORD.py, not run by itself")
