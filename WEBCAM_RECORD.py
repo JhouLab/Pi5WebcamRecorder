@@ -793,10 +793,11 @@ class RECORDER:
             if self.which_display >= 0:
                 # Show just one of the 4 cameras
                 cam_obj = self.cam_array[self.which_display]
+                with cam_obj.cam_lock:
+                    # Need to make a deep copy here
+                    img = cam_obj.frame
+
                 if cam_obj.status:
-                    with cam_obj.cam_lock:
-                        # Need to make a deep copy here
-                        img = cam_obj.frame
                     if self.zoom_center:
                         x1 = WIDTH >> 2
                         x2 = x1 * 3
@@ -804,10 +805,8 @@ class RECORDER:
                         y2 = y1 * 3
                         img = img[y1:y2, x1:x2]
                         img = cv2.resize(img, [WIDTH, HEIGHT])
-                    if SCREEN_RESOLUTION[0] != WIDTH:
-                        img = cv2.resize(img, SCREEN_RESOLUTION)
-                else:
-                    img = None
+                if SCREEN_RESOLUTION[0] != WIDTH:
+                    img = cv2.resize(img, SCREEN_RESOLUTION)
             elif self.which_display == self.CAM_VALS.ALL.value:
                 # Show all 4 cameras on one screen (downsized 2x)
                 for index, elt in enumerate(self.cam_array):

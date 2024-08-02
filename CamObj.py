@@ -1,4 +1,4 @@
-from __future__ import annotations   # Need this for type hints to work on older Python versions
+from __future__ import annotations  # Need this for type hints to work on older Python versions
 
 #
 # This file is intended to be imported by webcam_recorder.py
@@ -16,7 +16,7 @@ from __future__ import annotations   # Need this for type hints to work on older
 
 from typing import List
 import os
-import psutil        # This is used to obtain disk free space
+import psutil  # This is used to obtain disk free space
 import numpy as np
 import math
 import time
@@ -27,7 +27,7 @@ import subprocess
 from sys import gettrace
 import configparser
 from enum import Enum
-from ast import literal_eval as make_tuple    # Needed to parse resolution string in config
+from ast import literal_eval as make_tuple  # Needed to parse resolution string in config
 from queue import Queue
 
 PLATFORM = platform.system().lower()
@@ -54,7 +54,8 @@ if IS_PI5:
     #
     import RPi.GPIO as GPIO
 
-os.environ["OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found. This statement must occur before importing cv2
+os.environ[
+    "OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found. This statement must occur before importing cv2
 
 # This returns true if you ran the program in debug mode from the IDE
 DEBUG = gettrace() is not None
@@ -77,7 +78,6 @@ DEBUG = gettrace() is not None
 #   If multiple installations, must pick the correct one, e.g.:
 #   c:/users/<user>/AppData/Local/Microsoft/WindowsApps/python3.11.exe -m pip install opencv-python 
 import cv2
-
 
 # If true, will print extra diagnostics, such as GPIO on/off times and consecutive TTL counter
 VERBOSE = False
@@ -131,7 +131,6 @@ SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', f
 SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
 SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
 
-
 # Number of seconds to discriminate between binary 0 and 1
 BINARY_BIT_PULSE_THRESHOLD = 0.05
 
@@ -160,31 +159,19 @@ def make_blank_frame(txt, resolution=None):
     tmp = np.zeros((h, w, 3), dtype="uint8")
     cv2.putText(tmp, txt, (int(10 * FONT_SCALE), int(30 * FONT_SCALE)), cv2.FONT_HERSHEY_SIMPLEX,
                 FONT_SCALE, (255, 255, 255),
-                round(FONT_SCALE + 0.5))   # Line thickness
+                round(FONT_SCALE + 0.5))  # Line thickness
     return tmp
 
 
-class closer(threading.Thread):
-    def __init__(self, cam_obj):
-        threading.Thread.__init__(self)
-        self.cam_obj = cam_obj
-
-    def run(self):
-        try:
-            self.cam_obj.stop_record_thread()
-        except:
-            pass
-
-
 filename_log = DATA_FOLDER + get_date_string() + "_log.txt"
-
 
 try:
     # Create text file for frame timestamps
     fid_log = open(filename_log, 'w')
     print("Logging events to file: \'" + filename_log + "\'")
 except:
-    print("Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and that you have permission to write to it.")
+    print(
+        "Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and that you have permission to write to it.")
 
 
 # Write text to both screen and log file. The log file helps retrospectively figure out what happened when debugging.
@@ -210,7 +197,6 @@ def printt(txt, omit_date_time=False, close_file=False):
 
 
 def get_disk_free_space():
-
     path = DATA_FOLDER
     if path == "":
         path = "./"
@@ -223,7 +209,7 @@ def get_disk_free_space():
 
 
 class CamObj:
-    cam = None   # this is the opencv camera object
+    cam = None  # this is the opencv camera object
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
     box_id = -1  # User-friendly camera ID. Will usually be USB port position/screen position, starting from 1
     status = -1  # True if camera is operational and connected
@@ -233,15 +219,15 @@ class CamObj:
     filename_timestamp_TTL = "Timestamp_TTL.txt"
 
     # Various file writer objects
-    Writer = None    # Writer for video file
-    fid = None       # Writer for timestamp file
-    fid_TTL = None   # Writer for TTL timestamp file
+    Writer = None  # Writer for video file
+    fid = None  # Writer for timestamp file
+    fid_TTL = None  # Writer for TTL timestamp file
 
     start_recording_time = -1  # Timestamp (in seconds) when recording started.
     IsRecording = False
-    GPIO_pin = -1    # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
+    GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
 
-    frame_num = -1   # Number of frames recorded so far.
+    frame_num = -1  # Number of frames recorded so far.
 
     class TTL_type(Enum):
         Normal = 0
@@ -255,28 +241,27 @@ class CamObj:
         EndRecord = 2
         Exiting = 3
 
-
     # Class variables related to TTL handling
-    TTL_num = -1               # Counts how many TTLs (usually indicating trial starts) have occurred in this session
-    TTL_binary_bits = 0        # Ensures that we receive 16 binary bits
+    TTL_num = -1  # Counts how many TTLs (usually indicating trial starts) have occurred in this session
+    TTL_binary_bits = 0  # Ensures that we receive 16 binary bits
     TTL_animal_ID = 0
-    TTL_tmp_ID = 0             # Temporary ID while we are receiving bits
+    TTL_tmp_ID = 0  # Temporary ID while we are receiving bits
     TTL_mode = None
     TTL_debug_count = 0
     TTL_checksum = 0
     most_recent_gpio_rising_edge_time = -1
     most_recent_gpio_falling_edge_time = -1
-    num_consec_TTLs = 0   # Use this to track double and triple pulses
+    num_consec_TTLs = 0  # Use this to track double and triple pulses
 
     # PyCharm intellisense gives warning on the next line, but it is fine.
     codec = cv2.VideoWriter_fourcc(*FOURCC)  # What codec to use. Usually h264
     resolution: List[int] = (WIDTH, HEIGHT)
-    
-    lock = None           # This lock object is local to this instance
-    global_lock = threading.RLock()   # This lock is global to ALL instances, and is used to generate unique filenames
 
-    GPIO_active = 0    # Use this to add blue dot to frames when GPIO is detected
-    pending_start_timer = 0    # This is used to show dark red dot temporarily while we are waiting to check if double pulse is actually double (i.e. no third pulse)
+    lock = None  # This lock object is local to this instance
+    global_lock = threading.RLock()  # This lock is global to ALL instances, and is used to generate unique filenames
+
+    GPIO_active = 0  # Use this to add blue dot to frames when GPIO is detected
+    pending_start_timer = 0  # Used to show dark red dot while waiting to see if double pulse is not a triple pulse
 
     def __init__(self, cam, id_num, box_id, GPIO_pin=-1):
         self.CPU_lag_frames = 0
@@ -286,10 +271,10 @@ class CamObj:
         self.stable_frame = None
         self.cam_lock = threading.RLock()
         self.need_update_button_state_flag = None
-        self.process = None   # This is used if calling FF_MPEG directly. Probably won't use this in the future.
+        self.process = None  # This is used if calling FF_MPEG directly. Probably won't use this in the future.
         self.cam = cam
-        self.id_num = id_num   # ID number assigned by operating system. We don't use this anymore, as it is unpredictable.
-        self.box_id = box_id   # This is a user-friendly unique identifier for each box.
+        self.id_num = id_num  # ID number assigned by operating system. We don't use this, as it is unpredictable.
+        self.box_id = box_id  # This is a user-friendly unique identifier for each box.
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
@@ -311,7 +296,7 @@ class CamObj:
         t.start()
 
     def GPIO_callback_both(self, param):
-    
+
         if GPIO.input(param):
             if VERBOSE:
                 printt('GPIO on')
@@ -360,7 +345,7 @@ class CamObj:
                 if self.TTL_binary_bits != 16:
                     printt(f'Warning: in binary mode received {self.TTL_binary_bits} bits instead of 16')
                     self.TTL_animal_ID = -1
-                
+
                 if DEBUG:
                     printt('Binary mode now awaiting final checksum...')
                 self.TTL_mode = self.TTL_type.Checksum
@@ -376,7 +361,7 @@ class CamObj:
                 printt(f'Exiting DEBUG TTL mode with pause length {elapsed}')
             elif elapsed < 0.015 or elapsed > 0.035:
                 printt(f'{self.TTL_debug_count} off time {elapsed}, expected 0.025')
-                
+
         return
 
     def GPIO_callback2(self, param):
@@ -434,7 +419,8 @@ class CamObj:
                 # 75ms pulse indicates ONE
                 checksum = 1
             else:
-                printt(f"Received animal ID {self.TTL_tmp_ID} for box {self.box_id}, but checksum duration too long ({on_time} instead of 0-0.075s).")
+                printt(
+                    f"Received animal ID {self.TTL_tmp_ID} for box {self.box_id}, but checksum duration too long ({on_time} instead of 0-0.075s).")
                 self.TTL_animal_ID = -1
                 self.TTL_mode = self.TTL_type.Normal
                 return
@@ -489,7 +475,7 @@ class CamObj:
         # to make sure we don't have a third pulse, i.e. have to wait 150ms. We extend this to 500ms just
         # in case.
         wait_interval_sec = 0.5
-        
+
         # Calculate number of frames to show dark red "pending" dot
         self.pending_start_timer = int(RECORD_FRAME_RATE * wait_interval_sec + 1)
 
@@ -582,7 +568,7 @@ class CamObj:
         except Exception as ex:
             print(f"Error while attempting to create folder {target_path}")
             print("    Error type is: ", ex.__class__.__name__)
-            return ''    # This will force file to go to program folder
+            return ''  # This will force file to go to program folder
 
     def get_filename_prefix(self, animal_ID=None):
         path = self.verify_directory()
@@ -630,7 +616,7 @@ class CamObj:
                     # Generate filename prefix, which will be date string plus animal ID (or box ID
                     # if no animal ID is available).
                     prefix = self.get_filename_prefix(animal_ID)
-                    
+
                 prefix_extra = ""
                 suffix_count = 0
 
@@ -717,13 +703,9 @@ class CamObj:
         # Set flag so that camera loop will stop recording on the next frame
         self.pending = self.PendingAction.EndRecord
 
-    def stop_record_thread(self):
+    def __stop_recording_now(self):
 
-        # Stop recording is performed on a thread to avoid blocking timing of the main thread
-        # Now that each camera has its own dedicated thread, this is no longer essential, and
-        # we no longer need a separate thread.
-
-        # Close and release all file writers
+        # Close and release all file writers immediately.
         with self.lock:
 
             # Acquire lock to avoid starting a new recording
@@ -760,7 +742,7 @@ class CamObj:
                 self.fid_TTL = None
 
     def profile_fps(self):
-        
+
         # First frame always takes longer to read, so get it out of the way
         # before conducting profiling
         self.cam.read()
@@ -801,7 +783,6 @@ class CamObj:
                         min_elapsed4 = elapsed
                 old_time = new_time
 
-
         if min_elapsed4 < 1000:
             # Upper bound on frame rate
             estimated_frame_rate = 4.0 / min_elapsed4
@@ -829,7 +810,7 @@ class CamObj:
             estimated_frame_rate = 5
 
         printt(f'Rounded frame rate to {estimated_frame_rate}')
-        
+
         return estimated_frame_rate
 
     def read_camera_continuous(self):
@@ -854,23 +835,21 @@ class CamObj:
         t = threading.Thread(target=self.process_loop)
         t.start()
 
+        # This is here just to keep PyCharm from issuing warning at line 878
+        frame = None
+        frame_time = 0
+
         while not self.pending == self.PendingAction.Exiting:
 
-            if self.cam is None or not self.cam.isOpened():
-                # Camera is disconnected, or program is exiting
-                # No camera connected
-                printt(f"Lost connection to camera {self.box_id}.")
-                break
-
-            new_time = time.time()
-            elapsed = new_time - old_time
-            old_time = new_time
-
-            try:
-                # Read frame if camera is available and open
-                self.status, frame = self.cam.read()
-                frame_time = time.time() - self.start_recording_time
-            except:
+            if self.cam is not None and self.cam.isOpened():
+                try:
+                    # Read frame if camera is available and open
+                    self.status, frame = self.cam.read()
+                    frame_time = time.time() - self.start_recording_time
+                except:
+                    # Set flag that will cause loop to exit shortly
+                    self.status = False
+            else:
                 self.status = False
 
             if not self.status:
@@ -887,11 +866,11 @@ class CamObj:
                 self.frame = make_blank_frame(f"{self.box_id} Camera lost connection")
                 # Warn user that something is wrong.
                 printt(
-                    f"Unable to read video from camera with ID {self.box_id}. Will remove camera from available list, and stop any ongoing recordings.")
+                    f"Unable to read box {self.box_id}'s camera. Did it come unplugged?")
 
                 # Remove camera resources
                 self.release()
-                return 0
+                return
 
             count += 1
             if count == count_interval:
@@ -899,7 +878,7 @@ class CamObj:
                 self.q.put((frame, frame_time))
 
             frame_count += 1
-            if frame_count % (NATIVE_FRAME_RATE * 10) == 0:
+            if frame_count % (native_fps * 5) == 0:
                 if DEBUG:
                     printt(f"Box {self.box_id} camera read loop is alive")
 
@@ -941,13 +920,15 @@ class CamObj:
 
     # Reads a single frame from CamObj class and writes it to file
     def process_frame(self, frame, time_elapsed):
-        
+
         with self.lock:
 
             if self.pending == self.PendingAction.EndRecord:
                 self.IsRecording = False
-                self.stop_record_thread()
+                self.pending = self.PendingAction.Nothing
+                self.__stop_recording_now()
             elif self.pending == self.PendingAction.StartRecord:
+                self.pending = self.PendingAction.Nothing
                 self.start_record()
 
             if self.cam is not None and self.cam.isOpened():
@@ -960,8 +941,8 @@ class CamObj:
                     cv2.circle(self.frame,
                                (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position
                                int(8 * FONT_SCALE),  # Radius
-                               (255, 0, 0),     # Blue dot (color is in BGR order)
-                               -1)   # -1 thickness fills circle
+                               (255, 0, 0),  # Blue dot (color is in BGR order)
+                               -1)  # -1 thickness fills circle
 
                 if self.pending_start_timer > 0:
                     # Add dark red dot to indicate that a start might be pending
@@ -970,8 +951,8 @@ class CamObj:
                     cv2.circle(self.frame,
                                (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
                                int(8 * FONT_SCALE),  # Radius
-                               (0, 0, 96),     # Dark red dot (color is in BGR order)
-                               -1)   # -1 thickness fills circle
+                               (0, 0, 96),  # Dark red dot (color is in BGR order)
+                               -1)  # -1 thickness fills circle
 
                 if self.TTL_mode == self.TTL_type.Debug:
                     # Green dot indicates we are in TTL DEBUG mode
@@ -979,8 +960,8 @@ class CamObj:
                     cv2.circle(self.frame,
                                (int(20 * FONT_SCALE), int(110 * FONT_SCALE)),  # x-y position
                                int(8 * FONT_SCALE),  # Radius
-                               (0, 255, 0),     # color is in BGR order
-                               -1)   # -1 thickness fills circle
+                               (0, 255, 0),  # color is in BGR order
+                               -1)  # -1 thickness fills circle
 
                 if self.TTL_animal_ID > 0:
                     # Add animal ID to video
@@ -1020,7 +1001,7 @@ class CamObj:
                             self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
                         except:
                             print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
-                            self.stop_record()
+                            self.__stop_recording_now()
 
                     if self.IsRecording:
                         try:
@@ -1029,7 +1010,7 @@ class CamObj:
                                 self.Writer.write(self.frame)
                         except:
                             print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
-                            self.stop_record()
+                            self.__stop_recording_now()
 
                 return self.status, self.frame
             else:
@@ -1053,7 +1034,7 @@ class CamObj:
     def get_elapsed_time_string(self):
 
         elapsed_sec = time.time() - self.start_recording_time
-        
+
         if elapsed_sec < 120:
             str1 = f"{elapsed_sec:.1f} seconds"
         else:
@@ -1072,18 +1053,18 @@ class CamObj:
         if self.cam is None or self.frame is None:
             return False
         if self.cam.isOpened():
-            
+
             index = 1
             while True:
                 fname = self.get_filename_prefix() + "_snapshot_" + str(index) + ".jpg"
-                
+
                 if not os.path.exists(fname):
                     break
-                
+
                 index += 1
-            
+
             cv2.imwrite(fname, self.frame)
-            
+
             printt(f'Wrote snapshot to file {fname}')
             return fname
         else:
@@ -1098,7 +1079,7 @@ class CamObj:
         time.sleep(0.1)
 
         self.stop_record()  # This will run in a separate thread, and will close all files.
-        
+
         if self.cam is not None:
             try:
                 # Release camera resources
@@ -1109,7 +1090,7 @@ class CamObj:
 
         self.status = -1
         self.frame = None
-        
+
 
 if __name__ == '__main__':
     print("CamObj.py is a helper file, intended to be imported from WEBCAM_RECORD.py, not run by itself")
