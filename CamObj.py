@@ -94,6 +94,10 @@ if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
         # just leave the empty string as is, so that we can default to the program directory.
         DATA_FOLDER = DATA_FOLDER + "/"
 
+# Native frame rate of camera(s). If not specified, will attempt to determine by profiling
+NATIVE_FRAME_RATE: float = configParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
+
+# This is the TARGET frame rate, which may be lower than the camera's NATIVE frame rate
 FRAME_RATE_PER_SECOND: float = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=10)
 
 ResolutionString = configParser.get('options', 'RESOLUTION', fallback='')
@@ -763,14 +767,9 @@ class CamObj:
             return self.cam.isOpened() and self.status
         except:
             return False
-
-    def read_camera_continuous(self):
-
-        if self.cam is None or not self.cam.isOpened():
-            # No camera connected
-            printt(f"Camera {self.box_id} not connected.")
-            return
-
+        
+    def profile_fps(self):
+        
         # First frame always takes longer to read, so get it out of the way
         # before conducting profiling
         self.read_one_frame()
@@ -784,7 +783,7 @@ class CamObj:
             elapsed = new_time - old_time
             old_time = new_time
             if DEBUG:
-                print(f"Pre-profiling elapsed time {elapsed:.4f}s")
+                print(f"Box {self.box_id} re-profiling elapsed time {elapsed:.4f}s")
             if elapsed > 0.01:
                 # Buffered frames will return very quickly. We wait until
                 # the return time is longer, indicating that buffer is now empty
@@ -793,6 +792,7 @@ class CamObj:
         old_time = time.time()
         target_time = old_time + 1.0  # When to stop profiling
         frame_count = 0
+        min_elapsed4 = 1000
 
         # Read frames for 1 second to estimate frame rate
         while time.time() < target_time:
@@ -802,18 +802,35 @@ class CamObj:
                 # No camera connected
                 printt(f"Camera {self.box_id} failed during profiling.")
                 return
+            
+            new_time = time.time()
 
             frame_count += 1
+            if frame_count % 4 == 0:
+                elapsed = new_time - old_time
+                if elapsed > 0.06:
+                    if elapsed < min_elapsed4:
+                        # Finds minimum interval between any 4 frames
+                        min_elapsed4 = elapsed
+                old_time = new_time
 
-        elapsed = time.time() - old_time
-        estimated_frame_rate = frame_count / elapsed
 
-        printt(f'Estimated frame rate {estimated_frame_rate}')
+        if min_elapsed4 < 1000:
+            # Upper bound on frame rate
+            estimated_frame_rate = 4.0 / min_elapsed4
+            # Lower bound on frame rate
+            estimated_frame_rate2 = frame_count
+        else:
+            # Unable to determine frame rate
+            printt("Unable to determine frame rate, defaulting to config setting")
+            estimated_frame_rate = FRAME_RATE_PER_SECOND
+
+        printt(f'Box {self.box_id} estimated frame rate {estimated_frame_rate}')
 
         # Sometimes will get value slightly lower or higher than real frame rate, e.g. 29.9 or 30.2 instead of 30
         if estimated_frame_rate > 50:
             estimated_frame_rate = 60
-        elif estimated_frame_rate > 27:
+        elif estimated_frame_rate > 25:
             estimated_frame_rate = 30
         elif estimated_frame_rate > 13:
             estimated_frame_rate = 15
@@ -825,11 +842,24 @@ class CamObj:
             estimated_frame_rate = 5
 
         printt(f'Rounded frame rate to {estimated_frame_rate}')
+        
+        NATIVE_FRAME_RATE = estimated_frame_rate
+
+    def read_camera_continuous(self):
+
+        if self.cam is None or not self.cam.isOpened():
+            # No camera connected
+            printt(f"Camera {self.box_id} not connected.")
+            return
+        
+        if NATIVE_FRAME_RATE == 0:
+            self.profile_fps()
+
         count = 0
         old_time = time.time()
 
         # Downsampling interval. Must be integer, hence use of ceiling function
-        count_interval = math.ceil(estimated_frame_rate / FRAME_RATE_PER_SECOND)
+        count_interval = math.ceil(NATIVE_FRAME_RATE / FRAME_RATE_PER_SECOND)
 
         while not self.pending == self.PendingAction.Exiting:
 

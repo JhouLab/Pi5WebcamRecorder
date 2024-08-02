@@ -12,7 +12,8 @@ import os
 
 import numpy as np
 import math
-from CamObj import CamObj, WIDTH, HEIGHT, FRAME_RATE_PER_SECOND, make_blank_frame,\
+from CamObj import CamObj, WIDTH, HEIGHT, \
+    FRAME_RATE_PER_SECOND, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5,\
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON
 from get_hardware_info import *
@@ -279,6 +280,9 @@ for idx1, cam_obj1 in enumerate(cam_array):
 
 if MAX_DISPLAY_FRAMES_PER_SECOND > FRAME_RATE_PER_SECOND:
     MAX_DISPLAY_FRAMES_PER_SECOND = FRAME_RATE_PER_SECOND
+    
+if NATIVE_FRAME_RATE == 0:
+    tk.messagebox.showinfo("Warning", "Config file does not specify native camera frame rate. Will try to determine it by profiling.")
 
 print()
 printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
@@ -286,12 +290,9 @@ printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be di
 for idx1, cam_obj1 in enumerate(cam_array):
     if cam_obj1 is not None:
         cam_obj1.start_read_thread()
+        if IS_PI5:
+            time.sleep(0.25)
 
-if IS_PI5:
-    # Give the cam objects a second to estimate frame rate
-    time.sleep(1.2)
-else:
-    time.sleep(0.5)
 
 def get_key():
     # waitKey checks if any key has been pressed, and also runs cv2 message pump so that screen will update
