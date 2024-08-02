@@ -295,6 +295,8 @@ class CamObj:
 
         self.frame = make_blank_frame(f"{self.box_id} Starting up ...")
 
+    def start_read_thread(self):
+
         t = threading.Thread(target=self.read_camera_continuous)
         t.start()
 

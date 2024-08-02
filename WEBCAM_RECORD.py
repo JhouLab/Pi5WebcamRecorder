@@ -283,6 +283,15 @@ if MAX_DISPLAY_FRAMES_PER_SECOND > FRAME_RATE_PER_SECOND:
 print()
 printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
 
+for idx1, cam_obj1 in enumerate(cam_array):
+    if cam_obj1 is not None:
+        cam_obj1.start_read_thread()
+
+if IS_PI5:
+    # Give the cam objects a second to estimate frame rate
+    time.sleep(1.2)
+else:
+    time.sleep(0.5)
 
 def get_key():
     # waitKey checks if any key has been pressed, and also runs cv2 message pump so that screen will update
