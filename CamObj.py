@@ -1001,15 +1001,15 @@ class CamObj:
                         except:
                             print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
                             self.__stop_recording_now()
+                            return
 
-                    if self.IsRecording:
-                        try:
-                            # Write frame to AVI video file if possible
-                            if self.Writer is not None:
-                                self.Writer.write(self.frame)
-                        except:
-                            print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
-                            self.__stop_recording_now()
+                    try:
+                        # Write frame to AVI video file if possible
+                        if self.Writer is not None:
+                            self.Writer.write(self.frame)
+                    except:
+                        print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
+                        self.__stop_recording_now()
 
     def get_elapsed_recording_time(self, include_cam_num=False):
 
