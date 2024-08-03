@@ -1,0 +1,11 @@
+--2024-08-03 18:57:22--  http://openshot.org/files/chromeos/install-stable.sh
+Resolving openshot.org (openshot.org)... 52.22.149.119
+Connecting to openshot.org (openshot.org)|52.22.149.119|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 1389 (1.4K) [text/x-sh]
+Saving to: ‘STDOUT’
+
+-                         0%[                              ]       0  --.-KB/s               -                       100%[=============================>]   1.36K  --.-KB/s    in 0s      
+
+2024-08-03 18:57:23 (273 MB/s) - written to stdout [1389/1389]
+

@@ -103,7 +103,7 @@ NATIVE_FRAME_RATE: float = configParser.getfloat('options', 'NATIVE_FRAME_RATE',
 RECORD_FRAME_RATE: float = configParser.getfloat('options', 'RECORD_FRAME_RATE', fallback=0)
 if RECORD_FRAME_RATE == 0:
     # If the above is not found, then check old defunct config option
-    RECORD_FRAME_RATE: float = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=10)
+    RECORD_FRAME_RATE: float = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=30)
 
 ResolutionString = configParser.get('options', 'RESOLUTION', fallback='')
 
@@ -287,9 +287,11 @@ class CamObj:
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
+            GPIO.setup(GPIO_pin, GPIO.IN)
             GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
 
-        self.frame = make_blank_frame(f"{self.box_id} Starting up ...")
+        if cam is not None:
+            self.frame = make_blank_frame(f"{self.box_id} Starting up ...")
 
     def start_read_thread(self):
 
@@ -387,10 +389,11 @@ class CamObj:
 
         if self.TTL_mode == self.TTL_type.Normal:
             # In normal (not binary or checksum) mode, read the following types of pulses:
-            # 0.1s on-time (range 0.01-0.15): indicates trial start, or session start/stop if doubled/tripled
+            # 0.1s on-time (range 0.01-0.15) indicates trial start, or session start/stop if doubled/tripled
             # 0.2s on time (range 0.15-0.25) initiates binary mode
             # 0.3s-2s ... ignored
-            # 2.5s (range >2s) starts DEBUG TTL mode
+            # 2.5s (range 2.4-2.6s) starts DEBUG TTL mode
+            # >3s ... ignored
             if on_time < 0.15:
                 self.num_consec_TTLs += 1
                 if VERBOSE:
@@ -404,7 +407,7 @@ class CamObj:
                 self.TTL_tmp_ID = 0
                 self.TTL_binary_bits = 0
                 self.TTL_checksum = 0
-            elif on_time > 2.0 and DEBUG:
+            elif 2.4 < on_time < 2.6 and DEBUG:
                 # Extra long pulse starts debug testing mode
                 self.TTL_mode = self.TTL_type.Debug
                 printt(f'Entering DEBUG TTL mode with pulse length {on_time}s')
@@ -818,7 +821,8 @@ class CamObj:
 
         if self.cam is None or not self.cam.isOpened():
             # No camera connected
-            printt(f"Camera {self.box_id} not connected.")
+            if DEBUG:
+                printt(f"Camera {self.box_id} not connected, won't profile or read.")
             return
 
         if NATIVE_FRAME_RATE == 0:

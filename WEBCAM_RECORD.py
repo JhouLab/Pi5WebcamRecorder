@@ -282,12 +282,11 @@ if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
     MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
     
 if NATIVE_FRAME_RATE == 0:
-    # On Windows, messagebox.showinfo() causes an extraneous "root" window to show up in corner of screen
+    # messagebox.showinfo() causes an extraneous "root" window to show up in corner of screen
     # that is blank. So we need to preemptively create a root window, and then hide it
-    if IS_WINDOWS:
-        root = tk.Tk()
-        root.withdraw()
-    tk.messagebox.showinfo("Warning", "Config file does not specify native camera frame rate. Will try to determine it by profiling.")
+    root = tk.Tk()
+    root.withdraw()
+    tk.messagebox.showinfo("Warning", "config.txt file does not specify native camera frame rate.\n\nWill try to estimate it by profiling, but it is highly recommended to add the true value to config.txt")
 
 print()
 printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
