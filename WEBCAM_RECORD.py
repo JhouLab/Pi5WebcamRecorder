@@ -280,12 +280,14 @@ for idx1, cam_obj1 in enumerate(cam_array):
 
 if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
     MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
-    
+
+# Create root now or else messagebox.showinfo() will do it for you, leaving an extra blank window floating around.
+root = tk.Tk()
+root.withdraw()
+
 if NATIVE_FRAME_RATE == 0:
-    # messagebox.showinfo() causes an extraneous "root" window to show up in corner of screen
-    # that is blank. So we need to preemptively create a root window, and then hide it
-    root = tk.Tk()
-    root.withdraw()
+    # messagebox.showinfo() causes an extraneous blank "root" window to show up in corner of screen if you haven't
+    # already created it.
     tk.messagebox.showinfo("Warning", "config.txt file does not specify native camera frame rate.\n\nWill try to estimate it by profiling, but it is highly recommended to add the true value to config.txt")
 
 print()
@@ -407,11 +409,14 @@ class RECORDER:
     pendingActionCamera = -1
     pendingActionID = ""
 
-    def __init__(self, _cam_array: List[CamObj]):
+    def __init__(self, _cam_array: List[CamObj], root_window=None):
 
         self.cam_array = _cam_array
 
-        self.root = tk.Toplevel()  # tk.Tk()  # Use Toplevel() in case root already exists
+        if root_window is None:
+            self.root = tk.Tk()
+        else:
+            self.root = tk.Toplevel()
         self.root.bind('<KeyPress>', self.onKeyPress)
         self.root.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
         self.root.title("Pi5 Camera recorder control bar")
@@ -927,7 +932,7 @@ class RECORDER:
 
 
 
-rec_obj = RECORDER(cam_array)
+rec_obj = RECORDER(cam_array, root_window=root)
 rec_obj.root.mainloop()
 
 printt("Exiting", close_file=True)
