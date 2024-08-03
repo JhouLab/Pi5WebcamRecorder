@@ -32,6 +32,7 @@ from queue import Queue
 
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
+IS_WINDOWS = (PLATFORM == 'windows')
 IS_PI5 = False
 
 if IS_LINUX:
@@ -827,11 +828,13 @@ class CamObj:
 
         count = 0
         frame_count = 0
-        old_time = time.time()
 
         # Downsampling interval. Must be integer, hence use of ceiling function
         count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
 
+        # Start thread that will process the frames sent by this loop.
+        # This allows read_camera_continuous(), i.e. this thread, to
+        # run at max speed.
         t = threading.Thread(target=self.process_loop)
         t.start()
 
@@ -846,6 +849,7 @@ class CamObj:
                     # Read frame if camera is available and open
                     self.status, frame = self.cam.read()
                     frame_time = time.time()
+                    TTL_on = self.GPIO_active
                 except:
                     # Set flag that will cause loop to exit shortly
                     self.status = False
@@ -875,7 +879,7 @@ class CamObj:
             count += 1
             if count == count_interval:
                 count = 0
-                self.q.put((frame, frame_time))
+                self.q.put((frame, frame_time, TTL_on))
 
             frame_count += 1
             if frame_count % (native_fps * 5) == 0:
@@ -895,7 +899,8 @@ class CamObj:
             # Do we need to deep-copy v? I assume not, but are we sure?
             v0 = v[0]
             v1 = v[1]
-            self.process_frame(v0, v1)
+            v2 = v[2]
+            self.process_frame(v0, v1, v2)
 
             lag = time.time() - v1
             self.CPU_lag_frames = lag * RECORD_FRAME_RATE
@@ -919,12 +924,11 @@ class CamObj:
         self.cam = None
 
     # Reads a single frame from CamObj class and writes it to file
-    def process_frame(self, frame, timestamp):
+    def process_frame(self, frame, timestamp, TTL_on):
 
         with self.lock:
 
             if self.pending == self.PendingAction.EndRecord:
-                self.IsRecording = False
                 self.pending = self.PendingAction.Nothing
                 self.__stop_recording_now()
             elif self.pending == self.PendingAction.StartRecord:
@@ -935,8 +939,8 @@ class CamObj:
 
                 self.frame = frame
 
-                if self.GPIO_active > 0:
-                    # Add blue dot to indicate that GPIO was recently detected
+                if TTL_on:
+                    # Add blue dot to indicate that GPIO is active
                     # Location is (20,70)
                     cv2.circle(self.frame,
                                (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position

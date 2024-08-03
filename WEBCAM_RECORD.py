@@ -14,7 +14,7 @@ import numpy as np
 import math
 from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
-    FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5,\
+    FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON
 from get_hardware_info import *
 
@@ -282,6 +282,11 @@ if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
     MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
     
 if NATIVE_FRAME_RATE == 0:
+    # On Windows, messagebox.showinfo() causes an extraneous "root" window to show up in corner of screen
+    # that is blank. So we need to preemptively create a root window, and then hide it
+    if IS_WINDOWS:
+        root = tk.Tk()
+        root.withdraw()
     tk.messagebox.showinfo("Warning", "Config file does not specify native camera frame rate. Will try to determine it by profiling.")
 
 print()
@@ -407,7 +412,7 @@ class RECORDER:
 
         self.cam_array = _cam_array
 
-        self.root = tk.Tk()
+        self.root = tk.Toplevel()  # tk.Tk()  # Use Toplevel() in case root already exists
         self.root.bind('<KeyPress>', self.onKeyPress)
         self.root.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
         self.root.title("Pi5 Camera recorder control bar")
