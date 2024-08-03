@@ -845,7 +845,7 @@ class CamObj:
                 try:
                     # Read frame if camera is available and open
                     self.status, frame = self.cam.read()
-                    frame_time = time.time() - self.start_recording_time
+                    frame_time = time.time()
                 except:
                     # Set flag that will cause loop to exit shortly
                     self.status = False
@@ -879,7 +879,7 @@ class CamObj:
 
             frame_count += 1
             if frame_count % (native_fps * 5) == 0:
-                if DEBUG:
+                if VERBOSE:
                     printt(f"Box {self.box_id} camera read loop is alive")
 
         if DEBUG:
@@ -897,7 +897,7 @@ class CamObj:
             v1 = v[1]
             self.process_frame(v0, v1)
 
-            lag = (time.time() - self.start_recording_time) - v1
+            lag = time.time() - v1
             self.CPU_lag_frames = lag * RECORD_FRAME_RATE
             if self.IsRecording and self.CPU_lag_frames > 2:
                 now = time.time()
@@ -907,7 +907,7 @@ class CamObj:
 
             frame_count += 1
             if frame_count % (RECORD_FRAME_RATE * 5) == 0:
-                if DEBUG:
+                if VERBOSE:
                     printt(f"Box {self.box_id} process loop is alive")
 
         if DEBUG:
@@ -919,7 +919,7 @@ class CamObj:
         self.cam = None
 
     # Reads a single frame from CamObj class and writes it to file
-    def process_frame(self, frame, time_elapsed):
+    def process_frame(self, frame, timestamp):
 
         with self.lock:
 
@@ -978,25 +978,24 @@ class CamObj:
                                 cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
                                 round(FONT_SCALE + 0.5))  # Line thickness
 
+                time_elapsed = timestamp - self.start_recording_time
+
                 if self.IsRecording and time_elapsed >= 0:
+                    # Check if time_elapsed > 0, otherwise first couple of frames might be negative
                     self.frame_num += 1
 
-                    # Add frame # to video
-                    # Location is (10,100) ... used to be at (10,90), but tended to overlap blue dot at (20,70)
-                    #   so I moved it down slightly
+                    # Add frame # to video. Scale down font to 70% since this number can be large.
                     cv2.putText(self.frame, str(self.frame_num),
                                 (int(10 * FONT_SCALE), int(140 * FONT_SCALE)),
                                 cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE * .7, (255, 128, 128),
                                 round(FONT_SCALE + 0.5))  # Line thickness
 
                 if not RECORD_COLOR and self.frame is not None:
+                    # Convert to grayscale
                     self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
 
-                if self.frame is not None and self.IsRecording and time_elapsed >= 0:
+                if self.IsRecording and time_elapsed >= 0:
                     if self.fid is not None and self.start_recording_time > 0:
-                        # Write timestamp to text file. Do this before writing AVI so that
-                        # timestamp will not be delayed by latency required to compress video. This
-                        # ensures most accurate possible timestamp.
                         try:
                             self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
                         except:
@@ -1011,11 +1010,6 @@ class CamObj:
                         except:
                             print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
                             self.__stop_recording_now()
-
-                return self.status, self.frame
-            else:
-                # Camera is not available.
-                return 0, None
 
     def get_elapsed_recording_time(self, include_cam_num=False):
 
