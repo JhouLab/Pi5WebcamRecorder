@@ -53,7 +53,7 @@ if IS_PI5:
     IDENTIFY_CAMERA_BY_USB_PORT = True
 
     # Reduce display frame rate, to avoid overloading CPU on Pi
-    MAX_DISPLAY_FRAMES_PER_SECOND = 12
+    MAX_DISPLAY_FRAMES_PER_SECOND = 10
 
     #
     # Note that the standard RPi.GPIO library does NOT work on Pi5 (only Pi4).

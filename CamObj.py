@@ -964,9 +964,9 @@ class CamObj:
 
                 if self.TTL_mode == self.TTL_type.Debug:
                     # Green dot indicates we are in TTL DEBUG mode
-                    # Location is (20,110)
+                    # Location is (20,160)
                     cv2.circle(self.frame,
-                               (int(20 * FONT_SCALE), int(110 * FONT_SCALE)),  # x-y position
+                               (int(20 * FONT_SCALE), int(160 * FONT_SCALE)),  # x-y position
                                int(8 * FONT_SCALE),  # Radius
                                (0, 255, 0),  # color is in BGR order
                                -1)  # -1 thickness fills circle
@@ -976,13 +976,13 @@ class CamObj:
                     # Location is (10,100) ... used to be at (10,90), but tended to overlap blue dot at (20,70)
                     #   so I moved it down slightly
                     cv2.putText(self.frame, str(self.TTL_animal_ID),
-                                (int(10 * FONT_SCALE), int(100 * FONT_SCALE)),
+                                (int(10 * FONT_SCALE), int(110 * FONT_SCALE)),
                                 cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
                                 round(FONT_SCALE + 0.5))  # Line thickness
                 elif self.TTL_animal_ID < 0:
                     # Animal ID checksum failed
                     cv2.putText(self.frame, "Unknown",
-                                (int(10 * FONT_SCALE), int(90 * FONT_SCALE)),
+                                (int(10 * FONT_SCALE), int(110 * FONT_SCALE)),
                                 cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
                                 round(FONT_SCALE + 0.5))  # Line thickness
 
