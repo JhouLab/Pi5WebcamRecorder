@@ -289,7 +289,7 @@ class CamObj:
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
-            GPIO.setup(GPIO_pin, GPIO.IN)
+            GPIO.setup(GPIO_pin, GPIO.IN) # This should not be needed, since we already did it on line 72 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
             GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
 
         if cam is not None:
