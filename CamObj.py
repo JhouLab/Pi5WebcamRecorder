@@ -267,6 +267,7 @@ class CamObj:
     pending_start_timer = 0  # Used to show dark red dot while waiting to see if double pulse is not a triple pulse
 
     def __init__(self, cam, id_num, box_id, GPIO_pin=-1):
+        self.last_frame_written: int = 0
         self.CPU_lag_frames = 0
         self.pending = self.PendingAction.Nothing
         self.cached_frame_time = None
@@ -1013,6 +1014,7 @@ class CamObj:
                         # Write frame to AVI video file if possible
                         if self.Writer is not None:
                             self.Writer.write(self.frame)
+                            self.last_frame_written = self.frame_num
                     except:
                         print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
                         self.__stop_recording_now()
@@ -1042,6 +1044,9 @@ class CamObj:
             str1 = f"{elapsed_min:.2f} minutes"
 
         str1 += f", {self.frame_num} frames"
+
+        if DEBUG:
+            str1 += f", {self.last_frame_written} (written)"
 
         if elapsed_sec > 5:
             fps = self.frame_num / elapsed_sec
