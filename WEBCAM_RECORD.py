@@ -343,21 +343,27 @@ class RECORDER:
 
     def handle_keypress(self, key, keycode, CV2KEY=False):
 
+        # On Raspberry Pi, CV2KEY will be True, and key will be a one-character string
+        # On Windows machines, CV2KEY will be False, and key will be an integer
+
         if CV2KEY:
             key2 = key >> 16  # On Windows, arrow keys are encoded here
             key1 = (key >> 8) & 0xFF  # This always seems to be 0
             key = key & 0xFF  # On Raspberry Pi, arrow keys are coded here along with all other keys
+        else:
+            # On Windows machines, key is a single character, so must be converted to ASCII for consistency with Pi
+            if len(key) > 0:
+                key = ord(key)
+            else:
+                key = -1
 
         if DEBUG:
             print(f"Keypress: {key}")
-        if (not CV2KEY and (key == 'q')) or (CV2KEY and key == ord('q')):
+        if key == ord('q'):
             self.show_quit_dialog()
-        elif (not CV2KEY and ("0" <= key <= "9")) or (CV2KEY and (ord('0') <= key <= ord('9'))):
+        elif ord('0') <= key <= ord('9'):
             # Start/stop recording for specified camera
-            if CV2KEY:
-                cam_num = key - ord("0")
-            else:
-                cam_num = ord(key) - ord("0")
+            cam_num = key - ord("0")
             cam_idx = cam_num - FIRST_CAMERA_ID
             if cam_idx < 0 or cam_idx >= len(self.cam_array):
                 print(f"Camera number {cam_num} does not exist, won't record.")
@@ -375,27 +381,29 @@ class RECORDER:
                         if res:
                             cam_obj.stop_record()
         else:
-            if CV2KEY:
-                if platform.system() == "Linux":
-                    # Raspberry Pi encodes arrow keys in lowest byte
-                    isLeftArrow = key == 81
-                    isRightArrow = key == 83
-                elif platform.system() == "Windows":
-                    # Windows encodes arrow keys in highest byte
-                    isLeftArrow = keycode == 37
-                    isRightArrow = keycode == 39
-                else:
-                    isLeftArrow = False
-                    isRightArrow = False
-            else:
+            if platform.system() == "Linux":
+                # Raspberry Pi encodes arrow keys in lowest byte
+                isLeftArrow = key == 81
+                isRightArrow = key == 83
+            elif platform.system() == "Windows":
+                # Windows encodes arrow keys in highest byte
                 isLeftArrow = (keycode == 37 or keycode == 113)
                 isRightArrow = (keycode == 39 or keycode == 114)
+            else:
+                isLeftArrow = False
+                isRightArrow = False
 
             if isLeftArrow:  # Left arrow key
                 self.change_cam(self.CAM_VALS.PREV)
             elif isRightArrow:  # Right arrow key
                 self.change_cam(self.CAM_VALS.NEXT)
-            elif DEBUG and self.pendingActionVar == self.PendingAction.DebugMode:
+            elif DEBUG and key == ord('g'):
+                # Simulate GPIO toggle. This is for testing the blue dot ONLY. It will not simulate
+                # GPIO signals for start/stop, or binary ID transmission.
+                for cam_obj in cam_array:
+                    if cam_obj is not None:
+                        cam_obj.GPIO_active = not cam_obj.GPIO_active
+            elif DEBUG and key == ord('d'):
                 # Special debugging keystroke that toggles DEBUG TTL measurement mode
                 for cam_obj in cam_array:
                     if cam_obj is not None:

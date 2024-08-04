@@ -53,6 +53,8 @@ if IS_PI5:
     # sudo apt remove python3-rpi.gpio
     # sudo apt install python3-rpi-lgpio
     #
+
+    # PyCharm intellisense gives warning on the next line, but it is fine.
     import RPi.GPIO as GPIO
 
 os.environ[
@@ -245,7 +247,7 @@ class CamObj:
     # Class variables related to TTL handling
     TTL_num = -1  # Counts how many TTLs (usually indicating trial starts) have occurred in this session
     TTL_binary_bits = 0  # Ensures that we receive 16 binary bits
-    TTL_animal_ID = 0
+    current_animal_ID: [str | None] = None
     TTL_tmp_ID = 0  # Temporary ID while we are receiving bits
     TTL_mode = None
     TTL_debug_count = 0
@@ -347,7 +349,7 @@ class CamObj:
             if 0.15 < elapsed < 0.5:
                 if self.TTL_binary_bits != 16:
                     printt(f'Warning: in binary mode received {self.TTL_binary_bits} bits instead of 16')
-                    self.TTL_animal_ID = -1
+                    self.current_animal_ID = "Unknown"
 
                 if DEBUG:
                     printt('Binary mode now awaiting final checksum...')
@@ -403,7 +405,7 @@ class CamObj:
                 if DEBUG:
                     printt('Starting binary mode')
                 self.TTL_mode = self.TTL_type.Binary
-                self.TTL_animal_ID = 0
+                self.current_animal_ID = "Pending"
                 self.TTL_tmp_ID = 0
                 self.TTL_binary_bits = 0
                 self.TTL_checksum = 0
@@ -425,17 +427,17 @@ class CamObj:
             else:
                 printt(
                     f"Received animal ID {self.TTL_tmp_ID} for box {self.box_id}, but checksum duration too long ({on_time} instead of 0-0.075s).")
-                self.TTL_animal_ID = -1
+                self.current_animal_ID = "Checksum fail"
                 self.TTL_mode = self.TTL_type.Normal
                 return
 
             if self.TTL_checksum == checksum:
                 # Successfully received TTL ID
-                self.TTL_animal_ID = self.TTL_tmp_ID
-                printt(f'Received animal ID {self.TTL_animal_ID} for box {self.box_id}')
+                self.current_animal_ID = str(self.TTL_tmp_ID)
+                printt(f'Received animal ID {self.current_animal_ID} for box {self.box_id}')
             else:
                 printt(f"Received animal ID {self.TTL_tmp_ID} but checksum failed for box {self.box_id}")
-                self.TTL_animal_ID = -1
+                self.current_animal_ID = "Checksum fail"
 
             self.TTL_mode = self.TTL_type.Normal
             return
@@ -574,22 +576,19 @@ class CamObj:
             print("    Error type is: ", ex.__class__.__name__)
             return ''  # This will force file to go to program folder
 
-    def get_filename_prefix(self, animal_ID=None):
+    def get_filename_prefix(self):
         path = self.verify_directory()
 
-        if animal_ID is None or animal_ID == "":
-            if self.TTL_animal_ID > 0:
-                # If animal ID is known from transmitted TTL, then use it for filename prefix
-                # Box ID is still used,
-                animal_ID = f"Box{self.box_id}_" + str(self.TTL_animal_ID)
-            else:
-                # No TTL-transmitted animal ID, just use box ID in filename
-                animal_ID = f"Box{self.box_id}"
+        if self.current_animal_ID is not None:
+            prefix_ending = f"Box{self.box_id}_" + str(self.current_animal_ID)
+        else:
+            # No TTL-transmitted animal ID, just use box ID in filename
+            prefix_ending = f"Box{self.box_id}"
 
-        filename = get_date_string() + "_" + animal_ID
+        filename = get_date_string() + "_" + prefix_ending
         return os.path.join(path, filename)
 
-    def start_record(self, animal_ID=None, stress_test_mode=False):
+    def start_record(self, animal_ID:str=None, stress_test_mode:bool=False):
         # If animal ID is not specified, will first look for TTL
         # transmission, and if that is also not present, will use camera
         # ID number.
@@ -616,10 +615,14 @@ class CamObj:
                 if stress_test_mode:
                     # Stress test saves to same location every time, ignoring date and animal ID.
                     prefix = os.path.join(DATA_FOLDER, f"stress_test_cam{self.box_id}")
+                    self.current_animal_ID = "StressTest"
                 else:
                     # Generate filename prefix, which will be date string plus animal ID (or box ID
                     # if no animal ID is available).
-                    prefix = self.get_filename_prefix(animal_ID)
+                    if animal_ID is not None:
+                        # This will overwrite any TTL-derived ID value.
+                        self.current_animal_ID = animal_ID
+                    prefix = self.get_filename_prefix()
 
                 prefix_extra = ""
                 suffix_count = 0
@@ -715,7 +718,7 @@ class CamObj:
             # Acquire lock to avoid starting a new recording
             # in the middle of stopping the old one.
 
-            self.TTL_animal_ID = 0
+            self.current_animal_ID = None
 
             if self.IsRecording:
                 self.IsRecording = False
@@ -845,6 +848,7 @@ class CamObj:
         # This is here just to keep PyCharm from issuing warning at line 878
         frame = None
         frame_time = 0
+        TTL_on = None
 
         while not self.pending == self.PendingAction.Exiting:
 
@@ -971,19 +975,13 @@ class CamObj:
                                (0, 255, 0),  # color is in BGR order
                                -1)  # -1 thickness fills circle
 
-                if self.TTL_animal_ID > 0:
+                if self.current_animal_ID is not None:
                     # Add animal ID to video
                     # Location is (10,100) ... used to be at (10,90), but tended to overlap blue dot at (20,70)
                     #   so I moved it down slightly
-                    cv2.putText(self.frame, str(self.TTL_animal_ID),
+                    cv2.putText(self.frame, str(self.current_animal_ID),
                                 (int(10 * FONT_SCALE), int(110 * FONT_SCALE)),
                                 cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
-                                round(FONT_SCALE + 0.5))  # Line thickness
-                elif self.TTL_animal_ID < 0:
-                    # Animal ID checksum failed
-                    cv2.putText(self.frame, "Unknown",
-                                (int(10 * FONT_SCALE), int(110 * FONT_SCALE)),
-                                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 255, 255),
                                 round(FONT_SCALE + 0.5))  # Line thickness
 
                 time_elapsed = timestamp - self.start_recording_time
