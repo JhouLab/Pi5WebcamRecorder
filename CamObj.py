@@ -134,6 +134,9 @@ SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', f
 SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
 SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
 
+is_debug: int = configParser.getint('options', 'DEBUG', fallback=DEBUG)
+DEBUG = is_debug == 1
+
 # Number of seconds to discriminate between binary 0 and 1
 BINARY_BIT_PULSE_THRESHOLD = 0.05
 
@@ -283,6 +286,10 @@ class CamObj:
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
         self.q = Queue()
+
+        # This becomes True after camera fps profiling is done, or determined not to be needed,
+        # and process_frame() loop has started. This prevents GUI stuff from slowing down the profiling.
+        self.IsReady = False
 
         if cam is None:
             # Use blank frame for this object if no camera object is specified
@@ -806,8 +813,10 @@ class CamObj:
         # Sometimes will get value slightly lower or higher than real frame rate, e.g. 29.9 or 30.2 instead of 30
         if estimated_frame_rate > 55:
             estimated_frame_rate = 60
-        elif estimated_frame_rate > 28:
+        elif estimated_frame_rate > 25:
             estimated_frame_rate = 30
+        elif estimated_frame_rate > 18:
+            estimated_frame_rate = 20
         elif estimated_frame_rate > 13:
             estimated_frame_rate = 15
         elif estimated_frame_rate > 8.5:
@@ -850,6 +859,8 @@ class CamObj:
         frame = None
         frame_time = 0
         TTL_on = None
+
+        self.IsReady = True
 
         while not self.pending == self.PendingAction.Exiting:
 
@@ -1079,12 +1090,16 @@ class CamObj:
     def close(self):
 
         # Only call this when exiting program. Will stop all recordings, and release camera resources
+
+        if self.IsRecording:
+            self.stop_record()  # This will set flag to be read by process_frame()
+            while self.IsRecording:
+                time.sleep(0.1)
+
         self.pending = self.PendingAction.Exiting
 
-        # Wait for the camera read thread to exit
+        # Wait for the camera read threads to exit
         time.sleep(0.1)
-
-        self.stop_record()  # This will run in a separate thread, and will close all files.
 
         if self.cam is not None:
             try:
@@ -1096,6 +1111,9 @@ class CamObj:
 
         self.status = -1
         self.frame = None
+
+        if DEBUG:
+            printt(f"Box {self.box_id} has closed.")
 
 
 if __name__ == '__main__':

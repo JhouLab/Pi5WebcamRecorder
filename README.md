@@ -25,7 +25,7 @@ To launch the program, use one of the following methods:
 
     Method 1: From command line (must be in program folder):
 
-      python -m WEBCAM_RECORD
+      sudo nice -n -20 python -m WEBCAM_RECORD
 
     Method 2: From Thonny (Pi's pre-installed Python IDE).
       Click "Load", select WEBCAM_RECORD.py,

@@ -15,7 +15,7 @@ import math
 from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
-    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON
+    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG
 from get_hardware_info import *
 
 # Note that
@@ -38,8 +38,6 @@ FIRST_CAMERA_ID = 1
 # Expand window for stereotaxic camera?
 # Isn't practical because window becomes too big.
 EXPAND_VIDEO = False
-
-DEBUG = gettrace() is not None
 
 if DEBUG:
     printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
@@ -421,18 +419,32 @@ class RECORDER:
 
         self.cam_array = _cam_array
 
+        while True:
+            is_ready = True
+            for c in _cam_array:
+                if c.cam is None:
+                    continue
+                if not c.IsReady:
+                    is_ready = False
+                    break
+            if is_ready:
+                break
+
         if root_window is None:
-            self.root = tk.Tk()
+            self.top_window = tk.Tk()
+            self.root_window = self.top_window
         else:
-            self.root = tk.Toplevel()
-        self.root.bind('<KeyPress>', self.onKeyPress)
-        self.root.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
-        self.root.title("Pi5 Camera recorder control bar")
+            self.top_window = tk.Toplevel()
+            self.root_window = root_window
+
+        self.top_window.bind('<KeyPress>', self.onKeyPress)
+        self.top_window.protocol("WM_DELETE_WINDOW", self.show_quit_dialog)
+        self.top_window.title("Pi5 Camera recorder control bar")
 
         self.widget_array = [self.WidgetSet() for _ in range(4)]
 
         # Frame1 holds entire control bar (status and control buttons)
-        frame1 = tk.Frame(self.root)  # , borderwidth=1, relief="solid")
+        frame1 = tk.Frame(self.top_window)  # , borderwidth=1, relief="solid")
         frame1.pack(side=tk.BOTTOM, fill=tk.X)
 
         # Frame2 holds a vertical stack of up to 4 status labels
@@ -535,21 +547,33 @@ class RECORDER:
                     self.which_display = c.box_id - FIRST_CAMERA_ID
                     break
 
-        # Place in top left corner of screen
-        self.root.geometry("+%d+%d" % (5, 35))
+        # Place control bar in top left corner of screen
+        self.top_window.geometry("+%d+%d" % (5, 35))
 
-        # Force window to show, so we can get width/height
-        self.root.update()
+        # Force control bar window to show, so we can get width/height
+        self.top_window.update()
 
-        # Set min window size, to prevent too much squashing of components
-        self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
+        # Set min control bar size, to prevent too much squashing
+        self.top_window.minsize(self.top_window.winfo_width(), self.top_window.winfo_height())
 
-        cv2.namedWindow(DISPLAY_WINDOW_NAME)  # Create a named window
-        cv2.imshow(DISPLAY_WINDOW_NAME, make_blank_frame("", SCREEN_RESOLUTION))  # Must show something or else moveWindow fails on Pi
+        # This removes buttons from video window, which show up weirdly in superuser mode
+        cv2.namedWindow(DISPLAY_WINDOW_NAME, cv2.WINDOW_GUI_NORMAL)
+
+        blank_frame = make_blank_frame("", SCREEN_RESOLUTION)
+        cv2.imshow(DISPLAY_WINDOW_NAME, blank_frame)  # Must show something or else moveWindow fails on Pi
+
+        # Attempt to remove buttons, since they show up weird in superuser mode
+        # cv2.namedWindow(DISPLAY_WINDOW_NAME, flags=cv2.WINDOW_GUI_NORMAL)
+        # The following works, but also removes border, so window can't be moved (and is stuck at 0,0)
+        # cv2.setWindowProperty(DISPLAY_WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
         cv2.waitKey(1)
         # Well, the following doesn't seem to work in Pi.
         # Apparently the Wayland display server doesn't support it.
         cv2.moveWindow(DISPLAY_WINDOW_NAME, 20, 220)  # Start video in top left, below control bar
+
+        cv2.resizeWindow(DISPLAY_WINDOW_NAME, SCREEN_RESOLUTION[0], SCREEN_RESOLUTION[1])
+
         cv2.waitKey(1)
         
         self.skipped_display_frames = 0
@@ -586,7 +610,7 @@ class RECORDER:
             self.pendingActionVar = self.PendingAction.Exiting
             return
 
-        w = tk.Toplevel(self.root)
+        w = tk.Toplevel(self.top_window)
         w.title("Are you sure?")
 
         w.resizable(False, False)  # Remove maximize button
@@ -684,7 +708,7 @@ class RECORDER:
             tk.messagebox.showinfo("Warning", f"Camera {FIRST_CAMERA_ID+cam_num} is already recording.")
             return
 
-        w = tk.Toplevel(self.root)
+        w = tk.Toplevel(self.top_window)
         w.title("Start recording?")
 
         w.resizable(False, False)  # Remove maximize button
@@ -903,7 +927,7 @@ class RECORDER:
             self.cleanup()
             return
         
-        self.root.after(int(self.FRAME_INTERVAL * 1000), self.update_image)
+        self.top_window.after(int(self.FRAME_INTERVAL * 1000), self.update_image)
 
     def set_button_state_callback(self, cam_num):
 
@@ -936,11 +960,12 @@ class RECORDER:
             cam_obj.close()  # This stops recording, then closes camera
 
         # Destroy the tkinter window (control bar)
-        self.root.destroy()
-
+        if self.root_window is not None:
+            self.root_window.destroy()
 
 
 rec_obj = RECORDER(cam_array, root_window=root)
-rec_obj.root.mainloop()
+rec_obj.top_window.mainloop()
 
-printt("Exiting", close_file=True)
+if DEBUG:
+    printt("Exiting", close_file=True)
