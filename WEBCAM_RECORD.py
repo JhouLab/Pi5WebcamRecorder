@@ -38,13 +38,14 @@ VERBOSE = False
 root = tk.Tk()
 root.withdraw()
 
-try:
-    os.nice(-20)
-except PermissionError:
-    res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n" \
-                                 "Recommend running as root for optimal performance.\n\nProceed anyway?")
-    if res == 'no':
-        sys.exit()
+if IS_LINUX:
+    try:
+        os.nice(-20)
+    except PermissionError:
+        res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n" \
+                                     "Recommend running as root for optimal performance.\n\nProceed anyway?")
+        if res == 'no':
+            sys.exit()
 
 # First camera ID number
 FIRST_CAMERA_ID = 1

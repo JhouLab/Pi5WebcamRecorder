@@ -5,6 +5,14 @@
 #
 
 import os
+import platform
 
-wd = os.getcwd()
-os.system("cd " + wd + "; sudo python -m WEBCAM_RECORD")
+PLATFORM = platform.system().lower()
+IS_LINUX = (PLATFORM == 'linux')
+IS_WINDOWS = (PLATFORM == 'windows')
+
+if IS_WINDOWS:
+    print("This script only works on Linux. Sorry.")
+elif IS_LINUX:
+    wd = os.getcwd()
+    os.system("cd " + wd + "; sudo python -m WEBCAM_RECORD")
