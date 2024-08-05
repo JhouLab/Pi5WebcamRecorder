@@ -508,10 +508,6 @@ class CamObj:
         # Detected normal GPIO pulse (i.e. not part of binary mode transmission of animal ID)
         # This will actually be the falling edge of pulse.
 
-        # Use rising edge time, since we don't get here until falling edge.
-        # NOte that time.time() returns number of seconds since 1970, as a floating point number.
-        gpio_time = self.most_recent_gpio_rising_edge_time
-
         # Because this function is called from the GPIO callback thread, we need to
         # acquire lock to make sure main thread isn't also accessing the same variables.
         # For example, if the main thread is in the midst of starting a recording, we need to
@@ -534,12 +530,16 @@ class CamObj:
 
             else:
                 # Calculate TTL timestamp relative to session start
-                gpio_time_relative = gpio_time - self.start_recording_time
+
+                # Use rising edge time, since we don't get here until falling edge.
+                # Note that time.time() returns number of seconds since 1970, as a floating point number.
+                gpio_onset_time = self.most_recent_gpio_rising_edge_time - self.start_recording_time
+                gpio_offset_time = self.most_recent_gpio_falling_edge_time - self.start_recording_time
 
                 self.TTL_num += 1
                 if self.fid_TTL is not None:
                     try:
-                        self.fid_TTL.write(f"{self.TTL_num}\t{gpio_time_relative}\n")
+                        self.fid_TTL.write(f"{self.TTL_num}\t{gpio_onset_time}\t{gpio_offset_time}\n")
                     except:
                         print(f"Unable to write TTL timestamp file for camera {self.box_id}")
                 else:
