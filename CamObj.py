@@ -513,7 +513,7 @@ class CamObj:
     def handle_GPIO(self):
 
         # Detected normal GPIO pulse (i.e. not part of binary mode transmission of animal ID)
-        # This will actually be the falling edge of pulse.
+        # This function is called at falling edge of pulse.
 
         # Because this function is called from the GPIO callback thread, we need to
         # acquire lock to make sure main thread isn't also accessing the same variables.

@@ -47,6 +47,9 @@ if IS_LINUX:
         if res == 'no':
             sys.exit()
 
+sys.setswitchinterval(0.001)
+interval = sys.getswitchinterval()
+
 # First camera ID number
 FIRST_CAMERA_ID = 1
 
