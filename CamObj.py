@@ -565,20 +565,41 @@ class CamObj:
 
     # Creates directory with current date in yyyy-mm-dd format.
     # Then verifies that directory exists, and if not, creates it
+    #directory structure is DATA_FOLDER/YYYY_MM_DD/YYYY_MM_DD_TIME_ANIMALID
     def verify_directory(self):
         # get custom version of datetime for folder search/create
         now = datetime.datetime.now()
         year = '{:04d}'.format(now.year)
         month = '{:02d}'.format(now.month)
         day = '{:02d}'.format(now.day)
-        date = '{}-{}-{}'.format(year, month, day)
+        hour = '{:02d}'.format(now.hour)
+        minute = '{:02d}'.format(now.minute)
+        date = '{}_{}_{}'.format(year, month, day)
 
-        target_path = os.path.join(DATA_FOLDER, date)
+        if self.current_animal_ID is not None:
+            animalID = str(self.current_animal_ID)
+        else:
+            animalID = f"Box{self.box_id}"
+
+        #check toplevel file structure for folder and create as necessary
+        topLevel = os.path.join(DATA_FOLDER, date)
+        try:
+            if not os.path.isdir(topLevel):
+                os.mkdir(topLevel)
+                print("Folder was not found, but created at: ", topLevel)
+        except Exception as ex:
+            print(f"Error while attempting to create folder {topLevel}")
+            print("    Error type is: ", ex.__class__.__name__)
+            return ''  # This will force file to go to program folder
+
+        sublevelDate = '{}_{}_{}_{}_{}_{}'.format(year, month, day, hour, minute, animalID)
+        target_path = os.path.join(topLevel, sublevelDate)
+
         try:
             if not os.path.isdir(target_path):
                 os.mkdir(target_path)
                 print("Folder was not found, but created at: ", target_path)
-            return target_path
+                return target_path
         except Exception as ex:
             print(f"Error while attempting to create folder {target_path}")
             print("    Error type is: ", ex.__class__.__name__)
