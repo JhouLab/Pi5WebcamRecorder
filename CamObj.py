@@ -979,9 +979,9 @@ class CamObj:
                 if self.current_animal_ID is not None:
                     # Add animal ID to video
                     # Location is (10,100) ... used to be at (10,90), but tended to overlap blue dot at (20,70)
-                    #   so I moved it down slightly
+                    #   so I moved it down slightly to 10,100. Later moved to 60,30 to avoid overlapping cage.
                     cv2.putText(self.frame, str(self.current_animal_ID),
-                                (int(10 * FONT_SCALE), int(110 * FONT_SCALE)),
+                                (int(60 * FONT_SCALE), int(30 * FONT_SCALE)),
                                 cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
                                 round(FONT_SCALE + 0.5))  # Line thickness
 
@@ -992,8 +992,9 @@ class CamObj:
                     self.frame_num += 1
 
                     # Add frame # to video. Scale down font to 70% since this number can be large.
+                    # Location was originally 10,140, now moved to (WIDTH/2)),30
                     cv2.putText(self.frame, str(self.frame_num),
-                                (int(10 * FONT_SCALE), int(140 * FONT_SCALE)),
+                                (int(WIDTH / 2), int(30 * FONT_SCALE)),
                                 cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE * .7, (255, 128, 128),
                                 round(FONT_SCALE + 0.5))  # Line thickness
 
