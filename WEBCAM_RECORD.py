@@ -3,6 +3,7 @@ from __future__ import annotations   # Need this for type hints to work on older
 from typing import List
 import time
 import os
+import sys
 
 # We no longer need PIL, since we are using OpenCV to render images, which is MUCH faster.
 #
@@ -29,8 +30,21 @@ from functools import partial
 import tkinter as tk
 from tkinter import messagebox
 
+
 # If true, will print extra diagnostics, such as a running frame count and FPS calculations
 VERBOSE = False
+
+# Create root now or else messagebox.showinfo() will do it for you, leaving an extra blank window floating around.
+root = tk.Tk()
+root.withdraw()
+
+try:
+    os.nice(-20)
+except PermissionError:
+    res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n" \
+                                 "Recommend running as root for optimal performance.\n\nProceed anyway?")
+    if res == 'no':
+        sys.exit()
 
 # First camera ID number
 FIRST_CAMERA_ID = 1
@@ -279,9 +293,7 @@ for idx1, cam_obj1 in enumerate(cam_array):
 if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
     MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
 
-# Create root now or else messagebox.showinfo() will do it for you, leaving an extra blank window floating around.
-root = tk.Tk()
-root.withdraw()
+
 
 if NATIVE_FRAME_RATE == 0:
     # messagebox.showinfo() causes an extraneous blank "root" window to show up in corner of screen if you haven't
