@@ -685,7 +685,7 @@ class CamObj:
                 try:
                     # Create text file for TTL timestamps
                     self.fid_TTL = open(self.filename_timestamp_TTL, 'w')
-                    self.fid_TTL.write('TTL_event_number\tTime_in_seconds\n')
+                    self.fid_TTL.write('TTL_event_number\tONSET (seconds)\tOFFSET (seconds)\n')
                 except:
                     print("Warning: unable to create text file for TTL timestamps")
 
