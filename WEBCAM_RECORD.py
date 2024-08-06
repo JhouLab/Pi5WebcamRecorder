@@ -4,6 +4,7 @@ from typing import List
 import time
 import os
 import sys
+import multiprocessing
 
 # We no longer need PIL, since we are using OpenCV to render images, which is MUCH faster.
 #
@@ -13,16 +14,14 @@ import sys
 
 import numpy as np
 import math
-from CamObj import CamObj, CamInfo, WIDTH, HEIGHT, \
+from CamObj import CamDestinationObj, CamReaderObj, CamInfo, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, \
-    read_camera_continuous
+    source_process
 from get_hardware_info import *
 
-# Note that
 import cv2
-from sys import gettrace
 from enum import Enum
 from functools import partial
 
@@ -227,14 +226,15 @@ class RECORDER:
     pendingActionCamera = -1
     pendingActionID = ""
 
-    def __init__(self, _cam_array: List[CamObj], root_window=None):
+    def __init__(self, _cam_array: List[CamDestinationObj], root_window=None):
 
         self.cam_array = _cam_array
+        self.cached_frames: List[np.ndarray | None] = [None] * len(_cam_array)
 
         while True:
             break
 
-            # Wait for all camera profiling to complete
+            # Wait for all camera profiling to complete before creating GUI
             is_ready = True
             for c in _cam_array:
                 if not c.has_cam:
@@ -287,7 +287,7 @@ class RECORDER:
             if SHOW_SNAPSHOT_BUTTON:
                 b = tk.Button(f3, text=f"Snapshot cam #{FIRST_CAMERA_ID + idx}", command=partial(self.snapshot, idx))
                 b.pack(side=tk.LEFT, ipadx=2)
-                w.StartButton = b
+                w.SnapshotButton = b
                 
             l = tk.Label(f3, text=f"", width=60, anchor=tk.W)
             l.pack(side=tk.LEFT, fill=tk.X)
@@ -457,13 +457,13 @@ class RECORDER:
         if isinstance(cam_num, self.CAM_VALS):
             if cam_num == self.CAM_VALS.NEXT:
                 self.which_display += 1
-                if self.which_display >= len(cam_array):
+                if self.which_display >= len(cam_info_array):
                     self.which_display = self.CAM_VALS.ALL.value
 #                    self.which_display = self.CAM_VALS.INSTRUCTIONS.value
             elif cam_num == self.CAM_VALS.PREV:
                 self.which_display -= 1
                 if self.which_display < self.CAM_VALS.ALL.value:
-                    self.which_display = len(cam_array) - 1
+                    self.which_display = len(cam_info_array) - 1
             else:
                 # Convert from Enum type to integer
                 self.which_display = cam_num.value
@@ -487,7 +487,7 @@ class RECORDER:
 
         cam = cam_array[self.which_display]
         cam_position = cam.box_id
-        if cam is None or cam.cam is None:
+        if cam is None or not cam.has_cam:
             if VERBOSE:
                 print(f"Camera in position {cam_position} is not available")
             if cam is not None:
@@ -616,15 +616,17 @@ class RECORDER:
                 self.set_button_state_callback(idx)
                 cam_obj.need_update_button_state_flag = False
 
+            self.cached_frames[idx] = cam_obj.frame
+
             if cam_obj.status:
                 # Add text to top left to show camera number. This will NOT show in recording
-                cv2.putText(cam_obj.frame, str(FIRST_CAMERA_ID + idx),
+                cv2.putText(self.cached_frames[idx], str(FIRST_CAMERA_ID + idx),
                             (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
                             cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
                             round(FONT_SCALE + 0.5))  # Line thickness
                 if cam_obj.IsRecording:
                     # Add red circle if recording. Again, this does not show in recorded file.
-                    cv2.circle(cam_obj.frame,
+                    cv2.circle(self.cached_frames[idx],
                                (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
                                int(8 * FONT_SCALE),  # Radius
                                (0, 0, 255),  # Red dot (color is in BGR order)
@@ -650,8 +652,7 @@ class RECORDER:
                 # Show just one of the 4 cameras
                 cam_obj = self.cam_array[self.which_display]
                 with cam_obj.cam_lock:
-                    # Need to make a deep copy here
-                    img = cam_obj.frame
+                    img = self.cached_frames[self.which_display]
 
                 if cam_obj.status:
                     if self.zoom_center:
@@ -668,7 +669,7 @@ class RECORDER:
                 for index, elt in enumerate(self.cam_array):
                     if elt is not None and elt.frame is not None:
                         # Downsize
-                        subframes[index] = cv2.resize(elt.frame, SCREEN_RESOLUTION_INSET)
+                        subframes[index] = cv2.resize(self.cached_frames[index], SCREEN_RESOLUTION_INSET)
 
                 # Concatenate 4 images into 1
                 im_top = cv2.hconcat([subframes[0], subframes[1]])
@@ -789,7 +790,7 @@ if __name__ == "__main__":
         try:
             os.nice(-5)
         except PermissionError:
-            res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n" \
+            res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n"
                                                     "Recommend running as root for optimal performance.\n\nProceed anyway?")
             if res == 'no':
                 sys.exit()
@@ -846,7 +847,6 @@ if __name__ == "__main__":
         INPUT_PIN_LIST = [None] * 4  # List of input pins for the four cameras
 
     if EXPAND_VIDEO:
-        SCREEN_RESOLUTION = (WIDTH, HEIGHT)
         # This applies to the stereotax only
         # Upsample small frames to 640 width
         ratio = 1.5
@@ -869,7 +869,7 @@ if __name__ == "__main__":
     if not os.path.isdir(DATA_FOLDER):
         # Parent folder doesn't exist ... this could be due to USB drive being unplugged?
         # Default to program directory
-        messagebox.showinfo(title="Warning", \
+        messagebox.showinfo(title="Warning",
                             message=f"Unable to find data folder:\n\n\"{DATA_FOLDER}\"\n\nWill save to program folder instead.")
         DATA_FOLDER = "."
 
@@ -884,19 +884,19 @@ if __name__ == "__main__":
 
     DISPLAY_WINDOW_NAME = "Camera output"
 
-    cam_array: List[CamObj | None]
+    cam_info_array: List[CamInfo | None]
 
     if IDENTIFY_CAMERA_BY_USB_PORT:
         # Array of subframes for 4x1 display
         # Each "None" will be replaced with an actual CamObj object if camera detected.
-        cam_array = [None] * 4
+        cam_info_array = [None] * 4
     else:
         # Array of camera objects, one for each discovered camera
-        cam_array = []
+        cam_info_array = []
 
     # Make subframes that are blank. These are used for 2x2 grid display.
     # Blank frames will be replaced by real ones if camera is found.
-    subframes = [None] * 4
+    subframes: [np.ndarray | None] = [None] * 4
     for x in range(4):
         tmp = make_blank_frame(f"{FIRST_CAMERA_ID + x} no camera found")
         subframes[x] = cv2.resize(tmp, SCREEN_RESOLUTION_INSET)
@@ -925,19 +925,26 @@ if __name__ == "__main__":
                     printt(f"Invalid USB port number (should be 0-3): {port}")
                     continue
 
-                if cam_array[port] is not None:
+                if cam_info_array[port] is not None:
                     # If we already found a camera in this position ...
                     printt(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
                     continue
-                cam_array[port] = CamObj(cam_id,
-                                         FIRST_CAMERA_ID + port, GPIO_pin=INPUT_PIN_LIST[port])
+                cam_info_array[port] = CamInfo(cam_id,
+                                               FIRST_CAMERA_ID + port,
+                                               GPIO_pin=INPUT_PIN_LIST[port],
+                                               queue_frames=multiprocessing.Queue(),
+                                               queue_commands=multiprocessing.Queue())
                 num_cameras_found += 1
             else:
                 # If not using USB port number, then cameras are put into array
                 # in the order they are discovered. This could be unpredictable, but at least
                 # it will work, and won't crash. In this case, we also ignore GPIO pin list, since
                 # recordings will need to be started and stopped manually.
-                cam_array.append(CamObj(cam_id, FIRST_CAMERA_ID + len(cam_array)))
+                cam_info_array.append(CamInfo(cam_id,
+                                              FIRST_CAMERA_ID + len(cam_info_array),
+                                              -1,   # No GPIO if we don't know what USB port cam is plugged into
+                                              multiprocessing.Queue(),
+                                              multiprocessing.Queue()))
                 num_cameras_found += 1
 
             tmp.release()
@@ -950,13 +957,12 @@ if __name__ == "__main__":
     else:
         printt(f"Found {num_cameras_found} cameras")
 
-    # Report what was discovered
-    for idx1, cam_obj1 in enumerate(cam_array):
+    cam_array: List[CamDestinationObj | None] = [None] * len(cam_info_array)
+
+    # Report what was discovered, and create camera RECEIVER objects
+    for idx1, cam_obj1 in enumerate(cam_info_array):
+        cam_array[idx1] = CamDestinationObj(cam_obj1)
         if cam_obj1 is None:
-            # No camera was found for this USB port position.
-            # Create dummy camera object as placeholder, allowing a blank frame
-            # to show.
-            cam_array[idx1] = CamObj(-1, FIRST_CAMERA_ID + idx1, 0)
             continue
 
         if IDENTIFY_CAMERA_BY_USB_PORT:
@@ -969,33 +975,27 @@ if __name__ == "__main__":
     if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
         MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
 
+    print()
+    printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
+
+    # Start the DESTINATION threads that belong to the MAIN process
+    for idx1, cam_obj1 in enumerate(cam_array):
+        if cam_obj1 is not None:
+            cam_obj1.start_destination_thread()
+            if IS_PI5:
+                time.sleep(0.25)
+
+    # Start the SOURCE threads on a DIFFERENT PROCESS
+    p1 = multiprocessing.Process(target=source_process, args=(cam_info_array,))
+    p1.start()
+
     if NATIVE_FRAME_RATE == 0:
         # messagebox.showinfo() causes an extraneous blank "root" window to show up in corner of screen if you haven't
         # already created it.
         tk.messagebox.showinfo("Warning",
-                               "config.txt file does not specify native camera frame rate.\n\nWill try to estimate it by profiling, but it is highly recommended to add the true value to config.txt")
-
-    print()
-    printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
-
-    cam_info_array = []
-
-    import multiprocessing
-
-    q1 = multiprocessing.Queue()
-    q2 = multiprocessing.Queue()
-
-    for idx1, cam_obj1 in enumerate(cam_array):
-        if cam_obj1 is not None:
-            cam_info_array.append(cam_obj1.new_inst())
-            cam_obj1.start_process_thread(q1)
-            if IS_PI5:
-                time.sleep(0.25)
-        else:
-            cam_info_array.append(CamInfo())
-
-    p1 = multiprocessing.Process(target=read_camera_continuous, args=(q1, q2, cam_info_array))
-    p1.start()
+                               "config.txt file does not specify native camera frame rate.\n\n"
+                               "Will try to estimate it by profiling, but it is highly recommended "
+                               "to add the true value to config.txt")
 
     rec_obj = RECORDER(cam_array, root_window=root)
     rec_obj.top_window.mainloop()

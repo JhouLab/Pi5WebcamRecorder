@@ -1,5 +1,22 @@
 from __future__ import annotations  # Need this for type hints to work on older Python versions
 
+import configparser
+import datetime
+import math
+import multiprocessing
+import os
+import platform
+import subprocess
+import threading
+import time
+from ast import literal_eval as make_tuple  # Needed to parse resolution string in config
+from enum import Enum
+from sys import gettrace
+from typing import List
+
+import numpy as np
+import psutil  # This is used to obtain disk free space
+
 #
 # This file is intended to be imported by webcam_recorder.py
 #
@@ -13,23 +30,6 @@ from __future__ import annotations  # Need this for type hints to work on older 
 # Then you might have to install kernel drivers:
 # https://github.com/dorssel/usbipd-win/wiki/WSL-support
 # https://github.com/dorssel/usbipd-win/wiki/WSL-support
-
-from typing import List
-import os
-import psutil  # This is used to obtain disk free space
-import numpy as np
-import math
-import time
-import datetime
-import platform
-import threading
-import subprocess
-from sys import gettrace
-import configparser
-from enum import Enum
-from ast import literal_eval as make_tuple  # Needed to parse resolution string in config
-from queue import Queue
-import multiprocessing
 
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
@@ -217,32 +217,38 @@ def get_disk_free_space():
         return None
 
 
-import copy
+class CamReadStatus(Enum):
+    FrameFailed = 0
+    FrameSuccess = 1
+    GPIO_Success = 2
 
 
+# Info that is shared between Source and Destination processes
 class CamInfo:
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
     box_id = -1  # User-friendly camera ID. Will usually be USB port position/screen position, starting from 1
     GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
+    queue_frames: multiprocessing.Queue = None
+    queue_commands: multiprocessing.Queue = None
 
-    def __init__(self, id_num=-1, box_id=-1, GPIO_pin=-1):
+    def __init__(self, id_num=-1, box_id=-1, GPIO_pin=-1, queue_frames=None, queue_commands=None):
         self.id_num = id_num
         self.box_id = box_id
         self.GPIO_pin = GPIO_pin
+        self.queue_frames = queue_frames
+        self.queue_commands = queue_commands
 
-    @classmethod
-    def from_existing(cls, c: CamInfo):
-        cls.id_num = c.id_num
-        cls.box_id = c.box_id
-        cls.GPIO_pin = c.GPIO_pin
-
-    def new_inst(self):
-        return CamInfo(self.id_num, self.box_id, self.GPIO_pin)
+    def make_copy(self, c: CamInfo):
+        self.id_num = c.id_num
+        self.box_id = c.box_id
+        self.GPIO_pin = c.GPIO_pin
+        self.queue_frames = c.queue_frames
+        self.queue_commands = c.queue_commands
 
 
-class CamObj(CamInfo):
+class CamDestinationObj(CamInfo):
 
-    status = -1  # True if camera is operational and connected
+    status = 0  # 1 if camera is operational and connected, 0 if not
 
     frame = None  # Most recent video frame. If camera lost connection, this will be a black frame with some text
     filename_video: str = "Video.avi"
@@ -293,20 +299,17 @@ class CamObj(CamInfo):
     GPIO_active = 0  # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0  # Used to show dark red dot while waiting to see if double pulse is not a triple pulse
 
-    def __init__(self, id_num, box_id, GPIO_pin=-1):
-        self.has_cam = id_num >= 0
+    def __init__(self, c: CamInfo):
+        super().__init__()
+
+        super().make_copy(c)
+
+        self.has_cam = self.id_num >= 0
         self.last_frame_written: int = 0
         self.CPU_lag_frames = 0
         self.pending = self.PendingAction.Nothing
-        self.cached_frame_time = None
-        self.cached_frame = None
-        self.stable_frame = None
         self.cam_lock = threading.RLock()
         self.need_update_button_state_flag = None
-        self.process = None  # This is used if calling FF_MPEG directly. Probably won't use this in the future.
-        self.id_num = id_num  # ID number assigned by operating system. We don't use this, as it is unpredictable.
-        self.box_id = box_id  # This is a user-friendly unique identifier for each box.
-        self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
 
@@ -315,20 +318,21 @@ class CamObj(CamInfo):
         self.IsReady = False
 
         # Use blank frame for this object if no camera object is specified
-        self.frame = make_blank_frame(f"{box_id} - No camera connected")
+        self.frame = make_blank_frame(f"{self.box_id} - No camera connected")
 
-        if GPIO_pin >= 0 and platform.system() == "Linux":
+#        if self.GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
-            GPIO.setup(GPIO_pin, GPIO.IN) # This should not be needed, since we already did it on line 72 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
-            GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+#            GPIO.setup(self.GPIO_pin, GPIO.IN) # This should not be needed, since we already did it on line 72 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
+#            GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
 
-    def start_process_thread(self, q):
+    def start_destination_thread(self):
 
         # Start thread that will process the frames sent by this loop.
         # This allows read_camera_continuous(), i.e. this thread, to
         # run at max speed.
-        t = threading.Thread(target=self.process_loop, args=(q,))
-        t.start()
+        if self.queue_frames is not None:
+            t = threading.Thread(target=self.process_loop)
+            t.start()
 
     def GPIO_callback_both(self, param):
 
@@ -354,11 +358,11 @@ class CamObj(CamInfo):
     # Extra long high pulse (2.5s) starts DEBUG TTL mode, where TTL duration is recorded
     #     and warnings are printed for any deviation from expected 75ms/25ms on/off duty cycle.
     #     deviation has to exceed 10ms to be printed.
-    def GPIO_callback1(self, param):
+    def GPIO_callback1(self, timestamp):
 
         # Detected rising edge. Log the timestamp so that on falling edge we can see if this is a regular
         # pulse or a LONG pulse that starts binary mode
-        self.most_recent_gpio_rising_edge_time = time.time()
+        self.most_recent_gpio_rising_edge_time = timestamp
         elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
 
         # This is used to show blue dot on next frame.
@@ -399,10 +403,10 @@ class CamObj(CamInfo):
 
         return
 
-    def GPIO_callback2(self, param):
+    def GPIO_callback2(self, timestamp):
 
         # Detected falling edge
-        self.most_recent_gpio_falling_edge_time = time.time()
+        self.most_recent_gpio_falling_edge_time = timestamp
 
         # Cancel blue dot display on video
         self.GPIO_active = 0
@@ -778,24 +782,32 @@ class CamObj(CamInfo):
                     pass
                 self.fid_TTL = None
 
-    def process_loop(self, q):
-
-        if q is not None:
-            self.q = q
+    def process_loop(self):
 
         last_warning_time = time.time()
         frame_count = 0
         while not self.pending == self.PendingAction.Exiting:
-            v = self.q.get()
+            v = self.queue_frames.get()
 
             # Do we need to deep-copy v? I assume not, but are we sure?
-            v0 = v[0]
-            v1 = v[1]
-            v2 = v[2]
-            v3 = v[3]
-            self.process_frame(v0, v1, v2, v3)
+            if v[0] == CamReadStatus.FrameFailed.value:
+                self.status = v[0]
+            elif v[0] == CamReadStatus.FrameSuccess.value:
+                self.status = v[0]
+            elif v[0] == CamReadStatus.GPIO_Success:
+                # We have GPIO status change. v[2] contains timestamp, v[3] contains True/False (High/Low)
+                if v[3]:
+                    self.GPIO_callback1(v[2])
+                else:
+                    self.GPIO_callback2(v[2])
+                continue
 
-            lag = time.time() - v2
+            self.frame = v[1]
+            timestamp = v[2]
+            TTL_on = v[3]
+            self.process_frame(timestamp, TTL_on)
+
+            lag = time.time() - timestamp
             self.CPU_lag_frames = lag * RECORD_FRAME_RATE
             if self.IsRecording and self.CPU_lag_frames > 2:
                 now = time.time()
@@ -811,17 +823,10 @@ class CamObj(CamInfo):
         if DEBUG:
             printt(f"Box {self.box_id} exiting frame process thread.")
 
-    def release(self):
-        self.status = 0
-        self.cam.release()
-        self.cam = None
-
     # Reads a single frame from CamObj class and writes it to file
-    def process_frame(self, status, frame, timestamp, TTL_on):
+    def process_frame(self, timestamp, TTL_on):
 
         with self.lock:
-
-            self.status = status
 
             if self.pending == self.PendingAction.EndRecord:
                 self.pending = self.PendingAction.Nothing
@@ -829,8 +834,6 @@ class CamObj(CamInfo):
             elif self.pending == self.PendingAction.StartRecord:
                 self.pending = self.PendingAction.Nothing
                 self.start_record()
-
-            self.frame = frame
 
             if TTL_on:
                 # Add blue dot to indicate that GPIO is active
@@ -940,9 +943,7 @@ class CamObj(CamInfo):
             return str1
 
     def take_snapshot(self):
-        if self.cam is None or self.frame is None:
-            return False
-        if self.cam.isOpened():
+        if self.has_cam:
 
             index = 1
             while True:
@@ -971,16 +972,15 @@ class CamObj(CamInfo):
 
         self.pending = self.PendingAction.Exiting
 
-        # Wait for the camera read threads to exit
-        time.sleep(0.1)
-
         if self.has_cam:
             try:
-                # Send message to process
-                pass
+                self.queue_commands.put((CameraCommands.Exit, 0))
             except:
                 pass
             self.has_cam = False
+
+        # Wait for the camera read threads to exit
+        time.sleep(0.1)
 
         self.status = -1
         self.frame = None
@@ -989,12 +989,23 @@ class CamObj(CamInfo):
             printt(f"Box {self.box_id} has closed.")
 
 
+# Commands that can be sent to the CameraRead process/threads
+class CameraCommands(Enum):
+
+    Exit = 1
+
+
 class CamReaderObj(CamInfo):
 
-    cam: cv2.VideoCapture = None
+    t: threading.Thread | None = None
+    cam: cv2.VideoCapture | None = None
 
-    def __init__(self, c: CamInfo, queue_shared: multiprocessing.Queue):
-        super(CamReaderObj, self).from_existing(c)
+    GPIO_active = False
+
+    def __init__(self, c: CamInfo):
+        super().__init__()
+
+        super().make_copy(c)
 
         if platform.system() == "Windows":
             self.cam = cv2.VideoCapture(self.id_num,
@@ -1004,9 +1015,8 @@ class CamReaderObj(CamInfo):
                                         cv2.CAP_V4L2)  # This makes MJPG mode work, allowing higher frame rates
 
         if self.cam.isOpened():
-            q2 = multiprocessing.Queue()
-            t = threading.Thread(target=read_one_cam_continuous, args=(self.cam, queue_shared, q2))
-            t.start()
+            self.t = threading.Thread(target=self.read_one_cam_continuous)
+            self.t.start()
             print(f"Camera {self.box_id} reader thread started.")
         else:
             self.cam = None
@@ -1014,157 +1024,190 @@ class CamReaderObj(CamInfo):
             if DEBUG:
                 printt(f"Camera {self.box_id} not connected, won't profile or read.")
 
-#        self.id_num = c.id_num
-#        self.box_id = c.box_id
-#        self.GPIO_pin = c.GPIO_pin
+        if self.GPIO_pin >= 0 and platform.system() == "Linux":
+            # Start monitoring GPIO pin
+            GPIO.setup(self.GPIO_pin, GPIO.IN) # This should not be needed, since we already did it on line 72 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
+            GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+
+    def GPIO_callback_both(self, param):
+
+        # Param is the pin number, value is either True or False, to indicate High/Low
+        if GPIO.input(param):
+            if VERBOSE:
+                printt('GPIO on')
+            self.GPIO_active = True
+            self.queue_frames.put((CamReadStatus.GPIO_Success, None, time.time(), True))
+        else:
+            if VERBOSE:
+                printt('GPIO off')
+            self.GPIO_active = False
+            self.queue_frames.put((CamReadStatus.GPIO_Success, None, time.time(), False))
+
+    def profile_fps(self):
+
+        # First frame always takes longer to read, so get it out of the way
+        # before conducting profiling
+        self.cam.read()
+
+        # Subsequent frames might actually read too fast, if they are coming
+        # from internal memory buffer. So now clear out any frames in camera buffer
+        old_time = time.time()
+        while True:
+            self.cam.read()
+            new_time = time.time()
+            elapsed = new_time - old_time
+            old_time = new_time
+            if elapsed > 0.01:
+                # Buffered frames will return very quickly. We wait until
+                # the return time is longer, indicating that buffer is now empty
+                break
+
+        old_time = time.time()
+        target_time = old_time + 1.0  # When to stop profiling
+        frame_count = 0
+        min_elapsed4 = 1000
+
+        # Read frames for 1 second to estimate frame rate
+        while time.time() < target_time:
+
+            self.cam.read()
+
+            new_time = time.time()
+
+            frame_count += 1
+            if frame_count % 4 == 0:
+                elapsed = new_time - old_time
+                if elapsed > 0.06:
+                    if elapsed < min_elapsed4:
+                        # Finds minimum interval between any 4 frames
+                        min_elapsed4 = elapsed
+                old_time = new_time
+
+        if min_elapsed4 < 1000:
+            # Upper bound on frame rate
+            estimated_frame_rate = 4.0 / min_elapsed4
+            # Lower bound on frame rate
+            estimated_frame_rate2 = frame_count
+        else:
+            # Unable to determine frame rate
+            printt("Unable to determine frame rate, defaulting to config setting")
+            estimated_frame_rate = RECORD_FRAME_RATE
+
+        printt(f'Box {self.box_id} estimated frame rate {estimated_frame_rate}')
+
+        # Sometimes will get value slightly lower or higher than real frame rate, e.g. 29.9 or 30.2 instead of 30
+        if estimated_frame_rate > 55:
+            estimated_frame_rate = 60
+        elif estimated_frame_rate > 27:
+            estimated_frame_rate = 30
+        elif estimated_frame_rate > 22:
+            estimated_frame_rate = 24
+        elif estimated_frame_rate > 18:
+            estimated_frame_rate = 20
+        elif estimated_frame_rate > 13:
+            estimated_frame_rate = 15
+        elif estimated_frame_rate > 8.5:
+            estimated_frame_rate = 10
+        elif estimated_frame_rate > 6.5:
+            estimated_frame_rate = 7.5
+        else:
+            estimated_frame_rate = 5
+
+        printt(f'Rounded frame rate to {estimated_frame_rate}')
+
+        return estimated_frame_rate
+
+    def read_one_cam_continuous(self):
+
+        if NATIVE_FRAME_RATE == 0:
+            native_fps = self.profile_fps()
+        else:
+            native_fps = NATIVE_FRAME_RATE
+
+        count = 0
+        frame_count = 0
+
+        # Downsampling interval. Must be integer, hence use of ceiling function
+        count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
+
+        # This is here just to keep PyCharm from issuing warning at line 878
+        frame = None
+        frame_time = 0
+        TTL_on = None
+
+        while True:
+
+            try:
+                cmd = self.queue_commands.get(block=False)
+                if cmd[0] == CameraCommands.Exit:
+                    break
+            except:
+                pass
+
+            if self.cam.isOpened():
+                try:
+                    # Read frame if camera is available and open
+                    status, frame = self.cam.read()
+                    frame_time = time.time()
+                    #                TTL_on = self.GPIO_active
+                    TTL_on = False
+                except:
+                    # Set flag that will cause loop to exit shortly
+                    status = False
+            else:
+                status = False
+
+            if not status:
+                # Read failed. Remove this camera so we won't attempt to read it later.
+                # Should we set a flag to try to periodically reconnect?
+
+                # Remove camera resources
+                self.cam.release()
+                printt(f"Unable to read camera in box {self.box_id}.")
+                break
+
+            count += 1
+            if count == count_interval:
+                count = 0
+                self.queue_frames.put((status, frame, frame_time, TTL_on))
+
+            frame_count += 1
+
+        if DEBUG:
+            printt(f"Box {self.box_id} exiting camera read thread.")
 
 
-def read_camera_continuous(q_shared, q2, CamInfo_array: [CamInfo]):
-    # q_shared is for sending information from camera reader back to main program
-    #     All readers share the same queue, since there is only one "consumer"
-    # q2 is for sending information from main program to camera reader
-    #     Each camera needs its own queue, since each camera is a consumer
+# SOURCE process, that is the source of frame data. This spawns up to 4
+# threads, each of which reads a single camera and puts frames into a queue
+# for consumption by the DESTINATION process.
+def source_process(CamInfo_array: List[CamInfo]):
+    #
+    # This is a separate PROCESS that is dedicated to reading frames from
+    # the USB ports, and also polling GPIO
+    #
+    # This has to be separate from the rest of the program, in order that
+    # it can have a higher priority. This is an annoying limitation of Python,
+    # that there is no way to set individual thread priorities separately, so
+    # this has to be a separate process.
+    #
+
+    # This should be run AFTER the cam_obj array has been created, so that we don't
+    # start producing frames until there is a handler that can process them.
 
     if IS_LINUX:
         os.nice(-20)
+    elif IS_WINDOWS:
+        import win32api
+        import win32process
+        import win32con
 
-    cr = [None] * 4
-    for idx, cam in enumerate(CamInfo_array):
-        if cam.id_num >= 0:
-            cr[idx] = CamReaderObj(cam, q_shared)
+        pid = win32api.GetCurrentProcessId()
+        handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, True, pid)
+        win32process.SetPriorityClass(handle, win32process.REALTIME_PRIORITY_CLASS)
 
-
-
-def profile_fps(cam, box_id=-1):
-
-    # First frame always takes longer to read, so get it out of the way
-    # before conducting profiling
-    cam.read()
-
-    # Subsequent frames might actually read too fast, if they are coming
-    # from internal memory buffer. So now clear out any frames in camera buffer
-    old_time = time.time()
-    while True:
-        cam.read()
-        new_time = time.time()
-        elapsed = new_time - old_time
-        old_time = new_time
-        if elapsed > 0.01:
-            # Buffered frames will return very quickly. We wait until
-            # the return time is longer, indicating that buffer is now empty
-            break
-
-    old_time = time.time()
-    target_time = old_time + 1.0  # When to stop profiling
-    frame_count = 0
-    min_elapsed4 = 1000
-
-    # Read frames for 1 second to estimate frame rate
-    while time.time() < target_time:
-
-        cam.read()
-
-        new_time = time.time()
-
-        frame_count += 1
-        if frame_count % 4 == 0:
-            elapsed = new_time - old_time
-            if elapsed > 0.06:
-                if elapsed < min_elapsed4:
-                    # Finds minimum interval between any 4 frames
-                    min_elapsed4 = elapsed
-            old_time = new_time
-
-    if min_elapsed4 < 1000:
-        # Upper bound on frame rate
-        estimated_frame_rate = 4.0 / min_elapsed4
-        # Lower bound on frame rate
-        estimated_frame_rate2 = frame_count
-    else:
-        # Unable to determine frame rate
-        printt("Unable to determine frame rate, defaulting to config setting")
-        estimated_frame_rate = RECORD_FRAME_RATE
-
-    printt(f'Box {box_id} estimated frame rate {estimated_frame_rate}')
-
-    # Sometimes will get value slightly lower or higher than real frame rate, e.g. 29.9 or 30.2 instead of 30
-    if estimated_frame_rate > 55:
-        estimated_frame_rate = 60
-    elif estimated_frame_rate > 25:
-        estimated_frame_rate = 30
-    elif estimated_frame_rate > 18:
-        estimated_frame_rate = 20
-    elif estimated_frame_rate > 13:
-        estimated_frame_rate = 15
-    elif estimated_frame_rate > 8.5:
-        estimated_frame_rate = 10
-    elif estimated_frame_rate > 6.5:
-        estimated_frame_rate = 7.5
-    else:
-        estimated_frame_rate = 5
-
-    printt(f'Rounded frame rate to {estimated_frame_rate}')
-
-    return estimated_frame_rate
-
-
-def read_one_cam_continuous(cam, q1: multiprocessing.Queue, q2: multiprocessing.Queue):
-
-    if NATIVE_FRAME_RATE == 0:
-        native_fps = profile_fps(cam)
-    else:
-        native_fps = NATIVE_FRAME_RATE
-
-    count = 0
-    frame_count = 0
-
-    # Downsampling interval. Must be integer, hence use of ceiling function
-    count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
-
-    # This is here just to keep PyCharm from issuing warning at line 878
-    frame = None
-    frame_time = 0
-    TTL_on = None
-
-    while True:
-
-        try:
-            cmd = q2.get(block=False)
-        except:
-            pass
-
-        if cam.isOpened():
-            try:
-                # Read frame if camera is available and open
-                status, frame = cam.read()
-                frame_time = time.time()
-#                TTL_on = self.GPIO_active
-                TTL_on = False
-            except:
-                # Set flag that will cause loop to exit shortly
-                status = False
-        else:
-            status = False
-
-        if not status:
-
-            # Read failed. Remove this camera so we won't attempt to read it later.
-            # Should we set a flag to try to periodically reconnect?
-
-            # Remove camera resources
-            cam.release()
-            return
-
-        count += 1
-        if count == count_interval:
-            count = 0
-            q1.put((status, frame, frame_time, TTL_on))
-
-        frame_count += 1
-
-    if DEBUG:
-        printt(f"Box {0} exiting camera read thread.")
-
+    for idx, cam_info in enumerate(CamInfo_array):
+        if cam_info.id_num >= 0:
+            CamReaderObj(cam_info)
 
 
 if __name__ == '__main__':
