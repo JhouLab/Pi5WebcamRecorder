@@ -13,7 +13,6 @@ import multiprocessing
 # from PIL import Image, ImageTk  # Import pillow from Jeffrey A. Clark
 
 import numpy as np
-import math
 from CamObj import CamDestinationObj, CamReaderObj, CamInfo, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
@@ -280,6 +279,8 @@ class RECORDER:
                 b = tk.Button(f3, text=f"Record cam #{FIRST_CAMERA_ID + idx}", command=partial(self.show_start_record_dialog, idx))
                 b.pack(side=tk.LEFT, ipadx=2)
                 w.StartButton = b
+
+                # Add Stop button
                 b = tk.Button(f3, text="Stop", command=partial(self.show_stop_dialog, idx))
                 b.pack(side=tk.LEFT, ipadx=10)
                 b["state"] = tk.DISABLED
@@ -935,7 +936,6 @@ if __name__ == "__main__":
                                                GPIO_pin=INPUT_PIN_LIST[port],
                                                queue_frames=multiprocessing.Queue(),
                                                queue_commands=multiprocessing.Queue())
-                num_cameras_found += 1
             else:
                 # If not using USB port number, then cameras are put into array
                 # in the order they are discovered. This could be unpredictable, but at least
@@ -946,8 +946,8 @@ if __name__ == "__main__":
                                               -1,   # No GPIO if we don't know what USB port cam is plugged into
                                               multiprocessing.Queue(),
                                               multiprocessing.Queue()))
-                num_cameras_found += 1
 
+            num_cameras_found += 1
             tmp.release()
 
     print()
@@ -962,10 +962,13 @@ if __name__ == "__main__":
 
     # Report what was discovered, and create camera RECEIVER objects
     for idx1, cam_info_obj1 in enumerate(cam_info_array):
-        cam_array[idx1] = CamDestinationObj(cam_info_obj1)
         if cam_info_obj1 is None:
             cam_array[idx1] = CamDestinationObj(CamInfo(box_id=idx1 + FIRST_CAMERA_ID))
             continue
+        else:
+            # Start the DESTINATION threads that belong to the MAIN process
+            cam_array[idx1] = CamDestinationObj(cam_info_obj1)
+            cam_array[idx1].start_destination_thread()
 
         if IDENTIFY_CAMERA_BY_USB_PORT:
             printt(
@@ -980,14 +983,11 @@ if __name__ == "__main__":
     print()
     printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
 
-    # Start the DESTINATION threads that belong to the MAIN process
-    for idx1, cam_info_obj1 in enumerate(cam_array):
-        if cam_info_obj1 is not None:
-            cam_info_obj1.start_destination_thread()
-            if IS_PI5:
-                time.sleep(0.25)
+    # Now that DESTINATION threads are running, we can start SOURCE threads.
 
-    # Start the SOURCE threads on a DIFFERENT PROCESS
+    # Start the SOURCE threads on a DIFFERENT PROCESS, which can be elevated to high priority.
+    # If Python had the ability to set thread priority, we wouldn't need to jump through all these hoops. But alas,
+    # it does not.
     p1 = multiprocessing.Process(target=source_process, args=(cam_info_array,))
     p1.start()
 

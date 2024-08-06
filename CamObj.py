@@ -320,11 +320,6 @@ class CamDestinationObj(CamInfo):
         # Use blank frame for this object if no camera object is specified
         self.frame = make_blank_frame(f"{self.box_id} - No camera connected")
 
-#        if self.GPIO_pin >= 0 and platform.system() == "Linux":
-            # Start monitoring GPIO pin
-#            GPIO.setup(self.GPIO_pin, GPIO.IN) # This should not be needed, since we already did it on line 72 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
-#            GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
-
     def start_destination_thread(self):
 
         # Start thread that will process the frames sent by this loop.
@@ -333,17 +328,6 @@ class CamDestinationObj(CamInfo):
         if self.queue_frames is not None:
             t = threading.Thread(target=self.process_loop)
             t.start()
-
-    def GPIO_callback_both(self, param):
-
-        if GPIO.input(param):
-            if VERBOSE:
-                printt('GPIO on')
-            self.GPIO_callback1(param)
-        else:
-            if VERBOSE:
-                printt('GPIO off')
-            self.GPIO_callback2(param)
 
     # New GPIO pattern as of 6/22/2024
     # Long high pulse (0.2s) starts binary mode, transmitting 16 bits of animal ID.
