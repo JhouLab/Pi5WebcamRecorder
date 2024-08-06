@@ -6,6 +6,7 @@ import math
 import multiprocessing
 import os
 import platform
+import queue
 import subprocess
 import threading
 import time
@@ -195,7 +196,7 @@ def printt(txt, omit_date_time=False, close_file=False):
             s = now.strftime("%Y-%m-%d %H:%M:%S: ") + txt
     else:
         s = txt
-    print(s)
+    print(s, flush=True)  # Child process needs explicit flush or else won't show right away
     try:
         fid_log.write(s + "\n")
         fid_log.flush()
@@ -217,10 +218,12 @@ def get_disk_free_space():
         return None
 
 
+# Status codes in messages from camera
 class CamReadStatus(Enum):
     FrameFailed = 0
     FrameSuccess = 1
     GPIO_Success = 2
+    ReadyForOperation = 3  # This message indicates that profiling is done (or was not needed)
 
 
 # Info that is shared between Source and Destination processes
@@ -770,8 +773,14 @@ class CamDestinationObj(CamInfo):
 
         last_warning_time = time.time()
         frame_count = 0
-        while not self.pending == self.PendingAction.Exiting:
-            v = self.queue_frames.get()
+        while self.pending != self.PendingAction.Exiting:
+
+            try:
+                v = self.queue_frames.get(timeout=0.1)
+            except queue.Empty:
+                # If empty, then most likely we are shutting down.
+                # Just spin every 0.1 seconds to handle Exiting flag
+                continue
 
             # Do we need to deep-copy v? I assume not, but are we sure?
             if v[0] == CamReadStatus.FrameFailed.value:
@@ -785,6 +794,8 @@ class CamDestinationObj(CamInfo):
                 else:
                     self.GPIO_callback2(v[2])
                 continue
+            elif v[0] == CamReadStatus.ReadyForOperation:
+                self.IsReady = True
 
             self.frame = v[1]
             timestamp = v[2]
@@ -805,7 +816,18 @@ class CamDestinationObj(CamInfo):
                     printt(f"Box {self.box_id} process loop is alive")
 
         if DEBUG:
-            printt(f"Box {self.box_id} exiting frame process thread.")
+            printt(f"Box {self.box_id} destination thread now waiting for frame queue to empty.")
+
+        try:
+            while True:
+                self.queue_frames.get_nowait()
+        except queue.Empty:
+            pass
+
+        if DEBUG:
+            printt(f"Box {self.box_id} destination thread is exiting.")
+
+        self.pending = self.PendingAction.Nothing
 
     # Reads a single frame from CamObj class and writes it to file
     def process_frame(self, timestamp, TTL_on):
@@ -946,11 +968,9 @@ class CamDestinationObj(CamInfo):
         # Only call this when exiting program. Will stop all recordings, and release camera resources
 
         if self.IsRecording:
-            self.stop_record()  # This will set flag to be read by process_frame()
+            self.stop_record()  # This will set flag to be read by process_frame() thread
             while self.IsRecording:
                 time.sleep(0.1)
-
-        self.pending = self.PendingAction.Exiting
 
         if self.has_cam:
             try:
@@ -959,14 +979,18 @@ class CamDestinationObj(CamInfo):
                 pass
             self.has_cam = False
 
-        # Wait for the camera read threads to exit
-        time.sleep(0.1)
+            # Wait for the camera read threads to exit
+            time.sleep(0.1)
+
+        self.pending = self.PendingAction.Exiting
 
         self.status = -1
-        self.frame = None
 
         if DEBUG:
-            printt(f"Box {self.box_id} destination object has exited.")
+            printt(f"Box {self.box_id} destination object waiting for thread to exit.")
+
+        if DEBUG:
+            printt(f"Box {self.box_id} destination object done.")
 
 
 # Commands that can be sent to the CameraRead process/threads
@@ -1016,7 +1040,6 @@ class CamReaderObj(CamInfo):
                 print("    sudo apt remove python3-rpi.gpio")
                 print("    sudo apt install python3-rpi-lgpio")
                 exit()
-
 
     def GPIO_callback_both(self, param):
 
@@ -1124,6 +1147,8 @@ class CamReaderObj(CamInfo):
         else:
             native_fps = NATIVE_FRAME_RATE
 
+        self.queue_frames.put((CamReadStatus.ReadyForOperation, None, time.time(), True))
+
         count = 0
         frame_count = 0
 
@@ -1174,7 +1199,7 @@ class CamReaderObj(CamInfo):
             frame_count += 1
 
         if DEBUG:
-            printt(f"Box {self.box_id} exiting camera read thread.")
+            printt(f"Box {self.box_id} source object camera read thread is exiting.")
 
 
 # SOURCE process, that is the source of frame data. This spawns up to 4
@@ -1208,11 +1233,22 @@ def source_process(CamInfo_array: List[CamInfo]):
         handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, True, pid)
         win32process.SetPriorityClass(handle, win32process.REALTIME_PRIORITY_CLASS)
 
+    c: List[CamReaderObj] = []
+
     for idx, cam_info in enumerate(CamInfo_array):
         if cam_info is not None and cam_info.id_num >= 0:
-            CamReaderObj(cam_info)
+            c.append(CamReaderObj(cam_info))
             # Short sleep so that cameras will finish in numerical order
             time.sleep(0.25)
+
+    if DEBUG:
+        printt("Child process is done, but waiting for threads to end")
+
+    for cr in c:
+        cr.t.join()
+
+    if DEBUG:
+        printt("Child process threads have all ended, child process itself will now exit")
 
 
 if __name__ == '__main__':

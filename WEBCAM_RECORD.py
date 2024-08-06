@@ -1,5 +1,6 @@
 from __future__ import annotations   # Need this for type hints to work on older Python versions
 
+import subprocess
 from typing import List
 import time
 import os
@@ -38,6 +39,8 @@ VERBOSE = False
 # USE_MJPG = (WIDTH > 640)
 USE_MJPG = IS_PI5
 
+# OpenCV window buttons look weird (text only) when run as root. This flag hides them altogether.
+HIDE_OPENCV_BUTTONS = True
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
 # If no camera found with that ID, will throw exception, which unfortunately is the only
@@ -231,8 +234,7 @@ class RECORDER:
         self.cached_frames: List[np.ndarray | None] = [None] * len(_cam_array)
 
         while True:
-            break
-
+            time.sleep(0.01)
             # Wait for all camera profiling to complete before creating GUI
             is_ready = True
             for c in _cam_array:
@@ -243,6 +245,9 @@ class RECORDER:
                     break
             if is_ready:
                 break
+
+        if DEBUG:
+            printt("All cameras ready, will now create GUI")
 
         if root_window is None:
             self.top_window = tk.Tk()
@@ -372,8 +377,9 @@ class RECORDER:
         # Set min control bar size, to prevent too much squashing
         self.top_window.minsize(self.top_window.winfo_width(), self.top_window.winfo_height())
 
-        # This removes buttons from video window, which show up weirdly in superuser mode
-        cv2.namedWindow(DISPLAY_WINDOW_NAME, cv2.WINDOW_GUI_NORMAL)
+        if HIDE_OPENCV_BUTTONS:
+            # This removes buttons from video window, which show up weirdly in superuser mode
+            cv2.namedWindow(DISPLAY_WINDOW_NAME, cv2.WINDOW_GUI_NORMAL)
 
         blank_frame = make_blank_frame("", SCREEN_RESOLUTION)
         cv2.imshow(DISPLAY_WINDOW_NAME, blank_frame)  # Must show something or else moveWindow fails on Pi
@@ -388,7 +394,9 @@ class RECORDER:
         # Apparently the Wayland display server doesn't support it.
         cv2.moveWindow(DISPLAY_WINDOW_NAME, 20, 220)  # Start video in top left, below control bar
 
-        cv2.resizeWindow(DISPLAY_WINDOW_NAME, SCREEN_RESOLUTION[0], SCREEN_RESOLUTION[1])
+        if HIDE_OPENCV_BUTTONS:
+            # Strangely, the normal GUI doesn't know how to size itself to fit array, so we have to remind it.
+            cv2.resizeWindow(DISPLAY_WINDOW_NAME, SCREEN_RESOLUTION[0], SCREEN_RESOLUTION[1])
 
         cv2.waitKey(1)
         
@@ -405,7 +413,8 @@ class RECORDER:
         if p == "Windows":
             os.startfile(DATA_FOLDER)
         elif p == "Linux":
-            os.system("pcmanfm \"%s\"" % DATA_FOLDER)
+            # Open in the Pi's file manager, PCMan
+            subprocess.Popen(f"pcmanfm \"{DATA_FOLDER}\"", shell=True)
 
     def toggle_zoom(self):
 
@@ -1003,4 +1012,4 @@ if __name__ == "__main__":
     rec_obj.top_window.mainloop()
 
     if DEBUG:
-        printt("Exiting", close_file=True)
+        printt("Exiting main program.", close_file=True)
