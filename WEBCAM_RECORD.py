@@ -394,10 +394,11 @@ class RECORDER:
         # Apparently the Wayland display server doesn't support it.
         cv2.moveWindow(DISPLAY_WINDOW_NAME, 20, 220)  # Start video in top left, below control bar
 
-        if HIDE_OPENCV_BUTTONS:
-            # Strangely, the normal GUI doesn't know how to size itself to fit array, so we have to remind it.
-            cv2.resizeWindow(DISPLAY_WINDOW_NAME, SCREEN_RESOLUTION[0], SCREEN_RESOLUTION[1])
+        # Strangely, the normal GUI doesn't know how to size itself to fit array, so we have to remind it.
+        # The following somehow fails when running as root, so need a second reminder later ...
+        cv2.resizeWindow(DISPLAY_WINDOW_NAME, SCREEN_RESOLUTION[0], SCREEN_RESOLUTION[1])
 
+        # WaitKey delay is in milliseconds. This forces GUI to catch up.
         cv2.waitKey(1)
         
         self.skipped_display_frames = 0
@@ -406,6 +407,7 @@ class RECORDER:
         self.start = time.time()
         # This is actually target time for the frame AFTER the next, since the next one will be read immediately
         self.next_frame = self.start + self.FRAME_INTERVAL
+        
         self.update_image()
 
     def browse_data_folder(self):
@@ -614,12 +616,18 @@ class RECORDER:
             self.cleanup()
             return
         
+        if self.display_frame_count == 2:
+            # In root mode, window size is too small unless we fix it.
+            cv2.resizeWindow(DISPLAY_WINDOW_NAME, SCREEN_RESOLUTION[0], SCREEN_RESOLUTION[1])
+        
         CPU_lag_frames = 0
+        num_cams_lag = 0
 
         for idx, cam_obj in enumerate(self.cam_array):
             
-            if cam_obj.CPU_lag_frames > CPU_lag_frames:
-                CPU_lag_frames = cam_obj.CPU_lag_frames
+            if cam_obj.has_cam:
+                CPU_lag_frames += cam_obj.CPU_lag_frames
+                num_cams_lag += 1
 
             # Check if any updates are needed
             if cam_obj.need_update_button_state_flag:
@@ -641,8 +649,11 @@ class RECORDER:
                                int(8 * FONT_SCALE),  # Radius
                                (0, 0, 255),  # Red dot (color is in BGR order)
                                -1)  # -1 thickness fills circle
-                    
-        skip_display = CPU_lag_frames > 0.75 and self.display_frame_count % 10 != 0
+        
+        if num_cams_lag > 0:
+            skip_display = (CPU_lag_frames / num_cams_lag) > 4 and self.display_frame_count % 10 != 0
+        else:
+            skip_display = False
         
         # When operated locally, Raspberry Pi5 takes about 10-15ms to show
         # frame to screen. When operated remotely, does this go up? Maybe to 20-25ms?
