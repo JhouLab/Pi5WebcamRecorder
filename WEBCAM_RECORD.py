@@ -833,7 +833,8 @@ if __name__ == "__main__":
         INPUT_PIN_LIST = [4, 5, 6, 7]  # List of input pins for the four cameras
         for p in INPUT_PIN_LIST:
             try:
-                GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Set to be input, with internal pull-down resistor
+                pass
+#                GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Set to be input, with internal pull-down resistor
             except RuntimeError:
                 printt("Runtime Error: Unable to set up GPIO.")
                 print("    If this is a Pi5, please replace the default gpio library as follows:")
@@ -960,17 +961,18 @@ if __name__ == "__main__":
     cam_array: List[CamDestinationObj | None] = [None] * len(cam_info_array)
 
     # Report what was discovered, and create camera RECEIVER objects
-    for idx1, cam_obj1 in enumerate(cam_info_array):
-        cam_array[idx1] = CamDestinationObj(cam_obj1)
-        if cam_obj1 is None:
+    for idx1, cam_info_obj1 in enumerate(cam_info_array):
+        cam_array[idx1] = CamDestinationObj(cam_info_obj1)
+        if cam_info_obj1 is None:
+            cam_array[idx1] = CamDestinationObj(CamInfo(box_id=idx1 + FIRST_CAMERA_ID))
             continue
 
         if IDENTIFY_CAMERA_BY_USB_PORT:
             printt(
-                f"Camera in USB port position {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num} and serial '{get_cam_serial(cam_obj1.id_num)}'",
+                f"Camera in USB port position {FIRST_CAMERA_ID + idx1} has ID {cam_info_obj1.id_num} and serial '{get_cam_serial(cam_info_obj1.id_num)}'",
                 omit_date_time=True)
         else:
-            printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}")
+            printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_info_obj1.id_num}")
 
     if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
         MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
@@ -979,9 +981,9 @@ if __name__ == "__main__":
     printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
 
     # Start the DESTINATION threads that belong to the MAIN process
-    for idx1, cam_obj1 in enumerate(cam_array):
-        if cam_obj1 is not None:
-            cam_obj1.start_destination_thread()
+    for idx1, cam_info_obj1 in enumerate(cam_array):
+        if cam_info_obj1 is not None:
+            cam_info_obj1.start_destination_thread()
             if IS_PI5:
                 time.sleep(0.25)
 

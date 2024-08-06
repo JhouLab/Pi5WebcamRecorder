@@ -239,11 +239,12 @@ class CamInfo:
         self.queue_commands = queue_commands
 
     def make_copy(self, c: CamInfo):
-        self.id_num = c.id_num
-        self.box_id = c.box_id
-        self.GPIO_pin = c.GPIO_pin
-        self.queue_frames = c.queue_frames
-        self.queue_commands = c.queue_commands
+        if c is not None:
+            self.id_num = c.id_num
+            self.box_id = c.box_id
+            self.GPIO_pin = c.GPIO_pin
+            self.queue_frames = c.queue_frames
+            self.queue_commands = c.queue_commands
 
 
 class CamDestinationObj(CamInfo):
@@ -305,7 +306,6 @@ class CamDestinationObj(CamInfo):
         super().make_copy(c)
 
         self.has_cam = self.id_num >= 0
-        self.last_frame_written: int = 0
         self.CPU_lag_frames = 0
         self.pending = self.PendingAction.Nothing
         self.cam_lock = threading.RLock()
@@ -902,7 +902,6 @@ class CamDestinationObj(CamInfo):
                     # Write frame to AVI video file if possible
                     if self.Writer is not None:
                         self.Writer.write(self.frame)
-                        self.last_frame_written = self.frame_num
                 except:
                     print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
                     self.__stop_recording_now()
@@ -932,9 +931,6 @@ class CamDestinationObj(CamInfo):
             str1 = f"{elapsed_min:.2f} minutes"
 
         str1 += f", {self.frame_num} frames"
-
-        if DEBUG:
-            str1 += f", {self.last_frame_written} (written)"
 
         if elapsed_sec > 5:
             fps = self.frame_num / elapsed_sec
@@ -1026,8 +1022,17 @@ class CamReaderObj(CamInfo):
 
         if self.GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
-            GPIO.setup(self.GPIO_pin, GPIO.IN) # This should not be needed, since we already did it on line 72 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
-            GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+            try:
+                GPIO.setup(self.GPIO_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+                GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+            except RuntimeError:
+                printt("Runtime Error: Unable to set up GPIO.")
+                print("    Please make sure there are no other processes using the GPIO hardware.")
+                print("    If this is a Pi5, make sure you have replaced the default gpio library as follows:")
+                print("    sudo apt remove python3-rpi.gpio")
+                print("    sudo apt install python3-rpi-lgpio")
+                exit()
+
 
     def GPIO_callback_both(self, param):
 
@@ -1195,7 +1200,10 @@ def source_process(CamInfo_array: List[CamInfo]):
     # start producing frames until there is a handler that can process them.
 
     if IS_LINUX:
-        os.nice(-20)
+        try:
+            os.nice(-20)
+        except:
+            print('Unable to raise priority. Please run as administrator for optimal performance')
     elif IS_WINDOWS:
         import win32api
         import win32process
@@ -1206,7 +1214,7 @@ def source_process(CamInfo_array: List[CamInfo]):
         win32process.SetPriorityClass(handle, win32process.REALTIME_PRIORITY_CLASS)
 
     for idx, cam_info in enumerate(CamInfo_array):
-        if cam_info.id_num >= 0:
+        if cam_info is not None and cam_info.id_num >= 0:
             CamReaderObj(cam_info)
 
 
