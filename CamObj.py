@@ -966,7 +966,7 @@ class CamDestinationObj(CamInfo):
         self.frame = None
 
         if DEBUG:
-            printt(f"Box {self.box_id} has closed.")
+            printt(f"Box {self.box_id} destination object has exited.")
 
 
 # Commands that can be sent to the CameraRead process/threads
@@ -1036,20 +1036,31 @@ class CamReaderObj(CamInfo):
 
         # First frame always takes longer to read, so get it out of the way
         # before conducting profiling
+        t1 = time.time()
         self.cam.read()
+
+        t2 = time.time()
+        if DEBUG:
+            # Oddly, can take between .5 and .8 seconds to read first frame.
+            print(f"Cam {self.box_id} first frame read elapsed {t2 - t1:.4f} sec")
 
         # Subsequent frames might actually read too fast, if they are coming
         # from internal memory buffer. So now clear out any frames in camera buffer
         old_time = time.time()
+        num_pre_read = 0
         while True:
             self.cam.read()
             new_time = time.time()
             elapsed = new_time - old_time
             old_time = new_time
+            num_pre_read += 1
             if elapsed > 0.01:
                 # Buffered frames will return very quickly. We wait until
                 # the return time is longer, indicating that buffer is now empty
                 break
+
+        if DEBUG:
+            print(f"Cam {self.box_id} pre-read-count = {num_pre_read} frames, elapsed {new_time - t2:.4f} sec")
 
         old_time = time.time()
         target_time = old_time + 1.0  # When to stop profiling
@@ -1077,12 +1088,12 @@ class CamReaderObj(CamInfo):
             estimated_frame_rate = 4.0 / min_elapsed4
             # Lower bound on frame rate
             estimated_frame_rate2 = frame_count
+            printt(
+                f'Box {self.box_id} estimated frame rate between {estimated_frame_rate2} and {estimated_frame_rate} fps')
         else:
             # Unable to determine frame rate
             printt("Unable to determine frame rate, defaulting to config setting")
             estimated_frame_rate = RECORD_FRAME_RATE
-
-        printt(f'Box {self.box_id} estimated frame rate {estimated_frame_rate}')
 
         # Sometimes will get value slightly lower or higher than real frame rate, e.g. 29.9 or 30.2 instead of 30
         if estimated_frame_rate > 55:
@@ -1200,6 +1211,8 @@ def source_process(CamInfo_array: List[CamInfo]):
     for idx, cam_info in enumerate(CamInfo_array):
         if cam_info is not None and cam_info.id_num >= 0:
             CamReaderObj(cam_info)
+            # Short sleep so that cameras will finish in numerical order
+            time.sleep(0.25)
 
 
 if __name__ == '__main__':
