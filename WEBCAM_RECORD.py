@@ -588,6 +588,8 @@ class RECORDER:
         # Apparently the Wayland display server doesn't support it.
         cv2.moveWindow(DISPLAY_WINDOW_NAME, 20, 220)  # Start video in top left, below control bar
 
+        # Basic GUI (lacking buttons) doesn't seem to know how to size itself. Needs a couple of reminders,
+        # here and after update_image() loop starts.
         cv2.resizeWindow(DISPLAY_WINDOW_NAME, SCREEN_RESOLUTION[0], SCREEN_RESOLUTION[1])
 
         cv2.waitKey(1)
@@ -805,13 +807,21 @@ class RECORDER:
             self.cleanup()
             return
         
+        if self.skipped_display_frames < 10:
+            # The plain GUI (that we use because it works fine as root, unlike the fancy one)
+            # has persistent sizing issues at startup. Forcing resolution for first 10 frames seems
+            # to work, albeit is a little hacky.
+            cv2.resizeWindow(DISPLAY_WINDOW_NAME, SCREEN_RESOLUTION[0], SCREEN_RESOLUTION[1])
+        
         CPU_lag_frames = 0
+        num_cams_lag = 0
 
         for idx, cam_obj in enumerate(self.cam_array):
             
-            if cam_obj.CPU_lag_frames > CPU_lag_frames:
-                CPU_lag_frames = cam_obj.CPU_lag_frames
-
+            if cam_obj.status:
+                CPU_lag_frames += cam_obj.CPU_lag_frames
+                num_cams_lag += 1
+            
             # Check if any updates are needed
             if cam_obj.need_update_button_state_flag:
                 self.set_button_state_callback(idx)
@@ -830,8 +840,14 @@ class RECORDER:
                                int(8 * FONT_SCALE),  # Radius
                                (0, 0, 255),  # Red dot (color is in BGR order)
                                -1)  # -1 thickness fills circle
-                    
-        skip_display = CPU_lag_frames > 0.75 and self.display_frame_count % 10 != 0
+                 
+        if num_cams_lag > 0:
+            # If average lag is more than 2 frames, then slow down display to update only once every
+            # 10 frames, which will be about once per second.
+            avg_lag = CPU_lag_frames / num_cams_lag
+            skip_display = avg_lag > 2 and self.display_frame_count % 10 != 0
+        else:
+            skip_display = False
         
         # When operated locally, Raspberry Pi5 takes about 10-15ms to show
         # frame to screen. When operated remotely, does this go up? Maybe to 20-25ms?
