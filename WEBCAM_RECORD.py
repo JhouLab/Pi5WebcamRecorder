@@ -488,7 +488,7 @@ class RECORDER:
             if SHOW_SNAPSHOT_BUTTON:
                 b = tk.Button(f3, text=f"Snapshot cam #{FIRST_CAMERA_ID + idx}", command=partial(self.snapshot, idx))
                 b.pack(side=tk.LEFT, ipadx=2)
-                w.StartButton = b
+                w.SnapshotButton = b
                 
             l = tk.Label(f3, text=f"", width=60, anchor=tk.W)
             l.pack(side=tk.LEFT, fill=tk.X)
