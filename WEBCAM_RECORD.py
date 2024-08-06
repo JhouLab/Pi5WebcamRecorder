@@ -13,10 +13,11 @@ import sys
 
 import numpy as np
 import math
-from CamObj import CamObj, WIDTH, HEIGHT, \
+from CamObj import CamObj, CamInfo, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
-    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG
+    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, \
+    read_camera_continuous
 from get_hardware_info import *
 
 # Note that
@@ -33,91 +34,6 @@ from tkinter import messagebox
 
 # If true, will print extra diagnostics, such as a running frame count and FPS calculations
 VERBOSE = False
-
-# Create root now or else messagebox.showinfo() will do it for you, leaving an extra blank window floating around.
-root = tk.Tk()
-root.withdraw()
-
-if IS_LINUX:
-    try:
-        os.nice(-20)
-    except PermissionError:
-        res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n" \
-                                     "Recommend running as root for optimal performance.\n\nProceed anyway?")
-        if res == 'no':
-            sys.exit()
-
-sys.setswitchinterval(0.001)
-interval = sys.getswitchinterval()
-
-# First camera ID number
-FIRST_CAMERA_ID = 1
-
-# Expand window for stereotaxic camera?
-# Isn't practical because window becomes too big.
-EXPAND_VIDEO = False
-
-if DEBUG:
-    printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
-
-MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
-
-if IS_PI5:
-    # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
-
-    # Identify camera via USB port position, rather than ID number which is unpredictable.
-    IDENTIFY_CAMERA_BY_USB_PORT = True
-
-    # Reduce display frame rate, to avoid overloading CPU on Pi
-    MAX_DISPLAY_FRAMES_PER_SECOND = 10
-
-    #
-    # Note that the standard RPi.GPIO library does NOT work on Pi5 (only Pi4).
-    # On Pi5, please uninstall the standard library and install the following
-    # drop-in replacement:
-    #
-    # sudo apt remove python3-rpi.gpio
-    # sudo apt install python3-rpi-lgpio
-    #
-    import RPi.GPIO as GPIO
-
-    GPIO.setmode(GPIO.BCM)  # Set's GPIO pins to BCM GPIO numbering
-    INPUT_PIN_LIST = [4, 5, 6, 7]  # List of input pins for the four cameras
-    for p in INPUT_PIN_LIST:
-        try:
-            GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Set to be input, with internal pull-down resistor
-        except RuntimeError:
-            printt("Runtime Error: Unable to set up GPIO.")
-            print("    If this is a Pi5, please replace the default gpio library as follows:")
-            print("    sudo apt remove python3-rpi.gpio")
-            print("    sudo apt install python3-rpi-lgpio")
-            exit()
-
-else:
-    # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
-    IDENTIFY_CAMERA_BY_USB_PORT = False
-    INPUT_PIN_LIST = [None] * 4  # List of input pins for the four cameras
-    
-if EXPAND_VIDEO:
-    SCREEN_RESOLUTION = (WIDTH, HEIGHT)
-    # This applies to the stereotax only
-    # Upsample small frames to 640 width
-    ratio = 1.5
-    SCREEN_RESOLUTION = (int(WIDTH * ratio), int(HEIGHT * ratio))
-else:
-    if WIDTH > 1024:
-        # Downsample large video frames to 1024 width
-        ratio = WIDTH / 1024
-        SCREEN_RESOLUTION = (1024, int(HEIGHT / ratio))
-        SCREEN_RESOLUTION_INSET = (512, SCREEN_RESOLUTION[1] >> 1)
-    elif WIDTH < 640:
-        # Upsample small frames to 640 width
-        ratio = 640 / WIDTH
-        SCREEN_RESOLUTION = (640, int(HEIGHT * ratio))
-    else:
-        SCREEN_RESOLUTION = (WIDTH, HEIGHT)
-
-SCREEN_RESOLUTION_INSET = (SCREEN_RESOLUTION[0] >> 1, SCREEN_RESOLUTION[1] >> 1)
 
 # Reading from webcam using MJPG generally allows higher frame rates
 # This definitely works on PI5, not tested elsewhere.
@@ -192,126 +108,6 @@ def make_instruction_frame():
 
     f = cv2.resize(f, SCREEN_RESOLUTION)
     return f
-
-
-if not os.path.isdir(DATA_FOLDER):
-    # Parent folder doesn't exist ... this could be due to USB drive being unplugged?
-    # Default to program directory
-    messagebox.showinfo(title="Warning",\
-        message=f"Unable to find data folder:\n\n\"{DATA_FOLDER}\"\n\nWill save to program folder instead.")
-    DATA_FOLDER = "."
-
-# Highest camera ID to search when first connecting. Some sources
-# recommend searching up to 99, but that takes too long and is usually
-# unnecessary. So far, I have not needed to search above about 8, but we
-# go to 15 just in case. Actually Pi4 freezes when we reach 15, so we now
-# limit to 14.
-MAX_ID = 14
-
-INSTRUCTION_FRAME = make_instruction_frame()
-
-DISPLAY_WINDOW_NAME = "Camera output"
-
-cam_array: List[CamObj | None]
-
-if IDENTIFY_CAMERA_BY_USB_PORT:
-    # Array of subframes for 4x1 display
-    # Each "None" will be replaced with an actual CamObj object if camera detected.
-    cam_array = [None] * 4
-else:
-    # Array of camera objects, one for each discovered camera
-    cam_array = []
-
-# Make subframes that are blank. These are used for 2x2 grid display.
-# Blank frames will be replaced by real ones if camera is found.
-subframes = [None] * 4
-for x in range(4):
-    tmp = make_blank_frame(f"{FIRST_CAMERA_ID + x} no camera found")
-    subframes[x] = cv2.resize(tmp, SCREEN_RESOLUTION_INSET)
-
-if IDENTIFY_CAMERA_BY_USB_PORT:
-    printt("Scanning for all available cameras by USB port. Please wait ...")
-else:
-    printt("Scanning for all available cameras. Please wait ...")
-
-num_cameras_found = 0
-
-# Scan IDs to find cameras
-for cam_id in range(MAX_ID):
-    tmp, _ = setup_cam(cam_id)
-    print(".", end="", flush=True)
-    if tmp.isOpened():
-        if IDENTIFY_CAMERA_BY_USB_PORT:
-            # Attempt to identify what USB port this camera is plugged into.
-            # Method is very klugey, and I don't really understand why it works.
-            # But it does. For now. I hope.
-            port = get_cam_usb_port(cam_id)
-            if port < 0:
-                printt("Unable to identify USB port. Won't show camera. Please contact developer.")
-                continue
-            if port > 3:
-                printt(f"Invalid USB port number (should be 0-3): {port}")
-                continue
-
-            if cam_array[port] is not None:
-                # If we already found a camera in this position ...
-                printt(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
-                continue
-            cam_array[port] = CamObj(tmp, cam_id,
-                                     FIRST_CAMERA_ID + port, GPIO_pin=INPUT_PIN_LIST[port])
-            num_cameras_found += 1
-        else:
-            # If not using USB port number, then cameras are put into array
-            # in the order they are discovered. This could be unpredictable, but at least
-            # it will work, and won't crash. In this case, we also ignore GPIO pin list, since
-            # recordings will need to be started and stopped manually.
-            cam_array.append(CamObj(tmp, cam_id, FIRST_CAMERA_ID + len(cam_array)))
-            num_cameras_found += 1
-            
-
-print()
-
-if num_cameras_found == 0:
-    printt("NO CAMERAS FOUND")
-    # exit()
-else:
-    printt(f"Found {num_cameras_found} cameras")
-
-# Report what was discovered
-for idx1, cam_obj1 in enumerate(cam_array):
-    if cam_obj1 is None:
-        # No camera was found for this USB port position.
-        # Create dummy camera object as placeholder, allowing a blank frame
-        # to show.
-        cam_array[idx1] = CamObj(None, -1, FIRST_CAMERA_ID + idx1, 0)
-        continue
-
-    if IDENTIFY_CAMERA_BY_USB_PORT:
-        printt(
-            f"Camera in USB port position {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num} and serial '{get_cam_serial(cam_obj1.id_num)}'",
-            omit_date_time=True)
-    else:
-        printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}")
-
-
-if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
-    MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
-
-
-
-if NATIVE_FRAME_RATE == 0:
-    # messagebox.showinfo() causes an extraneous blank "root" window to show up in corner of screen if you haven't
-    # already created it.
-    tk.messagebox.showinfo("Warning", "config.txt file does not specify native camera frame rate.\n\nWill try to estimate it by profiling, but it is highly recommended to add the true value to config.txt")
-
-print()
-printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
-
-for idx1, cam_obj1 in enumerate(cam_array):
-    if cam_obj1 is not None:
-        cam_obj1.start_read_thread()
-        if IS_PI5:
-            time.sleep(0.25)
 
 
 def get_key():
@@ -436,9 +232,12 @@ class RECORDER:
         self.cam_array = _cam_array
 
         while True:
+            break
+
+            # Wait for all camera profiling to complete
             is_ready = True
             for c in _cam_array:
-                if c.cam is None:
+                if not c.has_cam:
                     continue
                 if not c.IsReady:
                     is_ready = False
@@ -472,7 +271,7 @@ class RECORDER:
 
             w = self.widget_array[idx]
 
-            if cam_obj is None or cam_obj.cam is None:
+            if cam_obj is None or not cam_obj.has_cam:
                 continue
             f3 = tk.Frame(frame2)
             f3.pack(fill=tk.X)
@@ -557,7 +356,7 @@ class RECORDER:
         if num_cameras_found == 1:
             # If exactly one camera found, then show that one to start
             for c in _cam_array:
-                if c is None or c.cam is None:
+                if c is None or not c.has_cam:
                     continue
                 if c.box_id >= 0:
                     self.which_display = c.box_id - FIRST_CAMERA_ID
@@ -980,8 +779,226 @@ class RECORDER:
             self.root_window.destroy()
 
 
-rec_obj = RECORDER(cam_array, root_window=root)
-rec_obj.top_window.mainloop()
+if __name__ == "__main__":
 
-if DEBUG:
-    printt("Exiting", close_file=True)
+    # Create root now or else messagebox.showinfo() will do it for you, leaving an extra blank window floating around.
+    root = tk.Tk()
+    root.withdraw()
+
+    if IS_LINUX:
+        try:
+            os.nice(-5)
+        except PermissionError:
+            res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n" \
+                                                    "Recommend running as root for optimal performance.\n\nProceed anyway?")
+            if res == 'no':
+                sys.exit()
+
+    sys.setswitchinterval(0.001)
+    interval = sys.getswitchinterval()
+
+    # First camera ID number
+    FIRST_CAMERA_ID = 1
+
+    # Expand window for stereotaxic camera?
+    # Isn't practical because window becomes too big.
+    EXPAND_VIDEO = False
+
+    if DEBUG:
+        printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
+
+    MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
+
+    if IS_PI5:
+        # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
+
+        # Identify camera via USB port position, rather than ID number which is unpredictable.
+        IDENTIFY_CAMERA_BY_USB_PORT = True
+
+        # Reduce display frame rate, to avoid overloading CPU on Pi
+        MAX_DISPLAY_FRAMES_PER_SECOND = 10
+
+        #
+        # Note that the standard RPi.GPIO library does NOT work on Pi5 (only Pi4).
+        # On Pi5, please uninstall the standard library and install the following
+        # drop-in replacement:
+        #
+        # sudo apt remove python3-rpi.gpio
+        # sudo apt install python3-rpi-lgpio
+        #
+        import RPi.GPIO as GPIO
+
+        GPIO.setmode(GPIO.BCM)  # Set's GPIO pins to BCM GPIO numbering
+        INPUT_PIN_LIST = [4, 5, 6, 7]  # List of input pins for the four cameras
+        for p in INPUT_PIN_LIST:
+            try:
+                GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Set to be input, with internal pull-down resistor
+            except RuntimeError:
+                printt("Runtime Error: Unable to set up GPIO.")
+                print("    If this is a Pi5, please replace the default gpio library as follows:")
+                print("    sudo apt remove python3-rpi.gpio")
+                print("    sudo apt install python3-rpi-lgpio")
+                exit()
+
+    else:
+        # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
+        IDENTIFY_CAMERA_BY_USB_PORT = False
+        INPUT_PIN_LIST = [None] * 4  # List of input pins for the four cameras
+
+    if EXPAND_VIDEO:
+        SCREEN_RESOLUTION = (WIDTH, HEIGHT)
+        # This applies to the stereotax only
+        # Upsample small frames to 640 width
+        ratio = 1.5
+        SCREEN_RESOLUTION = (int(WIDTH * ratio), int(HEIGHT * ratio))
+    else:
+        if WIDTH > 1024:
+            # Downsample large video frames to 1024 width
+            ratio = WIDTH / 1024
+            SCREEN_RESOLUTION = (1024, int(HEIGHT / ratio))
+            SCREEN_RESOLUTION_INSET = (512, SCREEN_RESOLUTION[1] >> 1)
+        elif WIDTH < 640:
+            # Upsample small frames to 640 width
+            ratio = 640 / WIDTH
+            SCREEN_RESOLUTION = (640, int(HEIGHT * ratio))
+        else:
+            SCREEN_RESOLUTION = (WIDTH, HEIGHT)
+
+    SCREEN_RESOLUTION_INSET = (SCREEN_RESOLUTION[0] >> 1, SCREEN_RESOLUTION[1] >> 1)
+
+    if not os.path.isdir(DATA_FOLDER):
+        # Parent folder doesn't exist ... this could be due to USB drive being unplugged?
+        # Default to program directory
+        messagebox.showinfo(title="Warning", \
+                            message=f"Unable to find data folder:\n\n\"{DATA_FOLDER}\"\n\nWill save to program folder instead.")
+        DATA_FOLDER = "."
+
+    # Highest camera ID to search when first connecting. Some sources
+    # recommend searching up to 99, but that takes too long and is usually
+    # unnecessary. So far, I have not needed to search above about 8, but we
+    # go to 15 just in case. Actually Pi4 freezes when we reach 15, so we now
+    # limit to 14.
+    MAX_ID = 14
+
+    INSTRUCTION_FRAME = make_instruction_frame()
+
+    DISPLAY_WINDOW_NAME = "Camera output"
+
+    cam_array: List[CamObj | None]
+
+    if IDENTIFY_CAMERA_BY_USB_PORT:
+        # Array of subframes for 4x1 display
+        # Each "None" will be replaced with an actual CamObj object if camera detected.
+        cam_array = [None] * 4
+    else:
+        # Array of camera objects, one for each discovered camera
+        cam_array = []
+
+    # Make subframes that are blank. These are used for 2x2 grid display.
+    # Blank frames will be replaced by real ones if camera is found.
+    subframes = [None] * 4
+    for x in range(4):
+        tmp = make_blank_frame(f"{FIRST_CAMERA_ID + x} no camera found")
+        subframes[x] = cv2.resize(tmp, SCREEN_RESOLUTION_INSET)
+
+    if IDENTIFY_CAMERA_BY_USB_PORT:
+        printt("Scanning for all available cameras by USB port. Please wait ...")
+    else:
+        printt("Scanning for all available cameras. Please wait ...")
+
+    num_cameras_found = 0
+
+    # Scan IDs to find cameras
+    for cam_id in range(MAX_ID):
+        tmp, _ = setup_cam(cam_id)
+        print(".", end="", flush=True)
+        if tmp.isOpened():
+            if IDENTIFY_CAMERA_BY_USB_PORT:
+                # Attempt to identify what USB port this camera is plugged into.
+                # Method is very klugey, and I don't really understand why it works.
+                # But it does. For now. I hope.
+                port = get_cam_usb_port(cam_id)
+                if port < 0:
+                    printt("Unable to identify USB port. Won't show camera. Please contact developer.")
+                    continue
+                if port > 3:
+                    printt(f"Invalid USB port number (should be 0-3): {port}")
+                    continue
+
+                if cam_array[port] is not None:
+                    # If we already found a camera in this position ...
+                    printt(f"Auto-detected more than one camera in USB port {port}, will only use first one detected")
+                    continue
+                cam_array[port] = CamObj(cam_id,
+                                         FIRST_CAMERA_ID + port, GPIO_pin=INPUT_PIN_LIST[port])
+                num_cameras_found += 1
+            else:
+                # If not using USB port number, then cameras are put into array
+                # in the order they are discovered. This could be unpredictable, but at least
+                # it will work, and won't crash. In this case, we also ignore GPIO pin list, since
+                # recordings will need to be started and stopped manually.
+                cam_array.append(CamObj(cam_id, FIRST_CAMERA_ID + len(cam_array)))
+                num_cameras_found += 1
+
+            tmp.release()
+
+    print()
+
+    if num_cameras_found == 0:
+        printt("NO CAMERAS FOUND")
+        # exit()
+    else:
+        printt(f"Found {num_cameras_found} cameras")
+
+    # Report what was discovered
+    for idx1, cam_obj1 in enumerate(cam_array):
+        if cam_obj1 is None:
+            # No camera was found for this USB port position.
+            # Create dummy camera object as placeholder, allowing a blank frame
+            # to show.
+            cam_array[idx1] = CamObj(-1, FIRST_CAMERA_ID + idx1, 0)
+            continue
+
+        if IDENTIFY_CAMERA_BY_USB_PORT:
+            printt(
+                f"Camera in USB port position {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num} and serial '{get_cam_serial(cam_obj1.id_num)}'",
+                omit_date_time=True)
+        else:
+            printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}")
+
+    if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
+        MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
+
+    if NATIVE_FRAME_RATE == 0:
+        # messagebox.showinfo() causes an extraneous blank "root" window to show up in corner of screen if you haven't
+        # already created it.
+        tk.messagebox.showinfo("Warning",
+                               "config.txt file does not specify native camera frame rate.\n\nWill try to estimate it by profiling, but it is highly recommended to add the true value to config.txt")
+
+    print()
+    printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
+
+    cam_info_array = []
+
+    import multiprocessing
+
+    q1 = multiprocessing.Queue()
+    q2 = multiprocessing.Queue()
+
+    for idx1, cam_obj1 in enumerate(cam_array):
+        if cam_obj1 is not None:
+            cam_info_array.append(cam_obj1.new_inst())
+            cam_obj1.start_process_thread(q1)
+            if IS_PI5:
+                time.sleep(0.25)
+        else:
+            cam_info_array.append(CamInfo())
+
+    p1 = multiprocessing.Process(target=read_camera_continuous, args=(q1, q2, cam_info_array))
+    p1.start()
+
+    rec_obj = RECORDER(cam_array, root_window=root)
+    rec_obj.top_window.mainloop()
+
+    if DEBUG:
+        printt("Exiting", close_file=True)
