@@ -85,6 +85,8 @@ import cv2
 # If true, will print extra diagnostics, such as GPIO on/off times and consecutive TTL counter
 VERBOSE = False
 
+USE_CALLBACK_FOR_GPIO = False
+
 configParser = configparser.RawConfigParser()
 configFilePath = r'config.txt'
 configParser.read(configFilePath)
@@ -299,9 +301,13 @@ class CamObj:
             self.frame = make_blank_frame(f"{box_id} - No camera found")
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
-            # Start monitoring GPIO pin
-            GPIO.setup(GPIO_pin, GPIO.IN) # This should not be needed, since we already did it on line 72 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
-            GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+            if USE_CALLBACK_FOR_GPIO:
+                # Start monitoring GPIO pin
+                GPIO.setup(GPIO_pin, GPIO.IN) # Should not be needed, since we already did it on line 88 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
+                GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+            else:
+                t1 = threading.Thread(target=self.GPIO_thread)
+                t1.start()
 
         if cam is not None:
             self.frame = make_blank_frame(f"{self.box_id} Starting up ...")
@@ -311,6 +317,30 @@ class CamObj:
         t = threading.Thread(target=self.read_camera_continuous)
         t.start()
 
+    def GPIO_thread(self):
+
+        g = self.GPIO_pin
+        s = GPIO.input(g) == 1
+
+        while not self.pending == self.PendingAction.Exiting:
+
+            if GPIO.input(s) != s:
+
+                t = time.time()
+                s = not s
+                self.GPIO_active = 1 if s else 0
+                if s:
+                    self.GPIO_rising_edge(t)
+                else:
+                    self.GPIO_falling_edge(t)
+
+            t0 = time.time()
+            time.sleep(0.001)
+            lag = time.time() - t0
+            if lag > 0.01 and DEBUG:
+                printt(f'Warning: Cam {self.box_id}, GPIO polling lag {lag}s')
+
+
     def GPIO_callback_both(self, param):
         
         if VERBOSE:
@@ -319,11 +349,11 @@ class CamObj:
         if GPIO.input(param):
             if VERBOSE:
                 printt('GPIO on')
-            self.GPIO_callback_rising_edge(param)
+            self.GPIO_rising_edge()
         else:
             if VERBOSE:
                 printt('GPIO off')
-            self.GPIO_callback_falling_edge(param)
+            self.GPIO_falling_edge()
 
     # New GPIO pattern as of 6/22/2024
     # Long high pulse (0.2s) starts binary mode, transmitting 16 bits of animal ID.
@@ -338,11 +368,15 @@ class CamObj:
     # Extra long high pulse (2.5s) starts DEBUG TTL mode, where TTL duration is recorded
     #     and warnings are printed for any deviation from expected 75ms/25ms on/off duty cycle.
     #     deviation has to exceed 10ms to be printed.
-    def GPIO_callback_rising_edge(self, param):
+    def GPIO_rising_edge(self, t=None):
 
         # Detected rising edge. Log the timestamp so that on falling edge we can see if this is a regular
         # pulse or a LONG pulse that starts binary mode
-        self.most_recent_gpio_rising_edge_time = time.time()
+        if t is None:
+            self.most_recent_gpio_rising_edge_time = time.time()
+        else:
+            self.most_recent_gpio_rising_edge_time = t
+
         elapsed_pause = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
 
         # This is used to show blue dot on next frame.
@@ -379,10 +413,13 @@ class CamObj:
 
         return
 
-    def GPIO_callback_falling_edge(self, param):
+    def GPIO_falling_edge(self, t=None):
 
         # Detected falling edge
-        self.most_recent_gpio_falling_edge_time = time.time()
+        if t is None:
+            self.most_recent_gpio_falling_edge_time = time.time()
+        else:
+            self.most_recent_gpio_falling_edge_time = t
 
         # Cancel blue dot display on video
         self.GPIO_active = 0
@@ -604,7 +641,7 @@ class CamObj:
         filename = get_date_string() + "_" + prefix_ending
         return os.path.join(path, filename)
 
-    def start_record(self, animal_ID:str=None, stress_test_mode:bool=False):
+    def start_record(self, animal_ID: str=None, stress_test_mode: bool=False):
         # If animal ID is not specified, will first look for TTL
         # transmission, and if that is also not present, will use camera
         # ID number.
@@ -931,7 +968,7 @@ class CamObj:
 
             lag = time.time() - t
             self.CPU_lag_frames = lag * RECORD_FRAME_RATE
-            if self.IsRecording and self.CPU_lag_frames > 2:
+            if self.CPU_lag_frames > 2:
                 now = time.time()
                 if now - CamObj.last_warning_time > 1.0:
                     printt(f"Warning: high CPU lag (box{self.box_id}, {self.CPU_lag_frames:.1f} frames)")
