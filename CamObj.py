@@ -322,12 +322,11 @@ class CamObj:
 
         g = self.GPIO_pin
         s = GPIO.input(g)
+        t = time.time()
 
         while not self.pending == self.PendingAction.Exiting:
 
             if GPIO.input(g) != s:
-
-                t = time.time()
                 s = not s
                 self.GPIO_active = 1 if s else 0
                 if s:
@@ -335,16 +334,22 @@ class CamObj:
                 else:
                     self.GPIO_falling_edge(t)
 
-            t0 = time.time()
-            time.sleep(0.001)
-            lag = time.time() - t0
             if DEBUG and self.fid_diagnostic is not None:
+                
+                t1 = time.time()
+                lag1 = t1 - t    # Time spent reading GPIO signal. Also includes file write time from previous cycle
+                time.sleep(0.001)
+                t = time.time()
+                lag2 = t - t1    # Time spent in 1ms sleep
+                elapsed = t - self.start_recording_time
                 try:
-                    self.fid_diagnostic.write(f'Cam, GPIO poll interval(s):\t{self.box_id}\t{lag}\n')
+                    self.fid_diagnostic.write(f'{elapsed}\t{lag1}\t{lag2}\n')
                 except:
                     self.fid_diagnostic.close()
                     self.fid_diagnostic = None
                     pass
+            else:
+                t = time.time()
 
     def GPIO_callback_both(self, param):
         
@@ -732,7 +737,7 @@ class CamObj:
                     # Create text file for frame timestamps
                     self.fid = open(self.filename_timestamp, 'w')
                     if DEBUG:
-                        self.fid.write('Frame_number\tTime_in_seconds\tCPU_lag\n')
+                        self.fid.write('Frame_number\tTime_in_seconds\tQueue_lag\tcompression_lag\n')
                     else:
                         self.fid.write('Frame_number\tTime_in_seconds\n')
                 except:
@@ -759,7 +764,7 @@ class CamObj:
                         # Create text file for diagnostic info
 
                         self.fid_diagnostic = open(prefix + prefix_extra + "_diagnostic.txt", 'w')
-                        self.fid_diagnostic.write('Diagnostic info\n')
+                        self.fid_diagnostic.write('Time\tGPIO_lag1\tGPIO_lag2\n')
                     except:
                         print("Warning: unable to create DIAGNOSTIC text file.")
 
@@ -840,8 +845,6 @@ class CamObj:
             new_time = time.time()
             elapsed = new_time - old_time
             old_time = new_time
-            if DEBUG:
-                print(f"Box {self.box_id} re-profiling elapsed time {elapsed:.4f}s")
             if elapsed > 0.01:
                 # Buffered frames will return very quickly. We wait until
                 # the return time is longer, indicating that buffer is now empty
@@ -981,18 +984,23 @@ class CamObj:
         now = time.time()
         if now > CamObj.last_warning_time:
             CamObj.last_warning_time = now
+            
+        self.lag1 = 0
+        self.lag2 = 0
 
         frame_count = 0
         while not self.pending == self.PendingAction.Exiting:
             frame, t, TTL = self.q.get()
 
+            self.lag1 = time.time() - t
             self.process_frame(frame, t, TTL)
 
-            lag = time.time() - t
-            self.CPU_lag_frames = lag * RECORD_FRAME_RATE
-            if self.CPU_lag_frames > 2:
+            self.lag2 = time.time() - t
+            self.CPU_lag_frames = self.lag2 * RECORD_FRAME_RATE
+            if self.CPU_lag_frames > 5:
                 now = time.time()
                 if now - CamObj.last_warning_time > 1.0:
+                    # What I'm calling CPU lag is mostly compression lag
                     printt(f"Warning: high CPU lag (box{self.box_id}, {self.CPU_lag_frames:.1f} frames)")
                     CamObj.last_warning_time = now
 
@@ -1080,7 +1088,7 @@ class CamObj:
                     if self.fid is not None and self.start_recording_time > 0:
                         try:
                             if DEBUG:
-                                self.fid.write(f"{self.frame_num}\t{time_elapsed}\t{self.CPU_lag_frames}\n")
+                                self.fid.write(f"{self.frame_num}\t{time_elapsed}\t{self.lag1}\t{self.lag2}\n")
                             else:
                                 self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
                         except:
