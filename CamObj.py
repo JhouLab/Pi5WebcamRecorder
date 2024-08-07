@@ -454,13 +454,21 @@ class CamDestinationObj(CamInfo):
                     printt(f'Falling edge, pulse width {on_time} num consec TTLs: {self.num_consec_TTLs}')
                 self.handle_GPIO()
             elif on_time < 0.4:
-                if DEBUG:
-                    printt(f'Box {self.box_id} starting binary mode after pulse of duration {on_time}')
-                self.TTL_mode = self.TTL_type.Binary
-                self.current_animal_ID = "Pending"
-                self.TTL_tmp_ID = 0
-                self.TTL_binary_bits = 0
-                self.TTL_checksum = 0
+                if self.IsRecording:
+                    # Sometimes 0.1s pulse glitches and is detected as something longer. This is
+                    # particularly likely when recordings are ongoing, as CPU usage is higher then.
+                    # So during recording we allow TTLs to be longer.
+                    self.num_consec_TTLs += 1
+                    printt(f'Warning: TTL pulse width {on_time} is longer than the expected 0.1s')
+                    self.handle_GPIO()
+                else:
+                    if DEBUG:
+                        printt(f'Box {self.box_id} starting binary mode after pulse of duration {on_time}')
+                    self.TTL_mode = self.TTL_type.Binary
+                    self.current_animal_ID = "Pending"
+                    self.TTL_tmp_ID = 0
+                    self.TTL_binary_bits = 0
+                    self.TTL_checksum = 0
             elif 2.4 < on_time < 2.6 and DEBUG:
                 # Extra long pulse starts debug testing mode
                 self.TTL_mode = self.TTL_type.Debug
