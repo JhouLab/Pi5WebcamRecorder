@@ -652,7 +652,7 @@ class RECORDER:
                                -1)  # -1 thickness fills circle
         
         if num_cams_lag > 0:
-            skip_display = (CPU_lag_frames / num_cams_lag) > 2 and self.display_frame_count % 10 != 0
+            skip_display = (CPU_lag_frames / num_cams_lag) > 1 and self.display_frame_count % 10 != 0
         else:
             skip_display = False
         
@@ -851,7 +851,7 @@ if __name__ == "__main__":
         #
         import RPi.GPIO as GPIO
 
-        GPIO.setmode(GPIO.BCM)  # Set's GPIO pins to BCM GPIO numbering
+        # GPIO.setmode(GPIO.BCM)  # Set's GPIO pins to BCM GPIO numbering
         INPUT_PIN_LIST = [4, 5, 6, 7]  # List of input pins for the four cameras
         for p in INPUT_PIN_LIST:
             try:

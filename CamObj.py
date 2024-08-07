@@ -1049,12 +1049,16 @@ class CamReaderObj(CamInfo):
             # No camera connected
             if DEBUG:
                 printt(f"Camera {self.box_id} not connected, won't profile or read.")
+        
+        if DEBUG:
+            print(f'Cam {self.box_id} GPIO pin is {self.GPIO_pin}')
 
         if self.GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
             try:
                 GPIO.setup(self.GPIO_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
                 GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+                print(f'Cam {self.box_id} GPIO has been set up')
             except RuntimeError:
                 printt("Runtime Error: Unable to set up GPIO.")
                 print("    Please make sure there are no other processes using the GPIO hardware.")
@@ -1064,18 +1068,21 @@ class CamReaderObj(CamInfo):
                 exit()
 
     def GPIO_callback_both(self, param):
+        
+        if DEBUG:
+            print(f'Cam {self.box_id} received GPIO on pin {param}')
 
         # Param is the pin number, value is either True or False, to indicate High/Low
         if GPIO.input(param):
-            if VERBOSE:
+            if VERBOSE or DEBUG:
                 printt('GPIO on')
             self.GPIO_active = True
-            self.queue_TTL.put((CamReadStatus.GPIO_detected, time.time(), True))
+            self.queue_TTL.put((CamReadStatus.GPIO_detected.value, time.time(), True))
         else:
-            if VERBOSE:
+            if VERBOSE or DEBUG:
                 printt('GPIO off')
             self.GPIO_active = False
-            self.queue_TTL.put((CamReadStatus.GPIO_detected, time.time(), False))
+            self.queue_TTL.put((CamReadStatus.GPIO_detected.value, time.time(), False))
 
     def profile_fps(self):
 
@@ -1244,6 +1251,8 @@ def source_process(CamInfo_array: List[CamInfo]):
     # start producing frames until there is a handler that can process them.
 
     if IS_LINUX:
+        GPIO.setmode(GPIO.BCM)
+        
         try:
             os.nice(-20)
         except:
