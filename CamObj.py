@@ -597,7 +597,7 @@ class CamDestinationObj(CamInfo):
         try:
             if not os.path.isdir(target_path):
                 os.mkdir(target_path)
-                print("Folder was not found, but created at: ", target_path)
+                print("Created save folder at: ", target_path)
             return target_path
         except Exception as ex:
             print(f"Error while attempting to create folder {target_path}")
@@ -811,19 +811,16 @@ class CamDestinationObj(CamInfo):
             lag = time.time() - timestamp
             self.CPU_lag_frames = lag * RECORD_FRAME_RATE
 
-            if self.IsRecording and self.CPU_lag_frames > 2:
+            if self.IsRecording and self.CPU_lag_frames > 4:
                 now = time.time()
                 if now - last_warning_time > 2.0:
-                    printt(f"Warning: box{self.box_id} cpu lag {self.CPU_lag_frames} frames")
+                    printt(f"Warning: box{self.box_id} cpu lag approx {self.CPU_lag_frames:.1f} frames")
                     last_warning_time = now
 
             frame_count += 1
             if frame_count % (RECORD_FRAME_RATE * 5) == 0:
                 if VERBOSE:
                     printt(f"Box {self.box_id} process loop is alive")
-
-        if DEBUG:
-            printt(f"Box {self.box_id} destination thread now waiting for frame queue to empty.")
 
         try:
             while True:
@@ -832,7 +829,7 @@ class CamDestinationObj(CamInfo):
             pass
 
         if DEBUG:
-            printt(f"Box {self.box_id} destination thread is exiting.")
+            printt(f"Box {self.box_id} consumer thread EXITING.")
 
         self.pending = self.PendingAction.Nothing
 
@@ -975,6 +972,10 @@ class CamDestinationObj(CamInfo):
         # Only call this when exiting program. Will stop all recordings, and release camera resources
 
         if self.IsRecording:
+                
+            if DEBUG:
+                printt(f"Box {self.box_id} consumer waiting for recording to end.")
+
             self.stop_record()  # This will set flag to be read by process_frame() thread
             while self.IsRecording:
                 time.sleep(0.1)
@@ -992,12 +993,6 @@ class CamDestinationObj(CamInfo):
         self.pending = self.PendingAction.Exiting
 
         self.status = -1
-
-        if DEBUG:
-            printt(f"Box {self.box_id} destination object waiting for thread to exit.")
-
-        if DEBUG:
-            printt(f"Box {self.box_id} destination object done.")
 
 
 # Commands that can be sent to the CameraRead process/threads
@@ -1206,7 +1201,7 @@ class CamReaderObj(CamInfo):
             frame_count += 1
 
         if DEBUG:
-            printt(f"Box {self.box_id} source object camera read thread is exiting.")
+            printt(f"Box {self.box_id} producer thread EXITING.")
 
 
 # SOURCE process, that is the source of frame data. This spawns up to 4

@@ -652,7 +652,7 @@ class RECORDER:
                                -1)  # -1 thickness fills circle
         
         if num_cams_lag > 0:
-            skip_display = (CPU_lag_frames / num_cams_lag) > 4 and self.display_frame_count % 10 != 0
+            skip_display = (CPU_lag_frames / num_cams_lag) > 2 and self.display_frame_count % 10 != 0
         else:
             skip_display = False
         
