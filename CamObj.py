@@ -229,11 +229,6 @@ class CamObj:
     filename_timestamp = "Timestamp.txt"
     filename_timestamp_TTL = "Timestamp_TTL.txt"
 
-    # Various file writer objects
-    Writer = None  # Writer for video file
-    fid = None  # Writer for timestamp file
-    fid_TTL = None  # Writer for TTL timestamp file
-
     start_recording_time = -1  # Timestamp (in seconds) when recording started.
     IsRecording = False
     GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
@@ -292,6 +287,12 @@ class CamObj:
         self.TTL_mode = self.TTL_type.Normal
         self.q = Queue()
 
+        # Various file writer objects
+        self.Writer = None  # Writer for video file
+        self.fid = None  # Writer for timestamp file
+        self.fid_TTL = None  # Writer for TTL timestamp file
+        self.fid_diagnostic = None  # Writer for debugging info
+
         # This becomes True after camera fps profiling is done, or determined not to be needed,
         # and process_frame() loop has started. This prevents GUI stuff from slowing down the profiling.
         self.IsReady = False
@@ -337,9 +338,13 @@ class CamObj:
             t0 = time.time()
             time.sleep(0.001)
             lag = time.time() - t0
-            if lag > 0.01 and DEBUG:
-                printt(f'Warning: Cam {self.box_id}, GPIO polling lag {lag}s')
-
+            if DEBUG and self.fid_diagnostic is not None:
+                try:
+                    self.fid_diagnostic.write(f'Cam, GPIO poll interval(s):\t{self.box_id}\t{lag}\n')
+                except:
+                    self.fid_diagnostic.close()
+                    self.fid_diagnostic = None
+                    pass
 
     def GPIO_callback_both(self, param):
         
@@ -749,6 +754,15 @@ class CamObj:
                     self.Writer.release()
                     return False
 
+                if DEBUG:
+                    try:
+                        # Create text file for diagnostic info
+
+                        self.fid_diagnostic = open(prefix + prefix_extra + "_diagnostic.txt", 'w')
+                        self.fid_diagnostic.write('Diagnostic info\n')
+                    except:
+                        print("Warning: unable to create DIAGNOSTIC text file.")
+
                 self.start_recording_time = time.time()
 
                 # Set this flag last
@@ -803,6 +817,14 @@ class CamObj:
                 except:
                     pass
                 self.fid_TTL = None
+
+            if DEBUG:
+                if self.fid_diagnostic is not None:
+                    try:
+                        self.fid_diagnostic.close()
+                    except:
+                        pass
+                    self.fid_diagnostic = None
 
     def profile_fps(self):
 
