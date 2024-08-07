@@ -60,5 +60,9 @@ DATA_FOLDER = /home/jhoulab/Videos/
 SHOW_RECORD_BUTTON = 1
 SHOW_SNAPSHOT_BUTTON = 0
 
+; Determines what is shown on recorded video
+SHOW_ANIMAL_ID_ON_VIDEO = 1
+SHOW_FRAME_NUMBER_ON_VIDEO = 1
+
 ; Determines whether button appears to zoom into center of video. This does not affect recording/snapshot
 SHOW_ZOOM_BUTTON = 0

@@ -141,6 +141,9 @@ SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', f
 SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
 SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
 
+SHOW_ANIMAL_ID_ON_VIDEO: int = configParser.getint('options', 'SHOW_ANIMAL_ID_ON_VIDEO', fallback=1)
+SHOW_FRAME_NUMBER_ON_VIDEO: int = configParser.getint('options', 'SHOW_FRAME_NUMBER_ON_VIDEO', fallback=1)
+
 is_debug: int = configParser.getint('options', 'DEBUG', fallback=DEBUG)
 DEBUG = is_debug == 1
 
@@ -351,29 +354,25 @@ class CamDestinationObj(CamInfo):
     # Extra long high pulse (2.5s) starts DEBUG TTL mode, where TTL duration is recorded
     #     and warnings are printed for any deviation from expected 75ms/25ms on/off duty cycle.
     #     deviation has to exceed 10ms to be printed.
-    def GPIO_callback1(self, timestamp):
+    def GPIO_rising_edge(self, timestamp):
 
         # Detected rising edge. Log the timestamp so that on falling edge we can see if this is a regular
         # pulse or a LONG pulse that starts binary mode
         self.most_recent_gpio_rising_edge_time = timestamp
-        elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
+        off_time = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
 
         # This is used to show blue dot on next frame.
         self.GPIO_active = 1
 
-        if elapsed > 0.1:
+        if off_time > 0.1:
             # Burst TTLs must have ~50ms gap.
-            if 0.5 > elapsed > 0.3:
-                # Note that old MedPC had 0.4s gap between 0.1s pulses.
-                # Check for back-compatibility
-                return
             self.num_consec_TTLs = 0
             if VERBOSE:
                 printt(f'Num consec TTLs: 0')
 
         if self.TTL_mode == self.TTL_type.Binary:
             # If already in binary mode, then long (0.2s) "off" period switches to checksum mode for final pulse
-            if 0.15 < elapsed < 0.5:
+            if 0.15 < off_time < 0.5:
                 if self.TTL_binary_bits != 16:
                     printt(f'Warning: in binary mode received {self.TTL_binary_bits} bits instead of 16')
                     self.current_animal_ID = "Unknown"
@@ -381,22 +380,22 @@ class CamDestinationObj(CamInfo):
                 if DEBUG:
                     printt('Binary mode now awaiting final checksum...')
                 self.TTL_mode = self.TTL_type.Checksum
-            elif elapsed >= 0.5:
-                printt(f'Very long pause of {elapsed}s detected (max should be 0.2s to end binary mode)')
+            elif off_time >= 0.5:
+                printt(f'Very long pause of {off_time}s detected (max should be 0.2s to end binary mode)')
                 self.TTL_mode = self.TTL_type.Normal
         elif self.TTL_mode == self.TTL_type.Debug:
             # In debug mode, all gaps should be 25ms
-            elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
-            if elapsed > 1:
+            off_time = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
+            if off_time > 1:
                 # Cancel debug mode
                 self.TTL_mode = self.TTL_type.Normal
-                printt(f'Exiting DEBUG TTL mode with pause length {elapsed}')
-            elif elapsed < 0.015 or elapsed > 0.035:
-                printt(f'{self.TTL_debug_count} off time {elapsed}, expected 0.025')
+                printt(f'Exiting DEBUG TTL mode with pause length {off_time}')
+            elif off_time < 0.015 or off_time > 0.035:
+                printt(f'{self.TTL_debug_count} off time {off_time}, expected 0.025')
 
         return
 
-    def GPIO_callback2(self, timestamp):
+    def GPIO_falling_edge(self, timestamp):
 
         # Detected falling edge
         self.most_recent_gpio_falling_edge_time = timestamp
@@ -418,17 +417,17 @@ class CamDestinationObj(CamInfo):
 
         if self.TTL_mode == self.TTL_type.Normal:
             # In normal (not binary or checksum) mode, read the following types of pulses:
-            # 0.1s on-time (range 0.01-0.15) indicates trial start, or session start/stop if doubled/tripled
-            # 0.2s on time (range 0.15-0.25) initiates binary mode
-            # 0.3s-2s ... ignored
+            # 0.1s on-time (range 0.01-0.2) indicates trial start, or session start/stop if doubled/tripled
+            # 0.3s on time (range 0.2-0.4) initiates binary mode (USED TO BE 0.2s)
+            # 0.4s-2s ... ignored
             # 2.5s (range 2.4-2.6s) starts DEBUG TTL mode
             # >3s ... ignored
-            if on_time < 0.15:
+            if on_time < 0.2:
                 self.num_consec_TTLs += 1
                 if VERBOSE:
                     printt(f'Num consec TTLs: {self.num_consec_TTLs}')
                 self.handle_GPIO()
-            elif on_time < 0.25:
+            elif on_time < 0.4:
                 if DEBUG:
                     printt('Starting binary mode')
                 self.TTL_mode = self.TTL_type.Binary
@@ -789,12 +788,14 @@ class CamDestinationObj(CamInfo):
 
             if loop_count % 5 == 0:
 
-                cmd = -1
                 try:
                     cmd, t, v = self.queue_TTL.get_nowait()
 
                 except queue.Empty:
-                    pass
+
+                    cmd = -1
+                    t = -1
+                    v = False
 
                 if cmd != -1:
                     if DEBUG:
@@ -804,9 +805,9 @@ class CamDestinationObj(CamInfo):
                         # GPIO status change.
                         # v[1] contains timestamp, v[2] contains True/False (High/Low)
                         if v:
-                            self.GPIO_callback1(t)
+                            self.GPIO_rising_edge(t)
                         else:
-                            self.GPIO_callback2(t)
+                            self.GPIO_falling_edge(t)
                         continue
                     elif cmd == CamReadStatus.ReadyForOperation.value:
                         self.IsReady = True
@@ -835,6 +836,7 @@ class CamDestinationObj(CamInfo):
             if self.IsRecording and self.CPU_lag_frames > 4:
                 now = time.time()
                 if now - last_warning_time > 2.0:
+                    # Warn at most every 2 seconds if CPU is lagging
                     printt(f"Warning: box{self.box_id} cpu lag approx {self.CPU_lag_frames:.1f} frames")
                     last_warning_time = now
 
@@ -894,7 +896,7 @@ class CamDestinationObj(CamInfo):
                            (0, 255, 0),  # color is in BGR order
                            -1)  # -1 thickness fills circle
 
-            if self.current_animal_ID is not None:
+            if self.current_animal_ID is not None and SHOW_ANIMAL_ID_ON_VIDEO:
                 # Add animal ID to video
                 # Location is (10,100) ... used to be at (10,90), but tended to overlap blue dot at (20,70)
                 #   so I moved it down slightly to 10,100. Later moved to 60,30 to avoid overlapping cage.
@@ -905,8 +907,9 @@ class CamDestinationObj(CamInfo):
 
             time_elapsed = timestamp - self.start_recording_time
 
-            if self.IsRecording and time_elapsed >= 0:
-                # Check if time_elapsed > 0, otherwise first couple of frames might be negative
+            if self.IsRecording and time_elapsed >= 0 and SHOW_FRAME_NUMBER_ON_VIDEO:
+                # Just checked if time_elapsed > 0, otherwise first couple of frames might be negative
+
                 self.frame_num += 1
 
                 # Add frame # to video. Scale down font to 70% since this number can be large.
@@ -921,6 +924,9 @@ class CamDestinationObj(CamInfo):
                 self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
 
             if self.IsRecording and time_elapsed >= 0:
+                # Again, we only write frames if time_elapsed >= 0, since first couple of
+                # frames might have negative values
+
                 if self.fid is not None and self.start_recording_time > 0:
                     try:
                         self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
