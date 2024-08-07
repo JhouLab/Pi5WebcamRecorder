@@ -340,14 +340,14 @@ class CamObj:
         # Detected rising edge. Log the timestamp so that on falling edge we can see if this is a regular
         # pulse or a LONG pulse that starts binary mode
         self.most_recent_gpio_rising_edge_time = time.time()
-        elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
+        elapsed_pause = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
 
         # This is used to show blue dot on next frame.
         self.GPIO_active = 1
 
-        if elapsed > 0.1:
+        if elapsed_pause > 0.1:
             # Burst TTLs must have ~50ms gap.
-            if 0.5 > elapsed > 0.3:
+            if 0.5 > elapsed_pause > 0.3:
                 # Note that old MedPC had 0.4s gap between 0.1s pulses.
                 # Check for back-compatibility
                 return
@@ -357,7 +357,7 @@ class CamObj:
 
         if self.TTL_mode == self.TTL_type.Binary:
             # If already in binary mode, then long (0.2s) "off" period switches to checksum mode for final pulse
-            if 0.15 < elapsed < 0.5:
+            if 0.15 < elapsed_pause < 0.5:
                 if self.TTL_binary_bits != 16:
                     printt(f'Warning: in binary mode received {self.TTL_binary_bits} bits instead of 16')
                     self.current_animal_ID = "Unknown"
@@ -365,18 +365,18 @@ class CamObj:
                 if DEBUG:
                     printt('Binary mode now awaiting final checksum...')
                 self.TTL_mode = self.TTL_type.Checksum
-            elif elapsed >= 0.5:
-                printt(f'Box {self.box_id} detected very long pause of {elapsed}s to end binary mode (should be 0.2s to switch to checksum)')
+            elif elapsed_pause >= 0.5:
+                printt(f'Box {self.box_id} detected very long pause of {elapsed_pause}s to end binary mode (should be 0.2s to switch to checksum)')
                 self.TTL_mode = self.TTL_type.Normal
         elif self.TTL_mode == self.TTL_type.Debug:
             # In debug mode, all gaps should be 25ms
-            elapsed = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
-            if elapsed > 1:
+            elapsed_pause = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
+            if elapsed_pause > 1:
                 # Cancel debug mode
                 self.TTL_mode = self.TTL_type.Normal
-                printt(f'Exiting DEBUG TTL mode with pause length {elapsed}')
-            elif elapsed < 0.015 or elapsed > 0.035:
-                printt(f'{self.TTL_debug_count} off time {elapsed}, expected 0.025')
+                printt(f'Exiting DEBUG TTL mode with pause length {elapsed_pause}')
+            elif elapsed_pause < 0.015 or elapsed_pause > 0.035:
+                printt(f'{self.TTL_debug_count} off time {elapsed_pause}, expected 0.025')
 
         return
 
