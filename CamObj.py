@@ -451,7 +451,7 @@ class CamDestinationObj(CamInfo):
             if on_time < 0.25:
                 self.num_consec_TTLs += 1
                 if VERBOSE:
-                    printt(f'Falling edge, num consec TTLs: {self.num_consec_TTLs}')
+                    printt(f'Falling edge, pulse width {on_time} num consec TTLs: {self.num_consec_TTLs}')
                 self.handle_GPIO()
             elif on_time < 0.4:
                 if DEBUG:
@@ -861,9 +861,6 @@ class CamDestinationObj(CamInfo):
                     CamDestinationObj.last_warning_time = now
 
             frame_count += 1
-            if frame_count % (RECORD_FRAME_RATE * 5) == 0:
-                if VERBOSE:
-                    printt(f"Box {self.box_id} process loop is alive")
 
         try:
             while True:
