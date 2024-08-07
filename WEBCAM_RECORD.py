@@ -601,13 +601,15 @@ class RECORDER:
             else:
                 tk.messagebox.showinfo("Warning", "Camera is not recording")
 
-    def show_disk_space(self):
+    def show_disk_space(self, msg=""):
         disk_space = get_disk_free_space()
         if disk_space is not None:
+            if msg != "":
+                msg = ", " + msg
             if any_camera_recording(self.cam_array):
-                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB")
+                self.disk_free_label.config(text=f"Free disk space: {disk_space:.3f}GB" + msg)
             else:
-                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.1f}GB")
+                self.disk_free_label.config(text=f"Free disk space: {disk_space:.1f}GB" + msg)
         else:
             self.disk_free_label.config(text=f"Disk path \"{DATA_FOLDER}\" invalid.")
 
@@ -652,8 +654,10 @@ class RECORDER:
                                -1)  # -1 thickness fills circle
         
         if num_cams_lag > 0:
-            skip_display = (CPU_lag_frames / num_cams_lag) > 1 and self.display_frame_count % 10 != 0
+            avg_CPU_lag = CPU_lag_frames / num_cams_lag
+            skip_display = avg_CPU_lag > 0.5 and self.display_frame_count % 10 != 0
         else:
+            avg_CPU_lag = -1
             skip_display = False
         
         # When operated locally, Raspberry Pi5 takes about 10-15ms to show
@@ -749,7 +753,7 @@ class RECORDER:
 
                 if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 5) == 0:
                     # Show total remaining disk space
-                    self.show_disk_space()
+                    self.show_disk_space(f"CPU lag: {avg_CPU_lag}")
                     
                 if key != -1:
                     self.handle_keypress(key, key >> 16, CV2KEY=True)
