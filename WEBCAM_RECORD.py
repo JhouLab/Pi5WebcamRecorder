@@ -712,7 +712,7 @@ class RECORDER:
 
         if self.pendingActionVar == self.PendingAction.StartRecord:
             cam_idx = self.pendingActionCameraIdx
-            if cam_idx == self.CAM_VALS.ALL:
+            if cam_idx == self.CAM_VALS.ALL.value:
                 # Start stress-test on all 4 cameras
                 for cam_obj in self.cam_array:
                     if cam_obj is None:
@@ -753,7 +753,7 @@ class RECORDER:
 
                 if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 5) == 0:
                     # Show total remaining disk space
-                    self.show_disk_space(f"CPU lag: {avg_CPU_lag}")
+                    self.show_disk_space(f"CPU lag: {avg_CPU_lag:.1f} frames")
                     
                 if key != -1:
                     self.handle_keypress(key, key >> 16, CV2KEY=True)
