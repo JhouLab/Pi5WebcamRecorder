@@ -332,6 +332,20 @@ class CamDestinationObj(CamInfo):
         # Use blank frame for this object if no camera object is specified
         self.frame = make_blank_frame(f"{self.box_id} - No camera connected")
 
+        if self.GPIO_pin >= 0 and platform.system() == "Linux":
+            # Start monitoring GPIO pin
+            try:
+                GPIO.setup(self.GPIO_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+                GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback)
+                printt(f'Cam {self.box_id} monitoring GPIO pin {self.GPIO_pin}')
+            except RuntimeError:
+                printt("Runtime Error: Unable to set up GPIO.")
+                print("    Please make sure there are no other processes using the GPIO hardware.")
+                print("    If this is a Pi5, make sure you have replaced the default gpio library as follows:")
+                print("    sudo apt remove python3-rpi.gpio")
+                print("    sudo apt install python3-rpi-lgpio")
+                exit()
+
     def start_consumer_thread(self):
 
         # Start thread that will process the frames sent by this loop.
@@ -340,6 +354,16 @@ class CamDestinationObj(CamInfo):
         if self.shared_memory_queue_frames is not None:
             t = threading.Thread(target=self.process_loop)
             t.start()
+
+    def GPIO_callback(self, param):
+
+        t = time.time()
+        v = GPIO.input(param)
+        self.queue_TTL.put((CameraCommands.GPIO, v))
+        if v:
+            self.GPIO_rising_edge(t)
+        else:
+            self.GPIO_falling_edge(t)
 
     # New GPIO pattern as of 6/22/2024
     # Long high pulse (0.2s) starts binary mode, transmitting 16 bits of animal ID.
@@ -1026,6 +1050,7 @@ class CamDestinationObj(CamInfo):
 class CameraCommands(Enum):
 
     Exit = 1
+    GPIO = 2
 
 
 class CamReaderObj(CamInfo):
@@ -1057,20 +1082,6 @@ class CamReaderObj(CamInfo):
             if DEBUG:
                 printt(f"Camera {self.box_id} not connected, won't profile or read.")
         
-        if self.GPIO_pin >= 0 and platform.system() == "Linux":
-            # Start monitoring GPIO pin
-            try:
-                GPIO.setup(self.GPIO_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-                GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback)
-                printt(f'Cam {self.box_id} monitoring GPIO pin {self.GPIO_pin}')
-            except RuntimeError:
-                printt("Runtime Error: Unable to set up GPIO.")
-                print("    Please make sure there are no other processes using the GPIO hardware.")
-                print("    If this is a Pi5, make sure you have replaced the default gpio library as follows:")
-                print("    sudo apt remove python3-rpi.gpio")
-                print("    sudo apt install python3-rpi-lgpio")
-                exit()
-
     def GPIO_callback(self, param):
         
         if DEBUG:
@@ -1257,8 +1268,6 @@ def source_process(CamInfo_array: List[CamInfo]):
     # start producing frames until there is a handler that can process them.
 
     if IS_LINUX:
-        GPIO.setmode(GPIO.BCM)
-        
         try:
             os.nice(-20)
         except:

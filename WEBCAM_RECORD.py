@@ -834,6 +834,9 @@ if __name__ == "__main__":
 
     if IS_PI5:
         # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
+        import RPi.GPIO as GPIO
+
+        GPIO.setmode(GPIO.BCM)
 
         # Identify camera via USB port position, rather than ID number which is unpredictable.
         IDENTIFY_CAMERA_BY_USB_PORT = True
@@ -1003,6 +1006,9 @@ if __name__ == "__main__":
 
     rec_obj = RECORDER(cam_array, root_window=root)
     rec_obj.top_window.mainloop()
+
+    if IS_PI5:
+        GPIO.cleanup()
 
     if DEBUG:
         printt("Exiting main program.", close_file=True)
