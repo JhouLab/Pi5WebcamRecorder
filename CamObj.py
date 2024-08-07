@@ -810,6 +810,7 @@ class CamDestinationObj(CamInfo):
                         continue
                     elif cmd == CamReadStatus.ReadyForOperation.value:
                         self.IsReady = True
+                        self.status = True
                     elif cmd == CamReadStatus.FrameFailed.value:
                         # Camera has become disconnected
                         self.status = False
@@ -1070,7 +1071,7 @@ class CamReaderObj(CamInfo):
     def GPIO_callback_both(self, param):
         
         if DEBUG:
-            print(f'Cam {self.box_id} received GPIO on pin {param}')
+            printt(f'Cam {self.box_id} received GPIO on pin {param}')
 
         # Param is the pin number, value is either True or False, to indicate High/Low
         if GPIO.input(param):
@@ -1279,6 +1280,8 @@ def source_process(CamInfo_array: List[CamInfo]):
 
     for cr in c:
         cr.t.join()
+        
+    GPIO.cleanup()
 
     if DEBUG:
         printt("Child process (producer) threads have all ended, child process itself will now exit")
