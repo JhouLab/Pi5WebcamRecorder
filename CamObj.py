@@ -347,10 +347,6 @@ class CamObj:
 
         if elapsed_pause > 0.1:
             # Burst TTLs must have ~50ms gap.
-            if 0.5 > elapsed_pause > 0.3:
-                # Note that old MedPC had 0.4s gap between 0.1s pulses.
-                # Check for back-compatibility
-                return
             self.num_consec_TTLs = 0
             if VERBOSE:
                 printt(f'Num consec TTLs: 0')
@@ -413,13 +409,20 @@ class CamObj:
                     printt(f'Num consec TTLs: {self.num_consec_TTLs}')
                 self.handle_GPIO()
             elif on_time < 0.25:
-                if DEBUG:
-                    printt('Starting binary mode')
-                self.TTL_mode = self.TTL_type.Binary
-                self.current_animal_ID = "Pending"
-                self.TTL_tmp_ID = 0
-                self.TTL_binary_bits = 0
-                self.TTL_checksum = 0
+                # Sometimes a 0.1s pulse will glitch and be perceived as longer than 0.15s.
+                # We can reduce the chance of this by only starting binary mode if not recording...
+                if not self.IsRecording:
+                    if DEBUG:
+                        printt('Starting binary mode')
+                    self.TTL_mode = self.TTL_type.Binary
+                    self.current_animal_ID = "Pending"
+                    self.TTL_tmp_ID = 0
+                    self.TTL_binary_bits = 0
+                    self.TTL_checksum = 0
+                else:
+                    printt(f'Box {self.box_id} received unexpectedly long TTL pulse {on_time}s (expected 0.1s)')
+                    self.num_consec_TTLs += 1
+                    self.handle_GPIO()
             elif 2.4 < on_time < 2.6 and DEBUG:
                 # Extra long pulse starts debug testing mode
                 self.TTL_mode = self.TTL_type.Debug
@@ -929,7 +932,7 @@ class CamObj:
             self.CPU_lag_frames = lag * RECORD_FRAME_RATE
             if self.IsRecording and self.CPU_lag_frames > 2:
                 now = time.time()
-                if now - last_warning_time > 2.0:
+                if now - last_warning_time > 4.0:
                     printt(f"Warning: box{self.box_id} cpu lag {self.CPU_lag_frames} frames")
                     last_warning_time = now
 
