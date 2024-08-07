@@ -215,6 +215,9 @@ def get_disk_free_space():
 
 
 class CamObj:
+
+    last_warning_time = 0
+
     cam = None  # this is the opencv camera object
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
     box_id = -1  # User-friendly camera ID. Will usually be USB port position/screen position, starting from 1
@@ -909,16 +912,16 @@ class CamObj:
                 self.q.put((frame, frame_time, TTL_on))
 
             frame_count += 1
-            if frame_count % (native_fps * 5) == 0:
-                if VERBOSE:
-                    printt(f"Box {self.box_id} camera read loop is alive")
 
         if DEBUG:
-            printt(f"Box {self.box_id} exiting camera read thread.")
+            printt(f"Box {self.box_id} exiting camera read (producer) thread.")
 
     def process_loop(self):
 
-        last_warning_time = time.time()
+        now = time.time()
+        if now > CamObj.last_warning_time:
+            CamObj.last_warning_time = now
+
         frame_count = 0
         while not self.pending == self.PendingAction.Exiting:
             v = self.q.get()
@@ -933,17 +936,14 @@ class CamObj:
             self.CPU_lag_frames = lag * RECORD_FRAME_RATE
             if self.IsRecording and self.CPU_lag_frames > 2:
                 now = time.time()
-                if now - last_warning_time > 4.0:
-                    printt(f"Warning: box{self.box_id} cpu lag {self.CPU_lag_frames} frames")
-                    last_warning_time = now
+                if now - CamObj.last_warning_time > 2.0:
+                    printt(f"Warning: high CPU lag (box{self.box_id}, {self.CPU_lag_frames:.1f} frames)")
+                    CamObj.last_warning_time = now
 
             frame_count += 1
-            if frame_count % (RECORD_FRAME_RATE * 5) == 0:
-                if VERBOSE:
-                    printt(f"Box {self.box_id} process loop is alive")
 
         if DEBUG:
-            printt(f"Box {self.box_id} exiting frame process thread.")
+            printt(f"Box {self.box_id} exiting consumer thread.")
 
     def release(self):
         self.status = 0

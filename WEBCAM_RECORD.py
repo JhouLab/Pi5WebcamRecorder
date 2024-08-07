@@ -791,13 +791,13 @@ class RECORDER:
             else:
                 tk.messagebox.showinfo("Warning", "Camera is not recording")
 
-    def show_disk_space(self):
+    def show_disk_space(self, msg=""):
         disk_space = get_disk_free_space()
         if disk_space is not None:
             if any_camera_recording(self.cam_array):
-                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB")
+                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB" + msg)
             else:
-                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.1f}GB")
+                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.1f}GB" + msg)
         else:
             self.disk_free_label.config(text=f"Disk path \"{DATA_FOLDER}\" invalid.")
 
@@ -904,7 +904,7 @@ class RECORDER:
 
         if self.pendingActionVar == self.PendingAction.StartRecord:
             cam_num = self.pendingActionCameraIdx
-            if cam_num == self.CAM_VALS.ALL:
+            if cam_num == self.CAM_VALS.ALL.value:
                 # Start stress-test on all 4 cameras
                 for cam_obj in self.cam_array:
                     if cam_obj is None:
@@ -945,7 +945,9 @@ class RECORDER:
 
                 if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 5) == 0:
                     # Show total remaining disk space
-                    self.show_disk_space()
+                    if avg_lag > 0:
+                        msg = f", CPU lag {avg_lag:.1f} frames"
+                    self.show_disk_space(msg)
                     
                 if key != -1:
                     self.handle_keypress(key, key >> 16, CV2KEY=True)
