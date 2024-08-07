@@ -1208,7 +1208,7 @@ class CamReaderObj(CamInfo):
                 elif cmd == CameraCommands.GPIO:
                     self.GPIO_active = val
                     lag = time.time() - t
-                    if DEBUG:
+                    if VERBOSE:
                         printt(f'Cam {self.box_id} TTL queue lag {lag:.4f}s')
             except queue.Empty:
                 pass
