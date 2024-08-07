@@ -10,7 +10,7 @@ while True:
         break
     time.sleep(0.001)
     lag = time.time() - t1
-    if lag > 0.002:
+    if lag > 0.005:
         print(f'{t1 - t_start:.6f}, lag {lag:.6f}s')
 
     if t1 > next_report:

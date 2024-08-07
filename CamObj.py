@@ -408,8 +408,6 @@ class CamObj:
             # >3s ... ignored
             if on_time < 0.2:
                 self.num_consec_TTLs += 1
-                if VERBOSE:
-                    printt(f'Num consec TTLs: {self.num_consec_TTLs}')
                 self.handle_GPIO()
             elif on_time < 0.4:
                 # Sometimes a 0.1s pulse will glitch and be perceived as longer than 0.15s.
@@ -691,7 +689,10 @@ class CamObj:
                 try:
                     # Create text file for frame timestamps
                     self.fid = open(self.filename_timestamp, 'w')
-                    self.fid.write('Frame_number\tTime_in_seconds\n')
+                    if DEBUG:
+                        self.fid.write('Frame_number\tTime_in_seconds\tCPU_lag\n')
+                    else:
+                        self.fid.write('Frame_number\tTime_in_seconds\n')
                 except:
                     print("Warning: unable to create text file for frame timestamps")
 
@@ -924,19 +925,15 @@ class CamObj:
 
         frame_count = 0
         while not self.pending == self.PendingAction.Exiting:
-            v = self.q.get()
+            frame, t, TTL = self.q.get()
 
-            # Do we need to deep-copy v? I assume not, but are we sure?
-            v0 = v[0]
-            v1 = v[1]
-            v2 = v[2]
-            self.process_frame(v0, v1, v2)
+            self.process_frame(frame, t, TTL)
 
-            lag = time.time() - v1
+            lag = time.time() - t
             self.CPU_lag_frames = lag * RECORD_FRAME_RATE
             if self.IsRecording and self.CPU_lag_frames > 2:
                 now = time.time()
-                if now - CamObj.last_warning_time > 2.0:
+                if now - CamObj.last_warning_time > 1.0:
                     printt(f"Warning: high CPU lag (box{self.box_id}, {self.CPU_lag_frames:.1f} frames)")
                     CamObj.last_warning_time = now
 
@@ -1023,7 +1020,10 @@ class CamObj:
                 if self.IsRecording and time_elapsed >= 0:
                     if self.fid is not None and self.start_recording_time > 0:
                         try:
-                            self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
+                            if DEBUG:
+                                self.fid.write(f"{self.frame_num}\t{time_elapsed}\t{self.CPU_lag_frames}\n")
+                            else:
+                                self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
                         except:
                             print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
                             self.__stop_recording_now()
@@ -1063,9 +1063,6 @@ class CamObj:
             str1 = f"{elapsed_min:.2f} minutes"
 
         str1 += f", {self.frame_num} frames"
-
-        if DEBUG:
-            str1 += f", {self.last_frame_written} (written)"
 
         if elapsed_sec > 5:
             fps = self.frame_num / elapsed_sec

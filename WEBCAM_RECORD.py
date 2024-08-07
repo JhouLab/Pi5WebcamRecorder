@@ -943,11 +943,12 @@ class RECORDER:
                     elif l is not None:
                         l.config(text="--")
 
-                if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 5) == 0:
+                if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 10) == 0:
                     # Show total remaining disk space
                     if avg_lag > 0:
-                        msg = f", CPU lag {avg_lag:.1f} frames"
-                    self.show_disk_space(msg)
+                        msg = f"CPU lag {avg_lag:.2f} frames"
+                    self.disk_free_label.config(text=msg)
+                    # self.show_disk_space(", " + msg)
                     
                 if key != -1:
                     self.handle_keypress(key, key >> 16, CV2KEY=True)
