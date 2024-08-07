@@ -17,7 +17,7 @@ from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG
-from get_hardware_info import *
+from extra.get_hardware_info import *
 
 # Note that
 import cv2
@@ -99,7 +99,6 @@ else:
     INPUT_PIN_LIST = [None] * 4  # List of input pins for the four cameras
     
 if EXPAND_VIDEO:
-    SCREEN_RESOLUTION = (WIDTH, HEIGHT)
     # This applies to the stereotax only
     # Upsample small frames to 640 width
     ratio = 1.5
@@ -197,7 +196,8 @@ def make_instruction_frame():
 if not os.path.isdir(DATA_FOLDER):
     # Parent folder doesn't exist ... this could be due to USB drive being unplugged?
     # Default to program directory
-    messagebox.showinfo(title="Warning",\
+    messagebox.showinfo(
+        title="Warning",
         message=f"Unable to find data folder:\n\n\"{DATA_FOLDER}\"\n\nWill save to program folder instead.")
     DATA_FOLDER = "."
 
@@ -428,8 +428,8 @@ class RECORDER:
                             cam_obj.TTL_mode = cam_obj.TTL_type.Normal
                             printt(f'Exiting DEBUG TTL mode for camera {cam_obj.box_id}')
 
-    pendingActionCamera = -1
-    pendingActionID = ""
+    pendingActionCameraIdx: int = -1
+    pendingActionID: str = ""
 
     def __init__(self, _cam_array: List[CamObj], root_window=None):
 
@@ -710,20 +710,20 @@ class RECORDER:
         else:
             tk.messagebox.showinfo("Success", f"Saved snapshot file: {fname}")
 
-    def show_start_record_dialog(self, cam_num):
+    def show_start_record_dialog(self, cam_idx: int):
 
-        if cam_num == self.CAM_VALS.ALL:
+        if cam_idx == self.CAM_VALS.ALL:
             self.pendingActionVar = self.PendingAction.StartRecord
-            self.pendingActionCamera = self.CAM_VALS.ALL
+            self.pendingActionCameraIdx = self.CAM_VALS.ALL.value
             return
 
-        cam_obj = self.cam_array[cam_num]
+        cam_obj = self.cam_array[cam_idx]
 
         if cam_obj is None:
             return
 
         if cam_obj.IsRecording:
-            tk.messagebox.showinfo("Warning", f"Camera {FIRST_CAMERA_ID+cam_num} is already recording.")
+            tk.messagebox.showinfo("Warning", f"Camera {FIRST_CAMERA_ID + cam_idx} is already recording.")
             return
 
         w = tk.Toplevel(self.top_window)
@@ -736,19 +736,19 @@ class RECORDER:
         f = tk.Frame(w)  # , highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
         f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
 
-        l1 = tk.Label(f, text=f"Enter animal ID for camera #{cam_num + FIRST_CAMERA_ID}", anchor="e")
+        l1 = tk.Label(f, text=f"Enter animal ID for camera #{cam_idx + FIRST_CAMERA_ID}", anchor="e")
         l1.pack(side=tk.TOP)
 
-        s = tk.StringVar(value=f"Box{cam_num + FIRST_CAMERA_ID}")
+        s = tk.StringVar(value=f"Box{cam_idx + FIRST_CAMERA_ID}")
         e = tk.Entry(f, textvariable=s)
         e.pack(side=tk.TOP)
 
-        e.bind('<Return>', partial(self.confirm_start, w, cam_num, s, True))
+        e.bind('<Return>', partial(self.confirm_start, w, cam_idx, s, True))
 
-        b = tk.Button(f, text="    OK    ", command=partial(self.confirm_start, w, cam_num, s, True, None))
+        b = tk.Button(f, text="    OK    ", command=partial(self.confirm_start, w, cam_idx, s, True, None))
         b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
         b.focus_set()
-        b = tk.Button(f, text="Cancel", command=partial(self.confirm_start, w, cam_num, s, False, None))
+        b = tk.Button(f, text="Cancel", command=partial(self.confirm_start, w, cam_idx, s, False, None))
         b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
 
     def confirm_start(self, widget, cam_num, animal_id_var, result, _event):
@@ -768,7 +768,7 @@ class RECORDER:
 
         self.pendingActionVar = self.PendingAction.StartRecord
         self.pendingActionID = animal_id_var.get()
-        self.pendingActionCamera = cam_num
+        self.pendingActionCameraIdx = cam_num
 
     def show_stop_dialog(self, cam_num):
 
@@ -901,7 +901,7 @@ class RECORDER:
             key = get_key()
 
         if self.pendingActionVar == self.PendingAction.StartRecord:
-            cam_num = self.pendingActionCamera
+            cam_num = self.pendingActionCameraIdx
             if cam_num == self.CAM_VALS.ALL:
                 # Start stress-test on all 4 cameras
                 for cam_obj in self.cam_array:

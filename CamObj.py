@@ -316,11 +316,11 @@ class CamObj:
         if GPIO.input(param):
             if VERBOSE:
                 printt('GPIO on')
-            self.GPIO_callback1(param)
+            self.GPIO_callback_rising_edge(param)
         else:
             if VERBOSE:
                 printt('GPIO off')
-            self.GPIO_callback2(param)
+            self.GPIO_callback_falling_edge(param)
 
     # New GPIO pattern as of 6/22/2024
     # Long high pulse (0.2s) starts binary mode, transmitting 16 bits of animal ID.
@@ -335,7 +335,7 @@ class CamObj:
     # Extra long high pulse (2.5s) starts DEBUG TTL mode, where TTL duration is recorded
     #     and warnings are printed for any deviation from expected 75ms/25ms on/off duty cycle.
     #     deviation has to exceed 10ms to be printed.
-    def GPIO_callback1(self, param):
+    def GPIO_callback_rising_edge(self, param):
 
         # Detected rising edge. Log the timestamp so that on falling edge we can see if this is a regular
         # pulse or a LONG pulse that starts binary mode
@@ -376,7 +376,7 @@ class CamObj:
 
         return
 
-    def GPIO_callback2(self, param):
+    def GPIO_callback_falling_edge(self, param):
 
         # Detected falling edge
         self.most_recent_gpio_falling_edge_time = time.time()
@@ -385,32 +385,33 @@ class CamObj:
         self.GPIO_active = 0
 
         if self.most_recent_gpio_rising_edge_time < 0:
-            # Ignore falling edge if no rising edge was detected. Is this even possible, e.g. at program launch?
+            # Ignore falling edge if no rising edge was detected, e.g. at program launch?
             return
 
         # Calculate pulse width
         on_time = time.time() - self.most_recent_gpio_rising_edge_time
 
         if on_time < 0.01:
-            # Ignore very short pulses, which are probably some kind of mechanical switch bounce
+            # Ignore very short pulses, which are probably mechanical switch bounce.
             # But: sometimes these are a result of pulses piling up in Windows, then getting sent all at once.
             return
 
         if self.TTL_mode == self.TTL_type.Normal:
             # In normal (not binary or checksum) mode, read the following types of pulses:
-            # 0.1s on-time (range 0.01-0.15) indicates trial start, or session start/stop if doubled/tripled
-            # 0.2s on time (range 0.15-0.25) initiates binary mode
-            # 0.3s-2s ... ignored
+            # 0.1s on-time (range 0.01-0.2) indicates trial start, or session start/stop if doubled/tripled
+            # 0.3s on time (range 0.2-0.4) initiates binary mode. USED TO BE 0.2.
+            # 0.4s-2s ... ignored
             # 2.5s (range 2.4-2.6s) starts DEBUG TTL mode
             # >3s ... ignored
-            if on_time < 0.15:
+            if on_time < 0.2:
                 self.num_consec_TTLs += 1
                 if VERBOSE:
                     printt(f'Num consec TTLs: {self.num_consec_TTLs}')
                 self.handle_GPIO()
-            elif on_time < 0.25:
+            elif on_time < 0.4:
                 # Sometimes a 0.1s pulse will glitch and be perceived as longer than 0.15s.
-                # We can reduce the chance of this by only starting binary mode if not recording...
+                # So we moved range from .15-.25 to .2-.4
+                # We also reduce the chance of this by only starting binary mode if not recording.
                 if not self.IsRecording:
                     if DEBUG:
                         printt('Starting binary mode')
@@ -420,7 +421,7 @@ class CamObj:
                     self.TTL_binary_bits = 0
                     self.TTL_checksum = 0
                 else:
-                    printt(f'Box {self.box_id} received unexpectedly long TTL pulse {on_time}s (expected 0.1s)')
+                    printt(f'Box {self.box_id} received TTL pulse longer than the usual 0.1s ({on_time}s)')
                     self.num_consec_TTLs += 1
                     self.handle_GPIO()
             elif 2.4 < on_time < 2.6 and DEBUG:
