@@ -390,11 +390,11 @@ class CamDestinationObj(CamInfo):
         # This is used to show blue dot on next frame.
         self.GPIO_active = 1
 
-        if off_time > 0.1:
-            # Burst TTLs must have ~50ms gap.
+        if off_time > 0.15:
+            # Burst TTLs must have short (~50ms) gap.
             self.num_consec_TTLs = 0
             if VERBOSE:
-                printt(f'Num consec TTLs: 0')
+                printt(f'Rising edge, num consec TTLs: 0')
 
         if self.TTL_mode == self.TTL_type.Binary:
             # If already in binary mode, then long (0.2s) "off" period switches to checksum mode for final pulse
@@ -451,7 +451,7 @@ class CamDestinationObj(CamInfo):
             if on_time < 0.25:
                 self.num_consec_TTLs += 1
                 if VERBOSE:
-                    printt(f'Num consec TTLs: {self.num_consec_TTLs}')
+                    printt(f'Falling edge, num consec TTLs: {self.num_consec_TTLs}')
                 self.handle_GPIO()
             elif on_time < 0.4:
                 if DEBUG:
