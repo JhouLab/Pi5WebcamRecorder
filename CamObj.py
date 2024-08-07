@@ -310,7 +310,7 @@ class CamObj:
 
     def GPIO_callback_both(self, param):
         
-        if DEBUG:
+        if VERBOSE:
             printt(f'Cam {self.box_id} received GPIO on pin {param}')
 
         if GPIO.input(param):
@@ -366,7 +366,7 @@ class CamObj:
                     printt('Binary mode now awaiting final checksum...')
                 self.TTL_mode = self.TTL_type.Checksum
             elif elapsed >= 0.5:
-                printt(f'Very long pause of {elapsed}s detected (max should be 0.2s to end binary mode)')
+                printt(f'Box {self.box_id} detected very long pause of {elapsed}s to end binary mode (should be 0.2s to switch to checksum)')
                 self.TTL_mode = self.TTL_type.Normal
         elif self.TTL_mode == self.TTL_type.Debug:
             # In debug mode, all gaps should be 25ms
