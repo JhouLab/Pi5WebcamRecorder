@@ -842,11 +842,13 @@ class RECORDER:
                                -1)  # -1 thickness fills circle
                  
         if num_cams_lag > 0:
-            # If average lag is more than 2 frames, then slow down display to update only once every
+            # Typical lag should be only about 0.25 frames.
+            # If average lag is more than .5 frames, then slow down display to update only once every
             # 10 frames, which will be about once per second.
             avg_lag = CPU_lag_frames / num_cams_lag
-            skip_display = avg_lag > 2 and self.display_frame_count % 10 != 0
+            skip_display = avg_lag > .5 and self.display_frame_count % 10 != 0
         else:
+            avg_lag = -1
             skip_display = False
         
         # When operated locally, Raspberry Pi5 takes about 10-15ms to show
