@@ -6,6 +6,7 @@ import time
 import os
 import sys
 import multiprocessing
+import extra.shared_arrays
 
 # We no longer need PIL, since we are using OpenCV to render images, which is MUCH faster.
 #
@@ -954,7 +955,8 @@ if __name__ == "__main__":
                 cam_info_array[port] = CamInfo(cam_id,
                                                FIRST_CAMERA_ID + port,
                                                GPIO_pin=INPUT_PIN_LIST[port],
-                                               queue_frames=multiprocessing.Queue(),
+                                               queue_TTL=multiprocessing.Queue(),
+                                               shared_memory_queue_frames=extra.shared_arrays.TimestampedArrayQueue(),
                                                queue_commands=multiprocessing.Queue())
             else:
                 # If not using USB port number, then cameras are put into array
@@ -964,6 +966,7 @@ if __name__ == "__main__":
                 cam_info_array.append(CamInfo(cam_id,
                                               FIRST_CAMERA_ID + len(cam_info_array),
                                               -1,   # No GPIO if we don't know what USB port cam is plugged into
+                                              extra.shared_arrays.TimestampedArrayQueue(),
                                               multiprocessing.Queue(),
                                               multiprocessing.Queue()))
 
@@ -988,7 +991,7 @@ if __name__ == "__main__":
         else:
             # Start the DESTINATION threads that belong to the MAIN process
             cam_array[idx1] = CamDestinationObj(cam_info_obj1)
-            cam_array[idx1].start_destination_thread()
+            cam_array[idx1].start_consumer_thread()
 
         if IDENTIFY_CAMERA_BY_USB_PORT:
             printt(

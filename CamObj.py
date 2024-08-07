@@ -18,6 +18,9 @@ from typing import List
 import numpy as np
 import psutil  # This is used to obtain disk free space
 
+import extra.shared_arrays
+
+
 #
 # This file is intended to be imported by webcam_recorder.py
 #
@@ -231,14 +234,17 @@ class CamInfo:
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
     box_id = -1  # User-friendly camera ID. Will usually be USB port position/screen position, starting from 1
     GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
-    queue_frames: multiprocessing.Queue = None
+    queue_TTL: multiprocessing.Queue = None
+    shared_memory_queue_frames: extra.shared_arrays.TimestampedArrayQueue = None
     queue_commands: multiprocessing.Queue = None
 
-    def __init__(self, id_num=-1, box_id=-1, GPIO_pin=-1, queue_frames=None, queue_commands=None):
+    def __init__(self, id_num=-1, box_id=-1, GPIO_pin=-1,
+                 shared_memory_queue_frames=None, queue_commands=None, queue_TTL=None):
         self.id_num = id_num
         self.box_id = box_id
         self.GPIO_pin = GPIO_pin
-        self.queue_frames = queue_frames
+        self.queue_TTL = queue_TTL
+        self.shared_memory_queue_frames = shared_memory_queue_frames
         self.queue_commands = queue_commands
 
     def make_copy(self, c: CamInfo):
@@ -246,7 +252,8 @@ class CamInfo:
             self.id_num = c.id_num
             self.box_id = c.box_id
             self.GPIO_pin = c.GPIO_pin
-            self.queue_frames = c.queue_frames
+            self.queue_TTL = c.queue_TTL
+            self.shared_memory_queue_frames = c.shared_memory_queue_frames
             self.queue_commands = c.queue_commands
 
 
@@ -323,12 +330,12 @@ class CamDestinationObj(CamInfo):
         # Use blank frame for this object if no camera object is specified
         self.frame = make_blank_frame(f"{self.box_id} - No camera connected")
 
-    def start_destination_thread(self):
+    def start_consumer_thread(self):
 
         # Start thread that will process the frames sent by this loop.
         # This allows read_camera_continuous(), i.e. this thread, to
         # run at max speed.
-        if self.queue_frames is not None:
+        if self.shared_memory_queue_frames is not None:
             t = threading.Thread(target=self.process_loop)
             t.start()
 
@@ -771,39 +778,39 @@ class CamDestinationObj(CamInfo):
 
     def process_loop(self):
 
+        printt(f"Cam {self.box_id} consumer thread started.")
+
         last_warning_time = time.time()
         frame_count = 0
         while self.pending != self.PendingAction.Exiting:
 
             try:
-                v = self.queue_frames.get(timeout=0.1)
+                cmd, t, v = self.queue_TTL.get_nowait()
+                if cmd == CamReadStatus.GPIO_Success.value:
+                    # GPIO status change.
+                    # v[1] contains timestamp, v[2] contains True/False (High/Low)
+                    if v:
+                        self.GPIO_callback1(t)
+                    else:
+                        self.GPIO_callback2(t)
+                    continue
+                elif cmd == CamReadStatus.ReadyForOperation.value:
+                    self.IsReady = True
+            except queue.Empty:
+                pass
+
+            try:
+                timestamp, self.status, self.frame, TTL_on = self.shared_memory_queue_frames.get(timeout=0.1)
             except queue.Empty:
                 # If empty, then most likely we are shutting down.
                 # Just spin every 0.1 seconds to handle Exiting flag
                 continue
 
-            # Do we need to deep-copy v? I assume not, but are we sure?
-            if v[0] == CamReadStatus.FrameFailed.value:
-                self.status = v[0]
-            elif v[0] == CamReadStatus.FrameSuccess.value:
-                self.status = v[0]
-            elif v[0] == CamReadStatus.GPIO_Success:
-                # We have GPIO status change. v[2] contains timestamp, v[3] contains True/False (High/Low)
-                if v[3]:
-                    self.GPIO_callback1(v[2])
-                else:
-                    self.GPIO_callback2(v[2])
-                continue
-            elif v[0] == CamReadStatus.ReadyForOperation:
-                self.IsReady = True
-
-            self.frame = v[1]
-            timestamp = v[2]
-            TTL_on = v[3]
             self.process_frame(timestamp, TTL_on)
 
             lag = time.time() - timestamp
             self.CPU_lag_frames = lag * RECORD_FRAME_RATE
+
             if self.IsRecording and self.CPU_lag_frames > 2:
                 now = time.time()
                 if now - last_warning_time > 2.0:
@@ -820,7 +827,7 @@ class CamDestinationObj(CamInfo):
 
         try:
             while True:
-                self.queue_frames.get_nowait()
+                self.shared_memory_queue_frames.get(block=False)
         except queue.Empty:
             pass
 
@@ -1021,7 +1028,7 @@ class CamReaderObj(CamInfo):
         if self.cam.isOpened():
             self.t = threading.Thread(target=self.read_one_cam_continuous)
             self.t.start()
-            print(f"Camera {self.box_id} reader thread started.")
+            printt(f"Camera {self.box_id} reader (producer) thread started.")
         else:
             self.cam = None
             # No camera connected
@@ -1048,12 +1055,12 @@ class CamReaderObj(CamInfo):
             if VERBOSE:
                 printt('GPIO on')
             self.GPIO_active = True
-            self.queue_frames.put((CamReadStatus.GPIO_Success, None, time.time(), True))
+            self.queue_TTL.put((CamReadStatus.GPIO_Success, time.time(), True))
         else:
             if VERBOSE:
                 printt('GPIO off')
             self.GPIO_active = False
-            self.queue_frames.put((CamReadStatus.GPIO_Success, None, time.time(), False))
+            self.queue_TTL.put((CamReadStatus.GPIO_Success, time.time(), False))
 
     def profile_fps(self):
 
@@ -1147,7 +1154,7 @@ class CamReaderObj(CamInfo):
         else:
             native_fps = NATIVE_FRAME_RATE
 
-        self.queue_frames.put((CamReadStatus.ReadyForOperation, None, time.time(), True))
+        self.queue_TTL.put((CamReadStatus.ReadyForOperation.value, time.time(), True))
 
         count = 0
         frame_count = 0
@@ -1194,7 +1201,7 @@ class CamReaderObj(CamInfo):
             count += 1
             if count == count_interval:
                 count = 0
-                self.queue_frames.put((status, frame, frame_time, TTL_on))
+                self.shared_memory_queue_frames.put(frame, status, TTL_on)
 
             frame_count += 1
 
@@ -1242,13 +1249,13 @@ def source_process(CamInfo_array: List[CamInfo]):
             time.sleep(0.25)
 
     if DEBUG:
-        printt("Child process is done, but waiting for threads to end")
+        printt("Child (source) process setup complete. Producer threads will run until program exits.")
 
     for cr in c:
         cr.t.join()
 
     if DEBUG:
-        printt("Child process threads have all ended, child process itself will now exit")
+        printt("Child process (producer) threads have all ended, child process itself will now exit")
 
 
 if __name__ == '__main__':
