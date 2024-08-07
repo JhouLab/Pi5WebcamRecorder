@@ -236,16 +236,16 @@ class CamInfo:
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
     box_id = -1  # User-friendly camera ID. Will usually be USB port position/screen position, starting from 1
     GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
-    queue_TTL: multiprocessing.Queue = None
+    queue_status: multiprocessing.Queue = None
     shared_memory_queue_frames: extra.shared_arrays.TimestampedArrayQueue = None
     queue_commands: multiprocessing.Queue = None
 
     def __init__(self, id_num=-1, box_id=-1, GPIO_pin=-1,
-                 shared_memory_queue_frames=None, queue_commands=None, queue_TTL=None):
+                 shared_memory_queue_frames=None, queue_commands=None, queue_status=None):
         self.id_num = id_num
         self.box_id = box_id
         self.GPIO_pin = GPIO_pin
-        self.queue_TTL = queue_TTL
+        self.queue_status = queue_status
         self.shared_memory_queue_frames = shared_memory_queue_frames
         self.queue_commands = queue_commands
 
@@ -254,7 +254,7 @@ class CamInfo:
             self.id_num = c.id_num
             self.box_id = c.box_id
             self.GPIO_pin = c.GPIO_pin
-            self.queue_TTL = c.queue_TTL
+            self.queue_status = c.queue_status
             self.shared_memory_queue_frames = c.shared_memory_queue_frames
             self.queue_commands = c.queue_commands
 
@@ -359,7 +359,7 @@ class CamDestinationObj(CamInfo):
 
         t = time.time()
         v = GPIO.input(param)
-        self.queue_TTL.put((CameraCommands.GPIO, v))
+        self.queue_commands.put((CameraCommands.GPIO, t, v))
         if v:
             self.GPIO_rising_edge(t)
         else:
@@ -813,7 +813,7 @@ class CamDestinationObj(CamInfo):
             if loop_count % 5 == 0:
 
                 try:
-                    cmd, t, v = self.queue_TTL.get_nowait()
+                    cmd, t, v = self.queue_status.get_nowait()
 
                 except queue.Empty:
 
@@ -825,15 +825,7 @@ class CamDestinationObj(CamInfo):
                     if DEBUG:
                         printt(f'Cam {self.box_id} received command {cmd}')
 
-                    if cmd == CamReadStatus.GPIO_detected.value:
-                        # GPIO status change.
-                        # v[1] contains timestamp, v[2] contains True/False (High/Low)
-                        if v:
-                            self.GPIO_rising_edge(t)
-                        else:
-                            self.GPIO_falling_edge(t)
-                        continue
-                    elif cmd == CamReadStatus.ReadyForOperation.value:
+                    if cmd == CamReadStatus.ReadyForOperation.value:
                         self.IsReady = True
                         self.status = True
                     elif cmd == CamReadStatus.FrameFailed.value:
@@ -1033,7 +1025,7 @@ class CamDestinationObj(CamInfo):
 
         if self.has_cam:
             try:
-                self.queue_commands.put((CameraCommands.Exit, 0))
+                self.queue_commands.put((CameraCommands.Exit, 0, 0))
             except:
                 pass
             self.has_cam = False
@@ -1092,12 +1084,12 @@ class CamReaderObj(CamInfo):
             if VERBOSE or DEBUG:
                 printt('GPIO on')
             self.GPIO_active = True
-            self.queue_TTL.put((CamReadStatus.GPIO_detected.value, time.time(), True))
+            self.queue_commands.put((CamReadStatus.GPIO_detected, time.time(), True))
         else:
             if VERBOSE or DEBUG:
                 printt('GPIO off')
             self.GPIO_active = False
-            self.queue_TTL.put((CamReadStatus.GPIO_detected.value, time.time(), False))
+            self.queue_commands.put((CamReadStatus.GPIO_detected, time.time(), False))
 
     def profile_fps(self):
 
@@ -1191,7 +1183,7 @@ class CamReaderObj(CamInfo):
         else:
             native_fps = NATIVE_FRAME_RATE
 
-        self.queue_TTL.put((CamReadStatus.ReadyForOperation.value, time.time(), True))
+        self.queue_status.put((CamReadStatus.ReadyForOperation.value, time.time(), True))
 
         count = 0
         frame_count = 0
@@ -1206,12 +1198,15 @@ class CamReaderObj(CamInfo):
         while True:
 
             try:
-                cmd, val = self.queue_commands.get(block=False)
+                cmd, t, val = self.queue_commands.get(block=False)
                 if cmd == CameraCommands.Exit:
                     break
                 elif cmd == CameraCommands.GPIO:
                     self.GPIO_active = val
-            except:
+                    lag = time.time() - t
+                    if DEBUG:
+                        printt(f'Cam {self.box_id} TTL queue lag {lag:.4f}s')
+            except queue.Empty:
                 pass
 
             if self.cam is not None and self.cam.isOpened():
@@ -1236,7 +1231,7 @@ class CamReaderObj(CamInfo):
                     self.cam = None
                     if DEBUG:
                         printt(f"Unable to read camera in box {self.box_id}.")
-                    self.queue_TTL.put((CamReadStatus.FrameFailed.value, time.time(), False))
+                    self.queue_status.put((CamReadStatus.FrameFailed.value, time.time(), False))
                     break
 
             count += 1

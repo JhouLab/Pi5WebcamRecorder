@@ -937,7 +937,7 @@ if __name__ == "__main__":
                 cam_info_array[port] = CamInfo(cam_id,
                                                FIRST_CAMERA_ID + port,
                                                GPIO_pin=INPUT_PIN_LIST[port],
-                                               queue_TTL=multiprocessing.Queue(),
+                                               queue_status=multiprocessing.Queue(),
                                                shared_memory_queue_frames=extra.shared_arrays.TimestampedArrayQueue(),
                                                queue_commands=multiprocessing.Queue())
             else:
