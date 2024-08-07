@@ -278,6 +278,8 @@ class CamDestinationObj(CamInfo):
 
     frame_num = -1  # Number of frames recorded so far.
 
+    last_warning_time = 0
+
     class TTL_type(Enum):
         Normal = 0
         Binary = 1
@@ -436,24 +438,24 @@ class CamDestinationObj(CamInfo):
 
         if on_time < 0.01:
             # Ignore very short pulses, which are probably some kind of mechanical switch bounce
-            # But: sometimes these are a result of pulses piling up in Windows, then getting sent all at once.
+            # But: sometimes these are a result of pulses piling up in operating system, then getting sent all at once.
             return
 
         if self.TTL_mode == self.TTL_type.Normal:
             # In normal (not binary or checksum) mode, read the following types of pulses:
-            # 0.1s on-time (range 0.01-0.2) indicates trial start, or session start/stop if doubled/tripled
-            # 0.3s on time (range 0.2-0.4) initiates binary mode (USED TO BE 0.2s)
+            # 0.1s on-time (range 0.01-0.25) indicates trial start, or session start/stop if doubled/tripled
+            # 0.3s on time (range 0.25-0.4) initiates binary mode (USED TO BE 0.2s)
             # 0.4s-2s ... ignored
             # 2.5s (range 2.4-2.6s) starts DEBUG TTL mode
             # >3s ... ignored
-            if on_time < 0.2:
+            if on_time < 0.25:
                 self.num_consec_TTLs += 1
                 if VERBOSE:
                     printt(f'Num consec TTLs: {self.num_consec_TTLs}')
                 self.handle_GPIO()
             elif on_time < 0.4:
                 if DEBUG:
-                    printt('Starting binary mode')
+                    printt(f'Box {self.box_id} starting binary mode after pulse of duration {on_time}')
                 self.TTL_mode = self.TTL_type.Binary
                 self.current_animal_ID = "Pending"
                 self.TTL_tmp_ID = 0
@@ -802,7 +804,9 @@ class CamDestinationObj(CamInfo):
 
         printt(f"Cam {self.box_id} consumer thread started.")
 
-        last_warning_time = time.time()
+        t = time.time()
+        if t > CamDestinationObj.last_warning_time:
+            CamDestinationObj.last_warning_time = t
         frame_count = 0
         loop_count = 0
 
@@ -851,10 +855,10 @@ class CamDestinationObj(CamInfo):
 
             if self.IsRecording and self.CPU_lag_frames > 4:
                 now = time.time()
-                if now - last_warning_time > 2.0:
+                if now - CamDestinationObj.last_warning_time > 2.0:
                     # Warn at most every 2 seconds if CPU is lagging
                     printt(f"Warning: box{self.box_id} cpu lag approx {self.CPU_lag_frames:.1f} frames")
-                    last_warning_time = now
+                    CamDestinationObj.last_warning_time = now
 
             frame_count += 1
             if frame_count % (RECORD_FRAME_RATE * 5) == 0:
