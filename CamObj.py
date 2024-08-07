@@ -301,9 +301,9 @@ class CamObj:
             self.frame = make_blank_frame(f"{box_id} - No camera found")
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
+            GPIO.setup(GPIO_pin, GPIO.IN) # Should not be needed, since we already did it on line 88 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
             if USE_CALLBACK_FOR_GPIO:
                 # Start monitoring GPIO pin
-                GPIO.setup(GPIO_pin, GPIO.IN) # Should not be needed, since we already did it on line 88 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
                 GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
             else:
                 t1 = threading.Thread(target=self.GPIO_thread)
@@ -320,11 +320,11 @@ class CamObj:
     def GPIO_thread(self):
 
         g = self.GPIO_pin
-        s = GPIO.input(g) == 1
+        s = GPIO.input(g)
 
         while not self.pending == self.PendingAction.Exiting:
 
-            if GPIO.input(s) != s:
+            if GPIO.input(g) != s:
 
                 t = time.time()
                 s = not s
