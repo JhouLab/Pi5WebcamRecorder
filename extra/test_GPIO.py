@@ -13,31 +13,48 @@ class GPIO_tester:
 
     def __init__(self):
         self.GPIO_pin = 4
+        GPIO.setmode(GPIO.BCM)
         GPIO.setup(self.GPIO_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-        GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
+        GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback)
 
-    def GPIO_callback_both(self, param):
+    def GPIO_callback(self, param):
 
-        print(f'Received GPIO on pin {param}, val is {GPIO.input(param)}', flush=True)
+        print(f'Callback received GPIO on pin {param}, val is {GPIO.input(param)}', flush=True)
 
 
 def source_process():
 
-    GPIO.setmode(GPIO.BCM)
     gt = GPIO_tester()
 
+    t = time.time()
+    next_report = t+1
     while True:
-        time.sleep(1)
-        print(f'GPIO value {GPIO.input(4)}')
+        time.sleep(0)
+        if time.time() > next_report:
+            print(f'GPIO value {GPIO.input(4)}')
+            next_report = next_report + 1
+        if time.time() > t + 10:
+            break
+        
+#        print(f'GPIO value {GPIO.input(4)}')
 
 if __name__ == '__main__':
     
-    p1 = multiprocessing.Process(target=source_process)
-    p1.start()
-    
-    input('Press enter to quit')
-    
-    p1.terminate()
+    if True:
+        source_process()
+        input('Press enter to quit')
+    else:
+        GPIO.cleanup()
+        
+        p1 = multiprocessing.Process(target=source_process)
+        p1.start()
+        
+        input('Press enter to quit')
+        
+        p1.terminate()
+else:
+    import RPi.GPIO as GPIO
+
     
     
     

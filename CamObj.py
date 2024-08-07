@@ -1037,7 +1037,7 @@ class CamReaderObj(CamInfo):
 
     def __init__(self, c: CamInfo):
         super().__init__()
-
+        
         super().make_copy(c)
 
         if platform.system() == "Windows":
@@ -1062,7 +1062,7 @@ class CamReaderObj(CamInfo):
             try:
                 GPIO.setup(self.GPIO_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
                 GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback)
-                print(f'Cam {self.box_id} monitoring GPIO pin {self.GPIO_pin}')
+                printt(f'Cam {self.box_id} monitoring GPIO pin {self.GPIO_pin}')
             except RuntimeError:
                 printt("Runtime Error: Unable to set up GPIO.")
                 print("    Please make sure there are no other processes using the GPIO hardware.")
@@ -1195,9 +1195,11 @@ class CamReaderObj(CamInfo):
         while True:
 
             try:
-                cmd = self.queue_commands.get(block=False)
-                if cmd[0] == CameraCommands.Exit:
+                cmd, val = self.queue_commands.get(block=False)
+                if cmd == CameraCommands.Exit:
                     break
+                elif cmd == CameraCommands.GPIO:
+                    self.GPIO_active = val
             except:
                 pass
 
@@ -1280,12 +1282,10 @@ def source_process(CamInfo_array: List[CamInfo]):
 
     if DEBUG:
         printt("Child (source) process setup complete. Producer threads will run until program exits.")
-
+        
     for cr in c:
         cr.t.join()
         
-    GPIO.cleanup()
-
     if DEBUG:
         printt("Child process (producer) threads have all ended, child process itself will now exit")
 
