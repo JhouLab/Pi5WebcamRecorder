@@ -5,24 +5,40 @@
 #
 
 import time
-from RPi.GPIO import GPIO
+import RPi.GPIO as GPIO
+import multiprocessing
 
 
 class GPIO_tester:
 
-    def __int__(self):
+    def __init__(self):
         self.GPIO_pin = 4
         GPIO.setup(self.GPIO_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
         GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
 
     def GPIO_callback_both(self, param):
 
-        print(f'Received GPIO on pin {param}')
+        print(f'Received GPIO on pin {param}, val is {GPIO.input(param)}', flush=True)
 
 
-if __name__ == '__main__':
+def source_process():
 
+    GPIO.setmode(GPIO.BCM)
     gt = GPIO_tester()
 
     while True:
-        time.sleep(.1)
+        time.sleep(1)
+        print(f'GPIO value {GPIO.input(4)}')
+
+if __name__ == '__main__':
+    
+    p1 = multiprocessing.Process(target=source_process)
+    p1.start()
+    
+    input('Press enter to quit')
+    
+    p1.terminate()
+    
+    
+    
+

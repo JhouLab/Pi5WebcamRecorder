@@ -1057,15 +1057,12 @@ class CamReaderObj(CamInfo):
             if DEBUG:
                 printt(f"Camera {self.box_id} not connected, won't profile or read.")
         
-        if DEBUG:
-            print(f'Cam {self.box_id} GPIO pin is {self.GPIO_pin}')
-
         if self.GPIO_pin >= 0 and platform.system() == "Linux":
             # Start monitoring GPIO pin
             try:
                 GPIO.setup(self.GPIO_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-                GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
-                print(f'Cam {self.box_id} GPIO has been set up')
+                GPIO.add_event_detect(self.GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback)
+                print(f'Cam {self.box_id} monitoring GPIO pin {self.GPIO_pin}')
             except RuntimeError:
                 printt("Runtime Error: Unable to set up GPIO.")
                 print("    Please make sure there are no other processes using the GPIO hardware.")
@@ -1074,7 +1071,7 @@ class CamReaderObj(CamInfo):
                 print("    sudo apt install python3-rpi-lgpio")
                 exit()
 
-    def GPIO_callback_both(self, param):
+    def GPIO_callback(self, param):
         
         if DEBUG:
             printt(f'Cam {self.box_id} received GPIO on pin {param}')

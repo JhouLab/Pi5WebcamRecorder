@@ -841,29 +841,8 @@ if __name__ == "__main__":
         # Reduce display frame rate, to avoid overloading CPU on Pi
         MAX_DISPLAY_FRAMES_PER_SECOND = 10
 
-        #
-        # Note that the standard RPi.GPIO library does NOT work on Pi5 (only Pi4).
-        # On Pi5, please uninstall the standard library and install the following
-        # drop-in replacement:
-        #
-        # sudo apt remove python3-rpi.gpio
-        # sudo apt install python3-rpi-lgpio
-        #
-        import RPi.GPIO as GPIO
-
         # GPIO.setmode(GPIO.BCM)  # Set's GPIO pins to BCM GPIO numbering
         INPUT_PIN_LIST = [4, 5, 6, 7]  # List of input pins for the four cameras
-        for p in INPUT_PIN_LIST:
-            try:
-                pass
-#                GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Set to be input, with internal pull-down resistor
-            except RuntimeError:
-                printt("Runtime Error: Unable to set up GPIO.")
-                print("    If this is a Pi5, please replace the default gpio library as follows:")
-                print("    sudo apt remove python3-rpi.gpio")
-                print("    sudo apt install python3-rpi-lgpio")
-                exit()
-
     else:
         # Don't identify by USB port. Instead, use camera ID provided by operating system, which is unpredictable.
         IDENTIFY_CAMERA_BY_USB_PORT = False
