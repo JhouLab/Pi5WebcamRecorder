@@ -192,7 +192,7 @@ def printt(txt, omit_date_time=False, close_file=False):
             s = now.strftime("%Y-%m-%d %H:%M:%S: ") + txt
     else:
         s = txt
-    print(s)
+    print(s, flush=True)
     try:
         fid_log.write(s + "\n")
         fid_log.flush()
@@ -309,6 +309,9 @@ class CamObj:
         t.start()
 
     def GPIO_callback_both(self, param):
+        
+        if DEBUG:
+            printt(f'Cam {self.box_id} received GPIO on pin {param}')
 
         if GPIO.input(param):
             if VERBOSE:
