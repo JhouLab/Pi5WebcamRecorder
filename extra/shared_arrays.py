@@ -137,7 +137,7 @@ class ArrayQueue:
 class TimestampedArrayQueue(ArrayQueue):
     """A small extension to support timestamps saved alongside arrays"""
 
-    def put(self, element, status=True, TTL_on=False):
+    def put(self, element, TTL_on=False):
         if self.view is None or not self.view.fits(element):
             self.view = ArrayView(
                 self.array.get_obj(), self.maxbytes, element.dtype, element.shape
@@ -145,48 +145,19 @@ class TimestampedArrayQueue(ArrayQueue):
         else:
             self.check_full()
 
-        # qitem is (dtype, shape, idx) tuple
-        qitem = self.view.push(element)
+        # element goes into memory mapped queue. Returns qitem, which is (dtype, shape, idx) tuple
+        dtype_shape_idx = self.view.push(element)
         timestamp = time.time()
 
-        # Timestamp goes into "regular" queue, along with tuple
-        self.queue.put((timestamp, status, TTL_on, qitem))
+        # These small items go into the standard multiprocessor queue.
+        self.queue.put((timestamp, TTL_on, dtype_shape_idx))
 
     def get(self, **kwargs):
         # Get timestamp and index from a conventional multiprocessor queue. This will
         # throw the usual queue.Empty exception if there are no items
-        timestamp, status, TTL_on, aritem = self.queue.get(**kwargs)
-        if self.view is None or not self.view.fits(aritem):
-            self.view = ArrayView(self.array.get_obj(), self.maxbytes, *aritem)
-        self.read_queue.put(aritem[2])
-        return timestamp, status, self.view.pop(aritem[2]), TTL_on
+        timestamp, TTL_on, dtype_shape_idx = self.queue.get(**kwargs)
+        if self.view is None or not self.view.fits(dtype_shape_idx):
+            self.view = ArrayView(self.array.get_obj(), self.maxbytes, *dtype_shape_idx)
+        self.read_queue.put(dtype_shape_idx[2])
+        return timestamp, self.view.pop(dtype_shape_idx[2]), TTL_on
 
-
-class IndexedArrayQueue(ArrayQueue):
-    """A small extension to support timestamps saved alongside arrays"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.counter = 0
-
-    def put(self, element, timestamp=None):
-        if self.view is None or not self.view.fits(element):
-            self.view = ArrayView(
-                self.array.get_obj(), self.maxbytes, element.dtype, element.shape
-            )
-        else:
-            self.check_full()
-
-        qitem = self.view.push(element)
-        if timestamp is None:
-            timestamp = datetime.now()
-
-        self.queue.put((timestamp, self.counter, qitem))
-        self.counter += 1
-
-    def get(self, **kwargs):
-        timestamp, index, aritem = self.queue.get(**kwargs)
-        if self.view is None or not self.view.fits(aritem):
-            self.view = ArrayView(self.array.get_obj(), self.maxbytes, *aritem)
-        self.read_queue.put(aritem[2])
-        return timestamp, index, self.view.pop(aritem[2])

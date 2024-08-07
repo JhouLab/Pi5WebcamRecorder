@@ -223,9 +223,8 @@ def get_disk_free_space():
 
 # Status codes in messages from camera
 class CamReadStatus(Enum):
-    FrameFailed = 0
-    FrameSuccess = 1
-    GPIO_Success = 2
+    FrameFailed = 1
+    GPIO_detected = 2
     ReadyForOperation = 3  # This message indicates that profiling is done (or was not needed)
 
 
@@ -782,25 +781,46 @@ class CamDestinationObj(CamInfo):
 
         last_warning_time = time.time()
         frame_count = 0
+        loop_count = 0
+
         while self.pending != self.PendingAction.Exiting:
 
-            try:
-                cmd, t, v = self.queue_TTL.get_nowait()
-                if cmd == CamReadStatus.GPIO_Success.value:
-                    # GPIO status change.
-                    # v[1] contains timestamp, v[2] contains True/False (High/Low)
-                    if v:
-                        self.GPIO_callback1(t)
-                    else:
-                        self.GPIO_callback2(t)
-                    continue
-                elif cmd == CamReadStatus.ReadyForOperation.value:
-                    self.IsReady = True
-            except queue.Empty:
-                pass
+            loop_count += 1
+
+            if loop_count % 5 == 0:
+
+                cmd = -1
+                try:
+                    cmd, t, v = self.queue_TTL.get_nowait()
+
+                except queue.Empty:
+                    pass
+
+                if cmd != -1:
+                    if DEBUG:
+                        printt(f'Cam {self.box_id} received command {cmd}')
+
+                    if cmd == CamReadStatus.GPIO_detected.value:
+                        # GPIO status change.
+                        # v[1] contains timestamp, v[2] contains True/False (High/Low)
+                        if v:
+                            self.GPIO_callback1(t)
+                        else:
+                            self.GPIO_callback2(t)
+                        continue
+                    elif cmd == CamReadStatus.ReadyForOperation.value:
+                        self.IsReady = True
+                    elif cmd == CamReadStatus.FrameFailed.value:
+                        # Camera has become disconnected
+                        self.status = False
+                        self.has_cam = False
+                        printt(f"Cam {self.box_id} has become disconnected.")
+                        self.frame = make_blank_frame(f"Cam {self.box_id} is disconnected.")
+                        time.sleep(0.1)
+                        continue
 
             try:
-                timestamp, self.status, self.frame, TTL_on = self.shared_memory_queue_frames.get(timeout=0.1)
+                timestamp, self.frame, TTL_on = self.shared_memory_queue_frames.get(timeout=0.1)
             except queue.Empty:
                 # If empty, then most likely we are shutting down.
                 # Just spin every 0.1 seconds to handle Exiting flag
@@ -1050,12 +1070,12 @@ class CamReaderObj(CamInfo):
             if VERBOSE:
                 printt('GPIO on')
             self.GPIO_active = True
-            self.queue_TTL.put((CamReadStatus.GPIO_Success, time.time(), True))
+            self.queue_TTL.put((CamReadStatus.GPIO_detected, time.time(), True))
         else:
             if VERBOSE:
                 printt('GPIO off')
             self.GPIO_active = False
-            self.queue_TTL.put((CamReadStatus.GPIO_Success, time.time(), False))
+            self.queue_TTL.put((CamReadStatus.GPIO_detected, time.time(), False))
 
     def profile_fps(self):
 
@@ -1157,9 +1177,8 @@ class CamReaderObj(CamInfo):
         # Downsampling interval. Must be integer, hence use of ceiling function
         count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
 
-        # This is here just to keep PyCharm from issuing warning at line 878
+        # This is here just to keep PyCharm from issuing warning at line 1196
         frame = None
-        frame_time = 0
         TTL_on = None
 
         while True:
@@ -1171,32 +1190,35 @@ class CamReaderObj(CamInfo):
             except:
                 pass
 
-            if self.cam.isOpened():
+            if self.cam is not None and self.cam.isOpened():
                 try:
                     # Read frame if camera is available and open
                     status, frame = self.cam.read()
-                    frame_time = time.time()
-                    #                TTL_on = self.GPIO_active
-                    TTL_on = False
+                    TTL_on = self.GPIO_active
                 except:
                     # Set flag that will cause loop to exit shortly
                     status = False
             else:
                 status = False
+                time.sleep(0.05)
 
             if not status:
                 # Read failed. Remove this camera so we won't attempt to read it later.
                 # Should we set a flag to try to periodically reconnect?
 
                 # Remove camera resources
-                self.cam.release()
-                printt(f"Unable to read camera in box {self.box_id}.")
-                break
+                if self.cam is not None:
+                    self.cam.release()
+                    self.cam = None
+                    if DEBUG:
+                        printt(f"Unable to read camera in box {self.box_id}.")
+                    self.queue_TTL.put((CamReadStatus.FrameFailed.value, time.time(), False))
+                    break
 
             count += 1
             if count == count_interval:
                 count = 0
-                self.shared_memory_queue_frames.put(frame, status, TTL_on)
+                self.shared_memory_queue_frames.put(frame, TTL_on)
 
             frame_count += 1
 
