@@ -806,22 +806,22 @@ class RECORDER:
         if self.pendingActionVar == self.PendingAction.Exiting:
             self.cleanup()
             return
-        
+
         if self.skipped_display_frames < 10:
             # The plain GUI (that we use because it works fine as root, unlike the fancy one)
             # has persistent sizing issues at startup. Forcing resolution for first 10 frames seems
             # to work, albeit is a little hacky.
             cv2.resizeWindow(DISPLAY_WINDOW_NAME, SCREEN_RESOLUTION[0], SCREEN_RESOLUTION[1])
-        
+
         CPU_lag_frames = 0
         num_cams_lag = 0
 
         for idx, cam_obj in enumerate(self.cam_array):
-            
+
             if cam_obj.status:
                 CPU_lag_frames += cam_obj.CPU_lag_frames
                 num_cams_lag += 1
-            
+
             # Check if any updates are needed
             if cam_obj.need_update_button_state_flag:
                 self.set_button_state_callback(idx)
@@ -840,7 +840,7 @@ class RECORDER:
                                int(8 * FONT_SCALE),  # Radius
                                (0, 0, 255),  # Red dot (color is in BGR order)
                                -1)  # -1 thickness fills circle
-                 
+
         if num_cams_lag > 0:
             # Typical lag should be only about 0.25 frames.
             # If average lag is more than .5 frames, then slow down display to update only once every
@@ -850,16 +850,16 @@ class RECORDER:
         else:
             avg_lag = -1
             skip_display = False
-        
+
         # When operated locally, Raspberry Pi5 takes about 10-15ms to show
         # frame to screen. When operated remotely, does this go up? Maybe to 20-25ms?
         # Also needs 2-5ms to print status updates (frame rate, file size).
         # So if CPU is lagging, we need to skip display
-        
+
         if skip_display:
             # We are in danger of running late, so skip display.
             # Note that AVI/text files have already been written, so data is safe.
-            
+
             # Checks if key is pressed. Also runs cv2 message pump, which keeps UI responsive.
             key = get_key()
             self.skipped_display_frames += 1
@@ -898,7 +898,7 @@ class RECORDER:
 
             # This shows image to screen. Actual screen update won't happen until get_key() is called.
             self.imshow(img)
-            
+
             # Checks if key is pressed. Also runs cv2 message pump, which keeps UI responsive and updates screen if needed
             key = get_key()
 
@@ -920,41 +920,36 @@ class RECORDER:
             self.pendingActionVar = self.PendingAction.Nothing
 
         self.display_frame_count = self.display_frame_count + 1
-        
+
         # Now print status updates, such as elapsed recording time, file size.
         # This takes 2-5ms
         if self.display_frame_count % MAX_DISPLAY_FRAMES_PER_SECOND == 0:
             # Print status once per second
-            
+
             if VERBOSE:
                 print(f"Frame count: {self.display_frame_count}, CPU lag {CPU_lag_frames:.1f} frames, cumulative "
                       f"skipped frames {self.skipped_display_frames}.")
 
-            if any_camera_recording(cam_array):
-                for idx, cam in enumerate(cam_array):
-                    if VERBOSE:
-                        print(f"    Box {cam.box_id}, CPU load {cam.CPU_lag_frames:.3f}")
-
-                    # Print elapsed time for each camera that is actively recording.
-                    l = self.widget_array[idx].StatusLabel
+            for idx, cam in enumerate(cam_array):
+                if cam is not None:
                     if cam.IsRecording:
+                        # Print elapsed time for each camera that is actively recording.
+                        lab = self.widget_array[idx].StatusLabel
                         s = cam.get_elapsed_recording_time()
-                        l.config(text=s)
-                    elif l is not None:
-                        l.config(text="--")
+                        lab.config(text=s)
+                    elif cam.final_status_string is not None:
+                        self.widget_array[idx].StatusLabel.config(text=cam.final_status_string)
+                        cam.final_status_string = None
 
                 if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 10) == 0:
                     # Show total remaining disk space
-                    if avg_lag > 0:
-                        msg = f"CPU lag {avg_lag:.2f} frames"
-                    self.disk_free_label.config(text=msg)
-                    # self.show_disk_space(", " + msg)
-                    
+                    self.show_disk_space()
+
                 if key != -1:
                     self.handle_keypress(key, key >> 16, CV2KEY=True)
-                    
+
                 # Run get_key() again so status updates show to screen to make diagnostic timing info more accurate.
-                key = get_key()                
+                key = get_key()
 
         if key != -1:
             self.handle_keypress(key, key >> 16, CV2KEY=True)
@@ -963,7 +958,7 @@ class RECORDER:
             # Will this ever get executed? Only way would be if waitkey receives a character during self.imshow()
             self.cleanup()
             return
-        
+
         self.top_window.after(int(self.FRAME_INTERVAL * 1000), self.update_image)
 
     def set_button_state_callback(self, cam_num):

@@ -293,6 +293,9 @@ class CamObj:
         self.fid_TTL = None  # Writer for TTL timestamp file
         self.fid_diagnostic = None  # Writer for debugging info
 
+        # Status string to show on GUI
+        self.final_status_string = '--'
+
         # This becomes True after camera fps profiling is done, or determined not to be needed,
         # and process_frame() loop has started. This prevents GUI stuff from slowing down the profiling.
         self.IsReady = False
@@ -797,7 +800,8 @@ class CamObj:
 
             if self.IsRecording:
                 self.IsRecording = False
-                printt(f"Stopping recording camera {self.box_id} after " + self.get_elapsed_time_string())
+                self.final_status_string = self.get_elapsed_time_string()
+                printt(f"Stopping recording camera {self.box_id} after " + self.final_status_string)
 
             self.need_update_button_state_flag = True
 
