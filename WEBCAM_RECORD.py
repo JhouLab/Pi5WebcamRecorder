@@ -828,7 +828,7 @@ class RECORDER:
                 CPU_lag_frames += cam_obj.CPU_lag_frames
                 num_cams_lag += 1
 
-            # Check if any updates are needed
+            # Check if any GUI button updates are needed
             if cam_obj.need_update_button_state_flag:
                 self.set_button_state_callback(idx)
                 cam_obj.need_update_button_state_flag = False
@@ -857,7 +857,7 @@ class RECORDER:
             # The spikes tend to occur about every 8.25 seconds, or 240 frames. Does this have
             # something to do with generation of key frames?
             avg_lag = CPU_lag_frames / num_cams_lag
-            skip_display = avg_lag > .5 and self.display_frame_count % 10 != 0
+            skip_display = avg_lag > .5 and self.display_frame_count % 5 != 0
         else:
             skip_display = False
 
