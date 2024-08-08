@@ -819,10 +819,9 @@ class RECORDER:
 
         CPU_lag_frames = 0
         num_cams_lag = 0
+        which_disp = self.which_display
 
         for idx, cam_obj in enumerate(self.cam_array):
-
-            self.cached_frame[idx] = cam_obj.frame
 
             if cam_obj.status:
                 CPU_lag_frames += cam_obj.CPU_lag_frames
@@ -833,19 +832,27 @@ class RECORDER:
                 self.set_button_state_callback(idx)
                 cam_obj.need_update_button_state_flag = False
 
-            if cam_obj.status:
-                # Add text to top left to show camera number. This will NOT show in recording
-                cv2.putText(self.cached_frame[idx], str(FIRST_CAMERA_ID + idx),
-                            (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
-                            cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
-                            round(FONT_SCALE + 0.5))  # Line thickness
-                if cam_obj.IsRecording:
-                    # Add red circle if recording. Again, this does not show in recorded file.
-                    cv2.circle(self.cached_frame[idx],
-                               (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
-                               int(8 * FONT_SCALE),  # Radius
-                               (0, 0, 255),  # Red dot (color is in BGR order)
-                               -1)  # -1 thickness fills circle
+            if which_disp == idx:
+                show_this_frame = True
+            else:
+                show_this_frame = which_disp == self.CAM_VALS.ALL.value
+
+            if show_this_frame:
+                self.cached_frame[idx] = cam_obj.frame
+
+                if cam_obj.status:
+                    # Add text to top left to show camera number. This will NOT show in recording
+                    cv2.putText(self.cached_frame[idx], str(FIRST_CAMERA_ID + idx),
+                                (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
+                                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
+                                round(FONT_SCALE + 0.5))  # Line thickness
+                    if cam_obj.IsRecording:
+                        # Add red circle if recording. Again, this does not show in recorded file.
+                        cv2.circle(self.cached_frame[idx],
+                                   (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
+                                   int(8 * FONT_SCALE),  # Radius
+                                   (0, 0, 255),  # Red dot (color is in BGR order)
+                                   -1)  # -1 thickness fills circle
 
         if num_cams_lag > 0:
             # Typical lag should be only about 0.25 frames.
@@ -875,11 +882,11 @@ class RECORDER:
             self.skipped_display_frames += 1
         else:
             # Timing is OK, go ahead and show video to screen
-            if self.which_display >= 0:
+            if which_disp >= 0:
                 # Show just one of the 4 cameras
-                cam_obj = self.cam_array[self.which_display]
+                cam_obj = self.cam_array[which_disp]
                 # Need to make a deep copy here
-                img = self.cached_frame[self.which_display]
+                img = self.cached_frame[which_disp]
 
                 if cam_obj.status:
                     if self.zoom_center:
@@ -891,7 +898,7 @@ class RECORDER:
                         img = cv2.resize(img, [WIDTH, HEIGHT])
                 if SCREEN_RESOLUTION[0] != WIDTH:
                     img = cv2.resize(img, SCREEN_RESOLUTION)
-            elif self.which_display == self.CAM_VALS.ALL.value:
+            elif which_disp == self.CAM_VALS.ALL.value:
                 # Show all 4 cameras on one screen (downsized 2x)
                 for index, elt in enumerate(self.cam_array):
                     if elt is not None and elt.frame is not None:
