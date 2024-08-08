@@ -1,5 +1,6 @@
 from __future__ import annotations  # Need this for type hints to work on older Python versions
 
+import tkinter.filedialog
 #
 # This file is intended to be imported by webcam_recorder.py
 #
@@ -223,6 +224,26 @@ def get_disk_free_space():
         return gigabytes_avail
     else:
         return None
+
+
+def verify_directory():
+    # get custom version of datetime for folder search/create
+    now = datetime.datetime.now()
+    year = '{:04d}'.format(now.year)
+    month = '{:02d}'.format(now.month)
+    day = '{:02d}'.format(now.day)
+    date = '{}-{}-{}'.format(year, month, day)
+
+    target_path = os.path.join(DATA_FOLDER, date)
+    try:
+        if not os.path.isdir(target_path):
+            os.mkdir(target_path)
+            print("Folder was not found, but created at: ", target_path)
+        return target_path
+    except Exception as ex:
+        print(f"Error while attempting to create folder {target_path}")
+        print("    Error type is: ", ex.__class__.__name__)
+        return ''  # This will force file to go to program folder
 
 
 class CamObj:
@@ -648,28 +669,10 @@ class CamObj:
 
     # Creates directory with current date in yyyy-mm-dd format.
     # Then verifies that directory exists, and if not, creates it
-    def verify_directory(self):
-        # get custom version of datetime for folder search/create
-        now = datetime.datetime.now()
-        year = '{:04d}'.format(now.year)
-        month = '{:02d}'.format(now.month)
-        day = '{:02d}'.format(now.day)
-        date = '{}-{}-{}'.format(year, month, day)
-
-        target_path = os.path.join(DATA_FOLDER, date)
-        try:
-            if not os.path.isdir(target_path):
-                os.mkdir(target_path)
-                print("Folder was not found, but created at: ", target_path)
-            return target_path
-        except Exception as ex:
-            print(f"Error while attempting to create folder {target_path}")
-            print("    Error type is: ", ex.__class__.__name__)
-            return ''  # This will force file to go to program folder
 
     def get_filename_prefix(self, animal_ID=None, add_date=True):
         
-        path = self.verify_directory()
+        path = verify_directory()
 
         if self.current_animal_ID is not None:
             prefix_ending = f"Box{self.box_id}_" + str(self.current_animal_ID)
@@ -720,7 +723,7 @@ class CamObj:
                         self.current_animal_ID = animal_ID
                     prefix = self.get_filename_prefix()
 
-                prefix_extra = ""
+                prefix_unique = ""
                 suffix_count = 0
 
                 try:
@@ -733,9 +736,9 @@ class CamObj:
                             # Iterate until we get a unique filename
                             if suffix_count > 0:
                                 # After first pass, we append suffixes _1, _2, _3, ...
-                                prefix_extra = f"_{suffix_count}"
+                                prefix_unique = f"_{suffix_count}"
 
-                            self.filename_video = prefix + prefix_extra + "_Video.avi"
+                            self.filename_video = prefix + prefix_unique + "_Video.avi"
 
                             if stress_test_mode:
                                 # In stress test mode, don't need to check if filename is unique,
@@ -758,8 +761,8 @@ class CamObj:
                     print(f"Warning: unable to create video file: '{self.filename_video}'")
                     return False
 
-                self.filename_timestamp = prefix + prefix_extra + "_Frames.txt"
-                self.filename_timestamp_TTL = prefix + prefix_extra + "_TTLs.txt"
+                self.filename_timestamp = prefix + prefix_unique + "_Frames.txt"
+                self.filename_timestamp_TTL = prefix + prefix_unique + "_TTLs.txt"
 
                 if not self.Writer.isOpened():
                     # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
@@ -796,7 +799,7 @@ class CamObj:
                     try:
                         # Create text file for diagnostic info
 
-                        self.fid_diagnostic = open(prefix + prefix_extra + "_diagnostic.txt", 'w')
+                        self.fid_diagnostic = open(prefix + prefix_unique + "_diagnostic.txt", 'w')
                         self.fid_diagnostic.write('Time\tGPIO_lag1\tGPIO_lag2\n')
                     except:
                         print("Warning: unable to create DIAGNOSTIC text file.")
@@ -1193,10 +1196,11 @@ class CamObj:
 
                 index += 1
 
-            cv2.imwrite(fname, self.frame)
+            f = tkinter.filedialog.asksaveasfilename(confirmoverwrite=True, initialfile=fname)
+            cv2.imwrite(f, self.frame)
 
-            printt(f'Wrote snapshot to file {fname}')
-            return fname
+            printt(f'Wrote snapshot to file {f}')
+            return f
         else:
             return None
 
