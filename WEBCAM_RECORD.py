@@ -12,7 +12,6 @@ import sys
 # from PIL import Image, ImageTk  # Import pillow from Jeffrey A. Clark
 
 import numpy as np
-import math
 from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
@@ -21,7 +20,6 @@ from extra.get_hardware_info import *
 
 # Note that
 import cv2
-from sys import gettrace
 from enum import Enum
 from functools import partial
 
@@ -42,7 +40,7 @@ if IS_LINUX:
     try:
         os.nice(-20)
     except PermissionError:
-        res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n" \
+        res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n"
                                      "Recommend running as root for optimal performance.\n\nProceed anyway?")
         if res == 'no':
             sys.exit()
@@ -849,10 +847,14 @@ class RECORDER:
             # Typical lag should be only about 0.25 frames.
             # If average lag is more than .5 frames, then slow down display to update only once every
             # 10 frames, which will be about once per second.
+            #
+            # Strangely, CPU_lag_frames distribution is usually low (<.3 frames) but will suddenly
+            # spike to a value around 1-3 frames, and then recovers over the next couple of frames.
+            # The spikes tend to occur about every 8.25 seconds, or 240 frames. Does this have
+            # something to do with generation of key frames?
             avg_lag = CPU_lag_frames / num_cams_lag
             skip_display = avg_lag > .5 and self.display_frame_count % 10 != 0
         else:
-            avg_lag = -1
             skip_display = False
 
         # When operated locally, Raspberry Pi5 takes about 10-15ms to show

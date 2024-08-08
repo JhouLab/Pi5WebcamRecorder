@@ -63,5 +63,6 @@ SHOW_SNAPSHOT_BUTTON = 0
 ; Determines whether button appears to zoom into center of video. This does not affect recording/snapshot
 SHOW_ZOOM_BUTTON = 0
 
-; If 1, then GPIO is handled by callback, which ought to be faster, but somehow isn't.
+; If 1, then GPIO is handled by callback, which ought to be faster, but somehow isn't. Will probably remove
+; this in the future.
 USE_CALLBACK_FOR_GPIO = 0
