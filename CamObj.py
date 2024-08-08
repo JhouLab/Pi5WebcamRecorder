@@ -1029,12 +1029,15 @@ class CamObj:
 
             self.lag2 = time.time() - t
             self.CPU_lag_frames = self.lag2 * RECORD_FRAME_RATE
-            if self.CPU_lag_frames > 5:
+            if self.CPU_lag_frames > 10:
                 now = time.time()
                 if now - CamObj.last_warning_time > 1.0:
-                    # What I'm calling CPU lag is mostly compression lag
-                    printt(f"Warning: high CPU lag (box{self.box_id}, {self.CPU_lag_frames:.1f} frames)")
-                    CamObj.last_warning_time = now
+                    # What I'm calling CPU lag is mostly compression lag. This is fairly
+                    # harmless until queue fills up. Queue is about 50 frames, so we don't
+                    # issue warning until lag gets to 10 frames.
+                    if DEBUG:
+                        printt(f"Warning: high compression lag (box{self.box_id}, {self.CPU_lag_frames:.1f} frames)")
+                        CamObj.last_warning_time = now
 
             frame_count += 1
 
