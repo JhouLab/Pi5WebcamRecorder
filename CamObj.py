@@ -134,7 +134,7 @@ SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', f
 SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
 SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
 
-USE_CALLBACK_FOR_GPIO: int = configParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=1)
+USE_CALLBACK_FOR_GPIO: int = configParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=0)
 
 is_debug: int = configParser.getint('options', 'DEBUG', fallback=DEBUG)
 DEBUG = is_debug == 1
