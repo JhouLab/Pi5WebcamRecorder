@@ -325,6 +325,14 @@ def get_key():
         return cv2.waitKeyEx(1)
 
 
+def browse_data_folder():
+    p = platform.system()
+    if p == "Windows":
+        os.startfile(DATA_FOLDER)
+    elif p == "Linux":
+        os.system("pcmanfm \"%s\"" % DATA_FOLDER)
+
+
 class RECORDER:
     class PendingAction(Enum):
         Nothing = 0
@@ -435,6 +443,7 @@ class RECORDER:
 
     def __init__(self, _cam_array: List[CamObj], root_window=None):
 
+        self.cached_frame = [None] * 4
         self.cam_array = _cam_array
 
         while True:
@@ -524,7 +533,7 @@ class RECORDER:
         # frame3b holds next rows of buttons
         b_list2 = [
             ("Stop all recording", partial(self.show_stop_dialog, -1)),
-            ("Browse data folder", self.browse_data_folder),
+            ("Browse data folder", browse_data_folder),
             ("        Close        ", self.show_quit_dialog),
         ]
 
@@ -603,13 +612,6 @@ class RECORDER:
         # This is actually target time for the frame AFTER the next, since the next one will be read immediately
         self.next_frame = self.start + self.FRAME_INTERVAL
         self.update_image()
-
-    def browse_data_folder(self):
-        p = platform.system()
-        if p == "Windows":
-            os.startfile(DATA_FOLDER)
-        elif p == "Linux":
-            os.system("pcmanfm \"%s\"" % DATA_FOLDER)
 
     def toggle_zoom(self):
 
@@ -820,6 +822,8 @@ class RECORDER:
 
         for idx, cam_obj in enumerate(self.cam_array):
 
+            self.cached_frame[idx] = cam_obj.frame
+
             if cam_obj.status:
                 CPU_lag_frames += cam_obj.CPU_lag_frames
                 num_cams_lag += 1
@@ -831,13 +835,13 @@ class RECORDER:
 
             if cam_obj.status:
                 # Add text to top left to show camera number. This will NOT show in recording
-                cv2.putText(cam_obj.frame, str(FIRST_CAMERA_ID + idx),
+                cv2.putText(self.cached_frame[idx], str(FIRST_CAMERA_ID + idx),
                             (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
                             cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
                             round(FONT_SCALE + 0.5))  # Line thickness
                 if cam_obj.IsRecording:
                     # Add red circle if recording. Again, this does not show in recorded file.
-                    cv2.circle(cam_obj.frame,
+                    cv2.circle(self.cached_frame[idx],
                                (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
                                int(8 * FONT_SCALE),  # Radius
                                (0, 0, 255),  # Red dot (color is in BGR order)
@@ -874,9 +878,8 @@ class RECORDER:
             if self.which_display >= 0:
                 # Show just one of the 4 cameras
                 cam_obj = self.cam_array[self.which_display]
-                with cam_obj.cam_lock:
-                    # Need to make a deep copy here
-                    img = cam_obj.frame
+                # Need to make a deep copy here
+                img = self.cached_frame[self.which_display]
 
                 if cam_obj.status:
                     if self.zoom_center:
@@ -893,7 +896,7 @@ class RECORDER:
                 for index, elt in enumerate(self.cam_array):
                     if elt is not None and elt.frame is not None:
                         # Downsize
-                        subframes[index] = cv2.resize(elt.frame, SCREEN_RESOLUTION_INSET)
+                        subframes[index] = cv2.resize(self.cached_frame[index], SCREEN_RESOLUTION_INSET)
 
                 # Concatenate 4 images into 1
                 im_top = cv2.hconcat([subframes[0], subframes[1]])
