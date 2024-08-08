@@ -40,10 +40,11 @@ if IS_LINUX:
     try:
         os.nice(-20)
     except PermissionError:
-        res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n"
-                                     "Recommend running as root for optimal performance.\n\nProceed anyway?")
-        if res == 'no':
-            sys.exit()
+        if SHOW_RECORD_BUTTON:
+            res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n"
+                                         "Recommend running as root for optimal performance.\n\nProceed anyway?")
+            if res == 'no':
+                sys.exit()
 
 sys.setswitchinterval(0.001)
 interval = sys.getswitchinterval()
@@ -310,7 +311,7 @@ for idx1, cam_obj1 in enumerate(cam_array):
             time.sleep(0.25)
 
 
-if NATIVE_FRAME_RATE == 0:
+if NATIVE_FRAME_RATE == 0 and SHOW_RECORD_BUTTON:
     # messagebox.showinfo() causes an extraneous blank "root" window to show up in corner of screen if you haven't
     # already created it.
     tk.messagebox.showinfo("Warning", "config.txt file does not specify native camera frame rate.\n\nWill try to estimate it by profiling, but it is highly recommended to add the true value to config.txt")
@@ -947,14 +948,14 @@ class RECORDER:
                       f"skipped frames {self.skipped_display_frames}.")
 
             for idx, cam in enumerate(cam_array):
-                if cam is not None:
+                w = self.widget_array[idx]
+                if cam is not None and w.StatusLabel is not None:
                     if cam.IsRecording:
                         # Print elapsed time for each camera that is actively recording.
-                        lab = self.widget_array[idx].StatusLabel
                         s = cam.get_elapsed_recording_time()
-                        lab.config(text=s)
+                        w.StatusLabel.config(text=s)
                     elif cam.final_status_string is not None:
-                        self.widget_array[idx].StatusLabel.config(text=cam.final_status_string)
+                        w.StatusLabel.config(text=cam.final_status_string)
                         cam.final_status_string = None
 
                 if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 10) == 0:

@@ -667,7 +667,8 @@ class CamObj:
             print("    Error type is: ", ex.__class__.__name__)
             return ''  # This will force file to go to program folder
 
-    def get_filename_prefix(self):
+    def get_filename_prefix(self, animal_ID=None, add_date=True):
+        
         path = self.verify_directory()
 
         if self.current_animal_ID is not None:
@@ -676,7 +677,11 @@ class CamObj:
             # No TTL-transmitted animal ID, just use box ID in filename
             prefix_ending = f"Box{self.box_id}"
 
-        filename = get_date_string() + "_" + prefix_ending
+        if add_date:
+            filename = get_date_string() + "_" + prefix_ending
+        else:
+            filename = prefix_ending
+            
         return os.path.join(path, filename)
 
     def start_record(self, animal_ID: str = None, stress_test_mode: bool = False):
@@ -1180,8 +1185,9 @@ class CamObj:
 
             index = 1
             while True:
-                fname = self.get_filename_prefix() + "_snapshot_" + str(index) + ".jpg"
-
+                # Snapshot prefix is usually just camera number
+                fname = self.get_filename_prefix(add_date=False) + "_snapshot_" + str(index) + ".jpg"
+                
                 if not os.path.exists(fname):
                     break
 
