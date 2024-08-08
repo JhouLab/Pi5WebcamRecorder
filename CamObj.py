@@ -533,10 +533,7 @@ class CamObj:
             else:
                 printt(f"Received animal ID {self.TTL_tmp_ID} but checksum failed for box {self.box_id}")
                 self.current_animal_ID = "Checksum fail"
-
             self.TTL_mode = self.TTL_type.Normal
-            return
-
         elif self.TTL_mode == self.TTL_type.Binary:
             # We are in TTL binary mode.
             # 25ms pulses indicate 0
@@ -548,11 +545,9 @@ class CamObj:
                 # Pulse width between 0.5-0.1s indicates binary ONE
                 self.TTL_checksum = 1 - self.TTL_checksum
                 self.TTL_tmp_ID += 1
-                if on_time > 0.1:
-                    printt('Warning: Binary pulse width is longer than 100ms.')
-                    # Pulse width over 0.1s is ERROR, and aborts binary mode?
-
-            return
+                if on_time > BINARY_BIT_PULSE_THRESHOLD * 2:
+                    printt(f'Warning: Binary pulse width is longer than {BINARY_BIT_PULSE_THRESHOLD*2000}ms.')
+                    # Should this abort binary mode? For now we treat long pulses as "1"
         elif self.TTL_mode == self.TTL_type.Debug:
             # Debug mode
             # Should receive continuous pulses of duration 75ms, with 25ms gap
