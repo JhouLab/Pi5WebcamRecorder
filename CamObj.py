@@ -136,26 +136,34 @@ SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallb
 
 USE_CALLBACK_FOR_GPIO: int = configParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=1)
 
-
 is_debug: int = configParser.getint('options', 'DEBUG', fallback=DEBUG)
 DEBUG = is_debug == 1
 
-# Number of seconds to discriminate between binary 0 and 1
-BINARY_BIT_PULSE_THRESHOLD = 0.05
+# This makes an ENORMOUS text file that logs GPIO polling lag times. Because polling occurs
+# at 1kHz, there will be 3600 lines per minute. This didn't turn out to be as useful as I thought,
+# so this is now set to False.
+MAKE_DEBUG_DIAGNOSTIC_GPIO_LAG_TEXT_FILE = False
 
+# Binary 0/1 used to be 25/75ms, so threshold was 0.05s
+# As of 8/7/2024, increased to 50/150ms, so threshold is .1
+# Number of seconds to discriminate between binary 0 and 1
+BINARY_BIT_PULSE_THRESHOLD = 0.1
+
+# This allows font sizes to grow and shrink with camera resolution
 FONT_SCALE = HEIGHT / 480
 
 
-def get_date_string():
+def get_date_string(include_time=True):
     now = datetime.datetime.now()
     year = '{:04d}'.format(now.year)
     month = '{:02d}'.format(now.month)
     day = '{:02d}'.format(now.day)
     hour = '{:02d}'.format(now.hour)
     minute = '{:02d}'.format(now.minute)
-    day_month_year = '{}-{}-{}_{}{}'.format(year, month, day, hour, minute)
-
-    return day_month_year
+    if include_time:
+        return '{}-{}-{}_{}{}'.format(year, month, day, hour, minute)
+    else:
+        return '{}-{}-{}'.format(year, month, day)
 
 
 def make_blank_frame(txt, resolution=None):
@@ -172,11 +180,11 @@ def make_blank_frame(txt, resolution=None):
     return tmp
 
 
-filename_log = DATA_FOLDER + get_date_string() + "_log.txt"
+filename_log = DATA_FOLDER + get_date_string(include_time=False) + "_log.txt"
 
 try:
-    # Create text file for frame timestamps
-    fid_log = open(filename_log, 'w')
+    # Create text file for frame timestamps. Note 'a' for appending.
+    fid_log = open(filename_log, 'a')
     print("Logging events to file: \'" + filename_log + "\'")
 except:
     print(
@@ -324,6 +332,11 @@ class CamObj:
 
     def GPIO_thread(self):
 
+        # Implementing our own polling thread is much faster on the Pi, for
+        # some reason. Out of 15,000 TTLs (each 100ms) one was missing (or
+        # <10ms) and all the rest were between 60-120ms. So if we allow 50ms
+        # leeway, then we should have >99.99% accuracy.
+
         g = self.GPIO_pin
         s = GPIO.input(g)
         t = time.time()
@@ -356,6 +369,10 @@ class CamObj:
                 t = time.time()
 
     def GPIO_callback_both(self, param):
+
+        # We no longer use callback to handle GPIO, since jitter is unacceptably high,
+        # with about 1% of 100ms pulses being >50ms too long, and about 0.3% being >100ms
+        # too long.
         
         if VERBOSE:
             printt(f'Cam {self.box_id} received GPIO on pin {param}')
@@ -369,7 +386,9 @@ class CamObj:
                 printt('GPIO off')
             self.GPIO_falling_edge()
 
+    #
     # New GPIO pattern as of 6/22/2024
+    #
     # Long high pulse (0.2s) starts binary mode, transmitting 16 bits of animal ID.
     #     In binary mode, 75ms pulse is 1, 25ms pulse is 0. Off duration between pulses is 25ms
     #     Binary mode ends with long low period (0.2ms) followed by short high pulse (0.01ms)
@@ -382,6 +401,7 @@ class CamObj:
     # Extra long high pulse (2.5s) starts DEBUG TTL mode, where TTL duration is recorded
     #     and warnings are printed for any deviation from expected 75ms/25ms on/off duty cycle.
     #     deviation has to exceed 10ms to be printed.
+    #
     def GPIO_rising_edge(self, t=None):
 
         # Detected rising edge. Log the timestamp so that on falling edge we can see if this is a regular
@@ -397,13 +417,17 @@ class CamObj:
         self.GPIO_active = 1
 
         if elapsed_pause > 0.1:
-            # Burst TTLs must have ~50ms gap.
+            # Burst TTLs should have 50ms gap. Allow 50ms leeway up to 100ms.
             self.num_consec_TTLs = 0
             if VERBOSE:
-                printt(f'Num consec TTLs: 0')
+                printt(f'Rising edge, consec TTLs=0')
 
         if self.TTL_mode == self.TTL_type.Binary:
-            # If already in binary mode, then long (0.2s) "off" period switches to checksum mode for final pulse
+            # If already in binary mode, then inter-bit pauses are 0.05s (used to be .025s)
+            # Long (0.2s) "off" pause switches to checksum mode for final pulse.
+            # We give 50ms leeway in either direction, i.e. .15 to .25, then extend upper
+            # boundary to .5 since there is no competing signal there. After .5, we still end
+            # binary mode, but issue warning.
             if 0.15 < elapsed_pause < 0.5:
                 if self.TTL_binary_bits != 16:
                     printt(f'Warning: in binary mode received {self.TTL_binary_bits} bits instead of 16')
@@ -412,7 +436,7 @@ class CamObj:
                 if DEBUG:
                     printt('Binary mode now awaiting final checksum...')
                 self.TTL_mode = self.TTL_type.Checksum
-            elif elapsed_pause >= 0.5:
+            elif elapsed_pause >= 0.25:
                 printt(f'Box {self.box_id} detected very long pause of {elapsed_pause}s to end binary mode (should be 0.2s to switch to checksum)')
                 self.TTL_mode = self.TTL_type.Normal
         elif self.TTL_mode == self.TTL_type.Debug:
@@ -445,9 +469,10 @@ class CamObj:
         # Calculate pulse width
         on_time = time.time() - self.most_recent_gpio_rising_edge_time
 
-        if on_time < 0.01:
+        if on_time < 0.005:
             # Ignore very short pulses, which are probably mechanical switch bounce.
             # But: sometimes these are a result of pulses piling up in Windows, then getting sent all at once.
+            printt(f'Cam {self.box_id} ignoring short TTL of duration {on_time}')
             return
 
         if self.TTL_mode == self.TTL_type.Normal:
@@ -472,7 +497,10 @@ class CamObj:
                     self.TTL_tmp_ID = 0
                     self.TTL_binary_bits = 0
                     self.TTL_checksum = 0
+                    self.num_consec_TTLs = 0
                 else:
+                    # Pulse duration is between .2 and .4, and we are not recording. Assume regular TTL?
+                    # This should be extremely rare.
                     printt(f'Box {self.box_id} received TTL pulse longer than the usual 0.1s ({on_time}s)')
                     self.num_consec_TTLs += 1
                     self.handle_GPIO()
@@ -655,7 +683,7 @@ class CamObj:
         filename = get_date_string() + "_" + prefix_ending
         return os.path.join(path, filename)
 
-    def start_record(self, animal_ID: str=None, stress_test_mode: bool=False):
+    def start_record(self, animal_ID: str = None, stress_test_mode: bool = False):
         # If animal ID is not specified, will first look for TTL
         # transmission, and if that is also not present, will use camera
         # ID number.
@@ -763,7 +791,7 @@ class CamObj:
                     self.Writer.release()
                     return False
 
-                if DEBUG:
+                if DEBUG and MAKE_DEBUG_DIAGNOSTIC_GPIO_LAG_TEXT_FILE:
                     try:
                         # Create text file for diagnostic info
 
@@ -909,6 +937,10 @@ class CamObj:
         return estimated_frame_rate
 
     def read_camera_continuous(self):
+
+        # This starts the CONSUMER thread first (after possibly profiling
+        # camera fps) and then enters a PRODUCER loop, that reads USB frames
+        # and places them into a queue for the CONSUMER thread.
 
         if self.cam is None or not self.cam.isOpened():
             # No camera connected

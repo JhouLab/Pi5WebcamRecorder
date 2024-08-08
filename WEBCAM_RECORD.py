@@ -58,7 +58,8 @@ FIRST_CAMERA_ID = 1
 EXPAND_VIDEO = False
 
 if DEBUG:
-    printt("Running in DEBUG mode. Can use keyboard 'd' to simulate TTLs for all 4 cameras.")
+    printt("Running in DEBUG mode. Extra diagnostics will appear on screen, along with Stress Test button. "
+           "Can also use keyboard 'd' to test blue TTL dot.")
 
 MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
 
@@ -277,7 +278,7 @@ if num_cameras_found == 0:
 else:
     printt(f"Found {num_cameras_found} cameras")
 
-# Report what was discovered
+# Report what was discovered, and add dummy cameras to fill in any blanks.
 for idx1, cam_obj1 in enumerate(cam_array):
     if cam_obj1 is None:
         # No camera was found for this USB port position.
@@ -299,19 +300,22 @@ if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
 
 
 
-if NATIVE_FRAME_RATE == 0:
-    # messagebox.showinfo() causes an extraneous blank "root" window to show up in corner of screen if you haven't
-    # already created it.
-    tk.messagebox.showinfo("Warning", "config.txt file does not specify native camera frame rate.\n\nWill try to estimate it by profiling, but it is highly recommended to add the true value to config.txt")
-
 print()
 printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
 
+# Start both PRODUCER and CONSUMER threads. May also profile cameras to determine FPS if this is not already
+# specified in config file.
 for idx1, cam_obj1 in enumerate(cam_array):
     if cam_obj1 is not None:
         cam_obj1.start_read_thread()
         if IS_PI5:
             time.sleep(0.25)
+
+
+if NATIVE_FRAME_RATE == 0:
+    # messagebox.showinfo() causes an extraneous blank "root" window to show up in corner of screen if you haven't
+    # already created it.
+    tk.messagebox.showinfo("Warning", "config.txt file does not specify native camera frame rate.\n\nWill try to estimate it by profiling, but it is highly recommended to add the true value to config.txt")
 
 
 def get_key():
@@ -739,7 +743,7 @@ class RECORDER:
         l1 = tk.Label(f, text=f"Enter animal ID for camera #{cam_idx + FIRST_CAMERA_ID}", anchor="e")
         l1.pack(side=tk.TOP)
 
-        s = tk.StringVar(value=f"Box{cam_idx + FIRST_CAMERA_ID}")
+        s = tk.StringVar(value="1234")
         e = tk.Entry(f, textvariable=s)
         e.pack(side=tk.TOP)
 
@@ -1000,4 +1004,4 @@ rec_obj = RECORDER(cam_array, root_window=root)
 rec_obj.top_window.mainloop()
 
 if DEBUG:
-    printt("Exiting", close_file=True)
+    printt("Exiting\n\n\n", close_file=True)
