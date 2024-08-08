@@ -366,6 +366,7 @@ class CamObj:
                     self.fid_diagnostic = None
                     pass
             else:
+                time.sleep(0.001)
                 t = time.time()
 
     def GPIO_callback_both(self, param):
