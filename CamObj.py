@@ -513,15 +513,15 @@ class CamObj:
             return
 
         elif self.TTL_mode == self.TTL_type.Checksum:
-            # Final pulse of either 75 or 25ms to end binary mode.
+            # Final pulse of either 50ms or 150ms. Threshold is 100ms
             if on_time < BINARY_BIT_PULSE_THRESHOLD:
                 checksum = 0
-            elif on_time < 0.15:
+            elif on_time < BINARY_BIT_PULSE_THRESHOLD * 3:
                 # 75ms pulse indicates ONE
                 checksum = 1
             else:
                 printt(
-                    f"Received animal ID {self.TTL_tmp_ID} for box {self.box_id}, but checksum duration too long ({on_time} instead of 0-0.075s).")
+                    f"Received animal ID {self.TTL_tmp_ID} for box {self.box_id}, but checksum duration too long ({on_time} instead of 50 or 150ms).")
                 self.current_animal_ID = "Checksum fail"
                 self.TTL_mode = self.TTL_type.Normal
                 return
