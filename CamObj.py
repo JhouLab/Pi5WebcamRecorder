@@ -85,8 +85,6 @@ import cv2
 # If true, will print extra diagnostics, such as GPIO on/off times and consecutive TTL counter
 VERBOSE = False
 
-USE_CALLBACK_FOR_GPIO = False
-
 configParser = configparser.RawConfigParser()
 configFilePath = r'config.txt'
 configParser.read(configFilePath)
@@ -135,6 +133,9 @@ RECORD_COLOR: int = configParser.getint('options', 'RECORD_COLOR', fallback=1)
 SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', fallback=1)
 SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
 SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
+
+USE_CALLBACK_FOR_GPIO: int = configParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=1)
+
 
 is_debug: int = configParser.getint('options', 'DEBUG', fallback=DEBUG)
 DEBUG = is_debug == 1
