@@ -331,7 +331,9 @@ def browse_data_folder():
     if p == "Windows":
         os.startfile(DATA_FOLDER)
     elif p == "Linux":
-        os.system("pcmanfm \"%s\"" % DATA_FOLDER)
+        # Open data folder in the Pi's file manager, PCMan.
+        # Must use subprocess.Popen() rather than os.system(), as the latter blocks until the window is closed.
+        subprocess.Popen(f"pcmanfm \"{DATA_FOLDER}\"", shell=True)
 
 
 class RECORDER:
