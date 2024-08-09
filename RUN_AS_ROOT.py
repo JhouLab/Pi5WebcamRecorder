@@ -16,4 +16,6 @@ if IS_WINDOWS:
 elif IS_LINUX:
     wd = os.getcwd()
     # Now run WEBCAM_RECORD.py as superuser/root. The next instruction will block until user exits the program.
-    os.system("cd " + wd + "; sudo python -m WEBCAM_RECORD")
+#    os.system("cd " + wd + "; sudo python -m WEBCAM_RECORD")
+    os.system("cd " + wd + "; sudo XDG_RUNTIME_DIR=/tmp/runtime-root python -m WEBCAM_RECORD")
+    

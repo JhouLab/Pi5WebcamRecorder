@@ -333,7 +333,13 @@ def browse_data_folder():
     elif p == "Linux":
         # Open data folder in the Pi's file manager, PCMan.
         # Must use subprocess.Popen() rather than os.system(), as the latter blocks until the window is closed.
-        subprocess.Popen(f"pcmanfm \"{DATA_FOLDER}\"", shell=True)
+        if os.getuid() == 0:
+            # If running as superuser, then switch to jhoulab account or else VLC player (and possibly other
+            # programs) won't work.
+            subprocess.Popen(f"sudo -i -u jhoulab pcmanfm \"{DATA_FOLDER}\"", shell=True)
+        else:
+            # Open folder in file manager
+            subprocess.Popen(f"pcmanfm \"{DATA_FOLDER}\"", shell=True)
 
 
 class RECORDER:
