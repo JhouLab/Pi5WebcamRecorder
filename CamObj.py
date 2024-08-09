@@ -134,7 +134,7 @@ RECORD_COLOR: int = configParser.getint('options', 'RECORD_COLOR', fallback=1)
 SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', fallback=1)
 SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
 SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
-SHOW_ON_SCREEN_INFO: int = configParser.getint('options', 'SHOW_ON_SCREEN_INFO', fallback=1)
+SAVE_ON_SCREEN_INFO: int = configParser.getint('options', 'SAVE_ON_SCREEN_INFO', fallback=1)
 
 USE_CALLBACK_FOR_GPIO: int = configParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=0)
 
@@ -1060,35 +1060,7 @@ class CamObj:
         self.cam.release()
         self.cam = None
 
-    def add_on_screen_info(self, frame, TTL_on):
-
-        if TTL_on:
-            # Add blue dot to indicate that GPIO is active
-            # Location is (20,70)
-            cv2.circle(frame,
-                       (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position
-                       int(8 * FONT_SCALE),  # Radius
-                       (255, 0, 0),  # Blue dot (color is in BGR order)
-                       -1)  # -1 thickness fills circle
-
-        if self.pending_start_timer > 0:
-            # Add dark red dot to indicate that a start might be pending
-            # Location is (20,50)
-            self.pending_start_timer -= 1
-            cv2.circle(frame,
-                       (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
-                       int(8 * FONT_SCALE),  # Radius
-                       (0, 0, 96),  # Dark red dot (color is in BGR order)
-                       -1)  # -1 thickness fills circle
-
-        if self.TTL_mode == self.TTL_type.Debug:
-            # Green dot indicates we are in TTL DEBUG mode
-            # Location is (20,160)
-            cv2.circle(frame,
-                       (int(20 * FONT_SCALE), int(160 * FONT_SCALE)),  # x-y position
-                       int(8 * FONT_SCALE),  # Radius
-                       (0, 255, 0),  # color is in BGR order
-                       -1)  # -1 thickness fills circle
+    def add_on_screen_info(self, frame):
 
         if self.current_animal_ID is not None:
             # Add animal ID to video
@@ -1127,13 +1099,43 @@ class CamObj:
                 # Check if time_elapsed > 0, otherwise first couple of frames might be negative
                 self.frame_num += 1
 
-            if SHOW_ON_SCREEN_INFO:
-                self.add_on_screen_info(frame, TTL_on)
+            if TTL_on:
+                # Add blue dot to indicate that GPIO is active
+                # Location is (20,70)
+                cv2.circle(frame,
+                           (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position
+                           int(8 * FONT_SCALE),  # Radius
+                           (255, 0, 0),  # Blue dot (color is in BGR order)
+                           -1)  # -1 thickness fills circle
 
-            self.frame = frame
-            if not RECORD_COLOR and self.frame is not None:
+            if self.pending_start_timer > 0:
+                # Add dark red dot to indicate that a start might be pending
+                # Location is (20,50)
+                self.pending_start_timer -= 1
+                cv2.circle(frame,
+                           (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
+                           int(8 * FONT_SCALE),  # Radius
+                           (0, 0, 96),  # Dark red dot (color is in BGR order)
+                           -1)  # -1 thickness fills circle
+
+            if self.TTL_mode == self.TTL_type.Debug:
+                # Green dot indicates we are in TTL DEBUG mode
+                # Location is (20,160)
+                cv2.circle(frame,
+                           (int(20 * FONT_SCALE), int(160 * FONT_SCALE)),  # x-y position
+                           int(8 * FONT_SCALE),  # Radius
+                           (0, 255, 0),  # color is in BGR order
+                           -1)  # -1 thickness fills circle
+
+            if SAVE_ON_SCREEN_INFO:
+                # Add animal ID and frame number
+                self.add_on_screen_info(frame)
+
+            if RECORD_COLOR:
+                self.frame = frame
+            else:
                 # Convert to grayscale
-                self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
+                self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             if self.IsRecording and time_elapsed >= 0:
                 if self.fid is not None and self.start_recording_time > 0:

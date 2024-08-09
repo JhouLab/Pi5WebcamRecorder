@@ -67,5 +67,6 @@ SHOW_ZOOM_BUTTON = 0
 ; this in the future.
 USE_CALLBACK_FOR_GPIO = 0
 
-; If 1, show frame number and animal ID on screen
-SHOW_ON_SCREEN_INFO = 1
+; If 1, save frame number and animal ID to recorded video. This info will show in real-time display regardless
+; of this setting.
+SAVE_ON_SCREEN_INFO = 1

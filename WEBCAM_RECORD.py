@@ -15,7 +15,7 @@ import numpy as np
 from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
-    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG
+    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO
 from extra.get_hardware_info import *
 
 # Note that
@@ -855,6 +855,10 @@ class RECORDER:
                                    (0, 0, 255),  # Red dot (color is in BGR order)
                                    -1)  # -1 thickness fills circle
 
+                    if not SAVE_ON_SCREEN_INFO:
+                        # If not saving on-screen info, then it won't be in frame, so we have to add it now
+                        cam_obj.add_on_screen_info(self.cached_frame[idx])
+
         if num_cams_lag > 0:
             # Typical lag should be only about 0.25 frames.
             # If average lag is more than .5 frames, then slow down display to update only once every
@@ -886,7 +890,8 @@ class RECORDER:
             if which_disp >= 0:
                 # Show just one of the 4 cameras
                 cam_obj = self.cam_array[which_disp]
-                # Need to make a deep copy here
+
+                # Need to make NEW ARRAY here, or else array might get overwritten before we can show it
                 img = self.cached_frame[which_disp]
 
                 if cam_obj.status:
