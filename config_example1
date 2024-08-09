@@ -66,3 +66,6 @@ SHOW_ZOOM_BUTTON = 0
 ; If 1, then GPIO is handled by callback, which ought to be faster, but somehow isn't. Will probably remove
 ; this in the future.
 USE_CALLBACK_FOR_GPIO = 0
+
+; If 1, show frame number and animal ID on screen
+SHOW_ON_SCREEN_INFO = 1

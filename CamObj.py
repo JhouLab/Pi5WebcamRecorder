@@ -134,6 +134,7 @@ RECORD_COLOR: int = configParser.getint('options', 'RECORD_COLOR', fallback=1)
 SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', fallback=1)
 SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
 SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
+SHOW_ON_SCREEN_INFO: int = configParser.getint('options', 'SHOW_ON_SCREEN_INFO', fallback=1)
 
 USE_CALLBACK_FOR_GPIO: int = configParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=0)
 
@@ -263,7 +264,7 @@ class CamObj:
     IsRecording = False
     GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
 
-    frame_num = -1  # Number of frames recorded so far.
+    frame_num = 0  # Number of frames recorded so far.
 
     class TTL_type(Enum):
         Normal = 0
@@ -837,6 +838,7 @@ class CamObj:
                 printt(f"Stopping recording camera {self.box_id} after " + self.final_status_string)
 
             self.need_update_button_state_flag = True
+            self.frame_num = 0
 
             if self.Writer is not None:
                 try:
@@ -966,7 +968,7 @@ class CamObj:
         # Start thread that will process the frames sent by this loop.
         # This allows read_camera_continuous(), i.e. this thread, to
         # run at max speed.
-        t = threading.Thread(target=self.process_loop)
+        t = threading.Thread(target=self.consumer_thread)
         t.start()
 
         # This is here just to keep PyCharm from issuing warning at line 878
@@ -1020,7 +1022,7 @@ class CamObj:
         if DEBUG:
             printt(f"Box {self.box_id} exiting camera read (producer) thread.")
 
-    def process_loop(self):
+    def consumer_thread(self):
 
         now = time.time()
         if now > CamObj.last_warning_time:
@@ -1034,7 +1036,7 @@ class CamObj:
             frame, t, TTL = self.q.get()
 
             self.lag1 = time.time() - t
-            self.process_frame(frame, t, TTL)
+            self.process_one_frame(frame, t, TTL)
 
             self.lag2 = time.time() - t
             self.CPU_lag_frames = self.lag2 * RECORD_FRAME_RATE
@@ -1058,8 +1060,55 @@ class CamObj:
         self.cam.release()
         self.cam = None
 
+    def add_on_screen_info(self, frame, TTL_on):
+
+        if TTL_on:
+            # Add blue dot to indicate that GPIO is active
+            # Location is (20,70)
+            cv2.circle(frame,
+                       (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position
+                       int(8 * FONT_SCALE),  # Radius
+                       (255, 0, 0),  # Blue dot (color is in BGR order)
+                       -1)  # -1 thickness fills circle
+
+        if self.pending_start_timer > 0:
+            # Add dark red dot to indicate that a start might be pending
+            # Location is (20,50)
+            self.pending_start_timer -= 1
+            cv2.circle(frame,
+                       (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
+                       int(8 * FONT_SCALE),  # Radius
+                       (0, 0, 96),  # Dark red dot (color is in BGR order)
+                       -1)  # -1 thickness fills circle
+
+        if self.TTL_mode == self.TTL_type.Debug:
+            # Green dot indicates we are in TTL DEBUG mode
+            # Location is (20,160)
+            cv2.circle(frame,
+                       (int(20 * FONT_SCALE), int(160 * FONT_SCALE)),  # x-y position
+                       int(8 * FONT_SCALE),  # Radius
+                       (0, 255, 0),  # color is in BGR order
+                       -1)  # -1 thickness fills circle
+
+        if self.current_animal_ID is not None:
+            # Add animal ID to video
+            # Location is (10,100) ... used to be at (10,90), but tended to overlap blue dot at (20,70)
+            #   so I moved it down slightly to 10,100. Later moved to 60,30 to avoid overlapping cage.
+            cv2.putText(frame, str(self.current_animal_ID),
+                        (int(60 * FONT_SCALE), int(30 * FONT_SCALE)),
+                        cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
+                        round(FONT_SCALE + 0.5))  # Line thickness
+
+        if self.frame_num > 0:
+            # Add frame # to video. Scale down font to 70% since this number can be large.
+            # Location was originally 10,140, now moved to (WIDTH/2)),30
+            cv2.putText(frame, str(self.frame_num),
+                        (int(WIDTH / 2), int(30 * FONT_SCALE)),
+                        cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE * .7, (255, 128, 128),
+                        round(FONT_SCALE + 0.5))  # Line thickness
+
     # Reads a single frame from CamObj class and writes it to file
-    def process_frame(self, frame, timestamp, TTL_on):
+    def process_one_frame(self, frame, timestamp, TTL_on):
 
         with self.lock:
 
@@ -1070,84 +1119,42 @@ class CamObj:
                 self.pending = self.PendingAction.Nothing
                 self.start_record()
 
-            if self.cam is not None and self.cam.isOpened():
+            if self.cam is None or not self.cam.isOpened():
+                return
 
-                self.frame = frame
+            time_elapsed = timestamp - self.start_recording_time
+            if self.IsRecording and time_elapsed >= 0:
+                # Check if time_elapsed > 0, otherwise first couple of frames might be negative
+                self.frame_num += 1
 
-                if TTL_on:
-                    # Add blue dot to indicate that GPIO is active
-                    # Location is (20,70)
-                    cv2.circle(self.frame,
-                               (int(20 * FONT_SCALE), int(70 * FONT_SCALE)),  # x-y position
-                               int(8 * FONT_SCALE),  # Radius
-                               (255, 0, 0),  # Blue dot (color is in BGR order)
-                               -1)  # -1 thickness fills circle
+            if SHOW_ON_SCREEN_INFO:
+                self.add_on_screen_info(frame, TTL_on)
 
-                if self.pending_start_timer > 0:
-                    # Add dark red dot to indicate that a start might be pending
-                    # Location is (20,50)
-                    self.pending_start_timer -= 1
-                    cv2.circle(self.frame,
-                               (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
-                               int(8 * FONT_SCALE),  # Radius
-                               (0, 0, 96),  # Dark red dot (color is in BGR order)
-                               -1)  # -1 thickness fills circle
+            self.frame = frame
+            if not RECORD_COLOR and self.frame is not None:
+                # Convert to grayscale
+                self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
 
-                if self.TTL_mode == self.TTL_type.Debug:
-                    # Green dot indicates we are in TTL DEBUG mode
-                    # Location is (20,160)
-                    cv2.circle(self.frame,
-                               (int(20 * FONT_SCALE), int(160 * FONT_SCALE)),  # x-y position
-                               int(8 * FONT_SCALE),  # Radius
-                               (0, 255, 0),  # color is in BGR order
-                               -1)  # -1 thickness fills circle
-
-                if self.current_animal_ID is not None:
-                    # Add animal ID to video
-                    # Location is (10,100) ... used to be at (10,90), but tended to overlap blue dot at (20,70)
-                    #   so I moved it down slightly to 10,100. Later moved to 60,30 to avoid overlapping cage.
-                    cv2.putText(self.frame, str(self.current_animal_ID),
-                                (int(60 * FONT_SCALE), int(30 * FONT_SCALE)),
-                                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
-                                round(FONT_SCALE + 0.5))  # Line thickness
-
-                time_elapsed = timestamp - self.start_recording_time
-
-                if self.IsRecording and time_elapsed >= 0:
-                    # Check if time_elapsed > 0, otherwise first couple of frames might be negative
-                    self.frame_num += 1
-
-                    # Add frame # to video. Scale down font to 70% since this number can be large.
-                    # Location was originally 10,140, now moved to (WIDTH/2)),30
-                    cv2.putText(self.frame, str(self.frame_num),
-                                (int(WIDTH / 2), int(30 * FONT_SCALE)),
-                                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE * .7, (255, 128, 128),
-                                round(FONT_SCALE + 0.5))  # Line thickness
-
-                if not RECORD_COLOR and self.frame is not None:
-                    # Convert to grayscale
-                    self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
-
-                if self.IsRecording and time_elapsed >= 0:
-                    if self.fid is not None and self.start_recording_time > 0:
-                        try:
-                            if DEBUG:
-                                self.fid.write(f"{self.frame_num}\t{time_elapsed}\t{self.lag1}\t{self.lag2}\n")
-                            else:
-                                self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
-                        except:
-                            print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
-                            self.__stop_recording_now()
-                            return
-
+            if self.IsRecording and time_elapsed >= 0:
+                if self.fid is not None and self.start_recording_time > 0:
                     try:
-                        # Write frame to AVI video file if possible
-                        if self.Writer is not None:
-                            self.Writer.write(self.frame)
-                            self.last_frame_written = self.frame_num
+                        if DEBUG:
+                            self.fid.write(f"{self.frame_num}\t{time_elapsed}\t{self.lag1}\t{self.lag2}\n")
+                        else:
+                            self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
                     except:
-                        print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
+                        print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
                         self.__stop_recording_now()
+                        return
+
+                try:
+                    # Write frame to AVI video file if possible
+                    if self.Writer is not None:
+                        self.Writer.write(self.frame)
+                        self.last_frame_written = self.frame_num
+                except:
+                    print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
+                    self.__stop_recording_now()
 
     def get_elapsed_recording_time(self, include_cam_num=False):
 
