@@ -700,7 +700,8 @@ class CamObj:
         # starting of all 4 cameras without having to enter an ID for each.
 
         if self.cam is None or not self.cam.isOpened():
-            print(f"Camera {self.box_id} is not available for recording.")
+            if DEBUG:
+                print(f"Camera {self.box_id} is not available for recording.")
             return False
 
         # Camera reads occur on a dedicated thread for each cam object.
@@ -920,7 +921,7 @@ class CamObj:
             printt("Unable to determine frame rate, defaulting to config setting")
             estimated_frame_rate = RECORD_FRAME_RATE
 
-        printt(f'Box {self.box_id} estimated frame rate {estimated_frame_rate}')
+        printt(f'Box {self.box_id} estimated native frame rate {estimated_frame_rate:.2f}fps')
 
         # Sometimes will get value slightly lower or higher than real frame rate, e.g. 29.9 or 30.2 instead of 30
         if estimated_frame_rate > 55:
@@ -951,7 +952,7 @@ class CamObj:
         if self.cam is None or not self.cam.isOpened():
             # No camera connected
             if DEBUG:
-                printt(f"Camera {self.box_id} not connected, won't profile or read.")
+                printt(f"Camera {self.box_id} not connected.")
             return
 
         if NATIVE_FRAME_RATE == 0:

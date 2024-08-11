@@ -336,7 +336,23 @@ def browse_data_folder():
         if os.getuid() == 0:
             # If running as superuser, then switch to jhoulab account or else VLC player (and possibly other
             # programs) won't work.
-            subprocess.Popen(f"sudo -i -u jhoulab pcmanfm \"{DATA_FOLDER}\"", shell=True)
+            
+            # But first find what accounts are on this machine besides root
+            try:
+                acct = os.environ['SUDO_USER']
+            except:
+                if DEBUG:
+                    printt('Unable to get environment variable SUDO_USER. Trying to find user account in /home')
+                acct_list = os.listdir('/home')
+                if len(a) > 0:
+                    # This gets the alphabetically first user account. If there is more than one, then issue warning.
+                    acct = a[0]
+                    if len(a) > 1:
+                        tk.messagebox.showinfo("Warning", "More than 1 user account found. Using the first one.")
+                else:
+                    # Default to jhoulab
+                    acct = 'jhoulab'
+            subprocess.Popen(f"sudo -i -u {acct} pcmanfm \"{DATA_FOLDER}\"", shell=True)
         else:
             # Open folder in file manager
             subprocess.Popen(f"pcmanfm \"{DATA_FOLDER}\"", shell=True)
