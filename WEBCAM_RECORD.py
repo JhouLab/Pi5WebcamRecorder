@@ -352,7 +352,9 @@ def browse_data_folder():
                 else:
                     # Default to jhoulab
                     acct = 'jhoulab'
-            subprocess.Popen(f"sudo -i -u {acct} pcmanfm \"{DATA_FOLDER}\"", shell=True)
+            # Run file manager after first restoring the original user's XDG_RUNTIME_DIR, which we saved
+            # when we called this file from RUN_AS_ROOT.py
+            subprocess.Popen(f"sudo XDG_RUNTIME_DIR=$XDG_TMP -i -u {acct} pcmanfm \"{DATA_FOLDER}\"", shell=True)
         else:
             # Open folder in file manager
             subprocess.Popen(f"pcmanfm \"{DATA_FOLDER}\"", shell=True)
