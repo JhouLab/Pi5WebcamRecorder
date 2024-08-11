@@ -12,8 +12,10 @@ IS_LINUX = (PLATFORM == 'linux')
 IS_WINDOWS = (PLATFORM == 'windows')
 
 if IS_WINDOWS:
+    import sys
     print("This script is only necessary on Linux. On Windows, it is easier to run WEBCAM_RECORD.py directly")
-    os.system("python -m WEBCAM_RECORD")
+    p_exe = sys.executable
+    os.system(p_exe + " -m WEBCAM_RECORD")
 elif IS_LINUX:
     wd = os.getcwd()
     # Now run WEBCAM_RECORD.py as superuser/root. The next instruction will block until user exits the program.
