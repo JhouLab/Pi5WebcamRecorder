@@ -14,6 +14,8 @@ IS_WINDOWS = (PLATFORM == 'windows')
 if IS_WINDOWS:
     import sys
     print("This script is only necessary on Linux. On Windows, it is easier to run WEBCAM_RECORD.py directly")
+    # Figure out which version of Python was used to launch this, otherwise we will get the system default which
+    # could be different.
     p_exe = sys.executable
     os.system(p_exe + " -m WEBCAM_RECORD")
 elif IS_LINUX:
