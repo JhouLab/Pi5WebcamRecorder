@@ -87,7 +87,11 @@ if IS_PI5:
     INPUT_PIN_LIST = [4, 5, 6, 7]  # List of input pins for the four cameras
     for p in INPUT_PIN_LIST:
         try:
+            # For some reason, this doesn't seem to influence CamObj, and that object has to
+            # call setup all over again.
             GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  # Set to be input, with internal pull-down resistor
+            if DEBUG:
+                printt(f'Set up GPIO {p} as input, with pull-down resistor')
         except RuntimeError:
             printt("Runtime Error: Unable to set up GPIO.")
             print("    If this is a Pi5, please replace the default gpio library as follows:")
