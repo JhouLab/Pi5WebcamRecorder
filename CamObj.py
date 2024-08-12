@@ -302,6 +302,7 @@ class CamObj:
     pending_start_timer = 0  # Used to show dark red dot while waiting to see if double pulse is not a triple pulse
 
     def __init__(self, cam, id_num, box_id, GPIO_pin=-1):
+        self.thread_consumer = None
         self.thread_producer = None
         self.last_frame_written: int = 0
         self.CPU_lag_frames = 0
