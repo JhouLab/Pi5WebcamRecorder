@@ -22,8 +22,8 @@ elif IS_LINUX:
     wd = os.getcwd()
     # Now run WEBCAM_RECORD.py as superuser/root. The next instruction will block until user exits the program.
     # Note that we set XDG_RUNTIME_DIR to a root-appropriate folder so that GUI code doesn't issue warning.
-    # We also save the current user's XDG_RUNTIME_DIR into XDG_TMP, so we can set it back when we "downgrade" to
-    # a non-root user in the Browse Data Folder option (otherwise file manager won't show thumbnails, and
+    # We also save the current user's XDG_RUNTIME_DIR into XDG_TMP, so we can restore it when we "downgrade" to
+    # the original non-root user in the Browse Data Folder option (otherwise file manager won't show thumbnails, and
     # GUI programs like VLC will produce warnings). This is pretty hacky and I feel like there should be a
     # better way to do this but I haven't found it.
     os.system("cd " + wd + "; sudo XDG_RUNTIME_DIR=/tmp/runtime-root XDG_TMP=$XDG_RUNTIME_DIR python -m WEBCAM_RECORD")
