@@ -1,5 +1,6 @@
 from __future__ import annotations  # Need this for type hints to work on older Python versions
 
+import queue
 import tkinter.filedialog
 #
 # This file is intended to be imported by webcam_recorder.py
@@ -317,7 +318,7 @@ class CamObj:
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
-        self.q = Queue()
+        self.q: Queue = Queue()
 
         # Various file writer objects
         self.Writer = None  # Writer for video file
@@ -1037,8 +1038,14 @@ class CamObj:
 
         frame_count = 0
         while not self.pending == self.PendingAction.Exiting:
-            frame, t, TTL = self.q.get()
 
+            #
+            try:
+                frame, t, TTL = self.q.get(timeout=5.0)
+            except queue.Empty:
+                # If no frames received for 5 seconds, will exit loop
+                break
+                
             self.lag1 = time.time() - t
             self.process_one_frame(frame, t, TTL)
 
