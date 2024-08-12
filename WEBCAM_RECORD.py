@@ -289,7 +289,7 @@ for idx1, cam_obj1 in enumerate(cam_array):
         # No camera was found for this USB port position.
         # Create dummy camera object as placeholder, allowing a blank frame
         # to show.
-        cam_array[idx1] = CamObj(None, -1, FIRST_CAMERA_ID + idx1, 0)
+        cam_array[idx1] = CamObj(box_id=FIRST_CAMERA_ID + idx1)
         continue
 
     if IDENTIFY_CAMERA_BY_USB_PORT:

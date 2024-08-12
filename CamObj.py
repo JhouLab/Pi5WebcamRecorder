@@ -301,7 +301,7 @@ class CamObj:
     GPIO_active = 0  # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0  # Used to show dark red dot while waiting to see if double pulse is not a triple pulse
 
-    def __init__(self, cam, id_num, box_id, GPIO_pin=-1):
+    def __init__(self, cam=None, id_num=-1, box_id=-1, GPIO_pin=-1):
         self.thread_consumer = None
         self.thread_producer = None
         self.last_frame_written: int = 0
