@@ -46,6 +46,8 @@ if IS_LINUX:
             if res == 'no':
                 sys.exit()
 
+    import RPi.GPIO as GPIO
+
 sys.setswitchinterval(0.001)
 interval = sys.getswitchinterval()
 
@@ -344,10 +346,10 @@ def browse_data_folder():
                 if DEBUG:
                     printt('Unable to get environment variable SUDO_USER. Trying to find user account in /home')
                 acct_list = os.listdir('/home')
-                if len(a) > 0:
+                if len(acct_list) > 0:
                     # This gets the alphabetically first user account. If there is more than one, then issue warning.
-                    acct = a[0]
-                    if len(a) > 1:
+                    acct = acct_list[0]
+                    if len(acct_list) > 1:
                         tk.messagebox.showinfo("Warning", "More than 1 user account found. Using the first one.")
                 else:
                     # Default to jhoulab
@@ -1040,6 +1042,9 @@ class RECORDER:
         # Destroy the tkinter window (control bar)
         if self.root_window is not None:
             self.root_window.destroy()
+
+        if IS_LINUX:
+            GPIO.cleanup()
 
 
 rec_obj = RECORDER(cam_array, root_window=root)

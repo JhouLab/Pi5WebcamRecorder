@@ -301,6 +301,7 @@ class CamObj:
     pending_start_timer = 0  # Used to show dark red dot while waiting to see if double pulse is not a triple pulse
 
     def __init__(self, cam, id_num, box_id, GPIO_pin=-1):
+        self.thread_producer = None
         self.last_frame_written: int = 0
         self.CPU_lag_frames = 0
         self.pending = self.PendingAction.Nothing
@@ -335,22 +336,24 @@ class CamObj:
             # Use blank frame for this object if no camera object is specified
             self.frame = make_blank_frame(f"{box_id} - No camera found")
 
+        self.thread_GPIO = None
+
         if GPIO_pin >= 0 and platform.system() == "Linux":
             GPIO.setup(GPIO_pin, GPIO.IN) # Should not be needed, since we already did it on line 88 of WEBCAM_RECORD.py. Yet we got an error on  the home Pi. Why?
             if USE_CALLBACK_FOR_GPIO:
                 # Start monitoring GPIO pin
                 GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
             else:
-                t1 = threading.Thread(target=self.GPIO_thread)
-                t1.start()
+                self.thread_GPIO = threading.Thread(target=self.GPIO_thread)
+                self.thread_GPIO.start()
 
         if cam is not None:
             self.frame = make_blank_frame(f"{self.box_id} Starting up ...")
 
     def start_read_thread(self):
 
-        t = threading.Thread(target=self.read_camera_continuous)
-        t.start()
+        self.thread_producer = threading.Thread(target=self.read_camera_continuous)
+        self.thread_producer.start()
 
     def GPIO_thread(self):
 
@@ -945,9 +948,9 @@ class CamObj:
 
     def read_camera_continuous(self):
 
-        # This starts the CONSUMER thread first (after possibly profiling
-        # camera fps) and then enters a PRODUCER loop, that reads USB frames
-        # and places them into a queue for the CONSUMER thread.
+        # This function implements a PRODUCER thread.
+        # However, before entering the producer loop, it also starts the
+        # CONSUMER thread (after possibly profiling camera fps).
 
         if self.cam is None or not self.cam.isOpened():
             # No camera connected
@@ -969,8 +972,8 @@ class CamObj:
         # Start thread that will process the frames sent by this loop.
         # This allows read_camera_continuous(), i.e. this thread, to
         # run at max speed.
-        t = threading.Thread(target=self.consumer_thread)
-        t.start()
+        self.thread_consumer = threading.Thread(target=self.consumer_thread)
+        self.thread_consumer.start()
 
         # This is here just to keep PyCharm from issuing warning at line 878
         frame = None
@@ -1231,8 +1234,16 @@ class CamObj:
 
         self.pending = self.PendingAction.Exiting
 
-        # Wait for the camera read threads to exit
-        time.sleep(0.1)
+        # Wait for all threads to exit.
+
+        if self.thread_producer is not None:
+            self.thread_producer.join()
+
+        if self.thread_consumer is not None:
+            self.thread_consumer.join()
+
+        if self.thread_GPIO is not None:
+            self.thread_GPIO.join()
 
         if self.cam is not None:
             try:
