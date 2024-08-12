@@ -738,8 +738,6 @@ class RECORDER:
         fname = cam_obj.take_snapshot()
         if fname == None:
             tk.messagebox.showinfo("Error", "Failed to write snapshot file")
-        else:
-            tk.messagebox.showinfo("Success", f"Saved snapshot file: {fname}")
 
     def show_start_record_dialog(self, cam_idx: int):
 

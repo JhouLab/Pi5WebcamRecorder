@@ -1206,7 +1206,13 @@ class CamObj:
 
                 index += 1
 
-            f = tkinter.filedialog.asksaveasfilename(confirmoverwrite=True, initialfile=fname)
+            d = os.path.dirname(fname)
+            f = tkinter.filedialog.asksaveasfilename(confirmoverwrite=True, initialfile=fname, initialdir=d)
+
+            if f == '':
+                printt('User canceled save')
+                return ''
+
             cv2.imwrite(f, self.frame)
 
             printt(f'Wrote snapshot to file {f}')
