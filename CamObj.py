@@ -1036,25 +1036,25 @@ class CamObj:
         now = time.time()
         if now > CamObj.last_warning_time:
             CamObj.last_warning_time = now
-            
-        self.lag1 = 0
-        self.lag2 = 0
 
         frame_count = 0
         while not self.pending == self.PendingAction.Exiting:
 
             #
             try:
-                frame, t, TTL = self.q.get(timeout=5.0)
+                frame, t, TTL = self.q.get(timeout=0.5)
             except queue.Empty:
-                # If no frames received for 5 seconds, will exit loop
-                break
+                # No frames received. Check status, and if false, exit immediately.
+                # If status is True, then assume camera is alive, but running slowly.
+                if self.status:
+                    continue
+                else:
+                    return
                 
-            self.lag1 = time.time() - t
             self.process_one_frame(frame, t, TTL)
 
-            self.lag2 = time.time() - t
-            self.CPU_lag_frames = self.lag2 * RECORD_FRAME_RATE
+            lag2 = time.time() - t
+            self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
             if self.CPU_lag_frames > 10:
                 now = time.time()
                 if now - CamObj.last_warning_time > 1.0:
@@ -1156,7 +1156,8 @@ class CamObj:
                 if self.fid is not None and self.start_recording_time > 0:
                     try:
                         if DEBUG:
-                            self.fid.write(f"{self.frame_num}\t{time_elapsed}\t{self.lag1}\t{self.lag2}\n")
+                            lag = time.time() - timestamp
+                            self.fid.write(f"{self.frame_num}\t{time_elapsed}\t{lag}\n")
                         else:
                             self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
                     except:
