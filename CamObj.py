@@ -341,10 +341,6 @@ class CamObj:
         self.thread_GPIO = None
 
         if GPIO_pin >= 0 and platform.system() == "Linux":
-            # The following line should not be needed, since we already did it on line 90 of WEBCAM_RECORD.py.
-            # Yet we got an error on  the home Pi until I added it. Also, pulldown didn't seem to take effect
-            # on the surgery station Pi until this line was added. So why didn't the previous line work?
-            GPIO.setup(GPIO_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
             if USE_CALLBACK_FOR_GPIO:
                 # Start monitoring GPIO pin
                 GPIO.add_event_detect(GPIO_pin, GPIO.BOTH, callback=self.GPIO_callback_both)
