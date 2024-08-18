@@ -1,27 +1,24 @@
 
 # HOW TO USE:
 
-Instructions version 1.4.1
+Instructions version 1.5
 
-Updated Aug 3, 2024.
+Updated Aug 18, 2024.
 
-For best results, run on a Raspberry Pi 5, which can handle 4 simultaneous cameras
-at 640x480 and 30 frames per second.
+For best results, run on a Raspberry Pi 5, which is much faster than the Pi 4. It
+can handle 4 simultaneous cameras at 640x480 and 30 frames per second.
 
+If you have problems, questions, or suggestions, please email jhoulab1@gmail.com
 
 # GETTING STARTED:
 
-If not already installed, see instructions below: "Installing on a new machine"
-
-On most JhouLab computers, program will install in the following folder:
+On most JhouLab computers, the program is in the following folder:
 
     /home/jhoulab/Documents/github/Pi5WebcamRecorder
 
-By default, videos are saved to the program directory, but it is highly recommended
-you change this to something larger, like an external drive. You can specify this
-by editing config.txt (see CONFIGURING section below).
+If you need to install on a new machine, skip to the botton section on this page: "Installing on a new machine"
 
-To launch the program, use one of the following methods:
+Launch the program with one of the following methods:
 
     Method 1: From command line (must be in program folder):
 
@@ -31,9 +28,8 @@ To launch the program, use one of the following methods:
       Click "Load", select RUN_AS_ROOT.py,
       then click "Run" (green button with white triangle).
 
-
-Upon launch, program scans for USB cameras, then displays them in a 2x2 grid.
-The position in the grid matches the the physical USB port position, as shown below:
+Upon launch, program displays USB cameras in a 2x2 grid, where the grid position matches
+the physical USB port position:
 
     -------------
     |  1  |  2  |
@@ -41,64 +37,65 @@ The position in the grid matches the the physical USB port position, as shown be
     |  3  |  4  |
     -------------
 
-The program is controlled from the control bar at the top of the screen. You can
-also use keyboard shortcuts:
+You can start/stop recording from the GUI, from external 3.3V logic (see "GPIO PROTOCOL" seciont below),
+or with keyboard shortcuts:
 
-    "Q":            Quits program. (Any ongoing records will also be stopped).
+    1-4:            Typing a camera number will start/stop recording that camera.
     Left cursor:    Cycles through cameras in descending order
     Right cursor:   Cycles through cameras in ascending order
-    1-4:            Typing a camera number will start/stop recording that camera.
+    "Q":            Quits program. (Any ongoing records will also be stopped).
 
-This program also monitors GPIO pins 4, 5, 6, and 7. TTL pulses on these pins can
-start/stop recording, transmit the animal ID, and also timestamp behavioral events.
-See details below under "GPIO PROTOCOL".
+By default, videos saved to the program directory, but it is recommended to
+change this to an external drive, to avoid filling up your SD card. Specify drive path by editing config.txt
+(see CONFIGURING section below). Default format is 640x480, 30fps, with h264 encoding. These can also be
+changed in config.txt.
 
-Each camera recording generates the following three files:
+Each recording generates three files:
 
+    YYYY-MM-DD_HHmm_CamX_AnimalID_Video.avi         # Video file in h264 format.
     YYYY-MM-DD_HHmm_CamX_AnimalID_Frames.txt        # Tab-delimited text file with timestamps of each video frame
     YYYY-MM-DD_HHmm_CamX_AnimalID_TTLs.txt          # Tab-delimited text file with timestamps of each TTL pulse
-    YYYY-MM-DD_HHmm_CamX_AnimalID_Video.avi         # Video file.
 
-In these files, YYYY-MM-DD_HHmm is the date and time, X is the camera number, and
-AnimalID is entered manually or transmitted via GPIO/TTL inputs.
-
-By default, video is recorded at 30 frames per second and 640x480 resolution, using the H264 codec.
-These can be changed in the config.txt file (see next section below, "CONFIGURING").
-
+Where YYYY-MM-DD_HHmm is the date and time, X is the camera number, and AnimalID is entered
+manually or transmitted via GPIO logic inputs.
 
 # CONFIGURING:
 
-Most default parameters (frame rate, codec, save directory) can be overridden using
-a "config.txt" file. I've included two working examples:
+Many default parameters can be changed using a "config.txt" file. I've included two working examples:
 
-    config_example1     This is a detailed file listing all possible configuration options
-    config_example2     A bare-bones file that has only the most commonly used options.
+    config_example1     A detailed file with all possible configuration options
+    config_example2     A bare-bones file with only the most commonly used options.
 
-You can use either of them by copying them to "config.txt" and editing to suit your own needs.
+To use either file, open it in any text editor, rename it to "config.txt", then edit to suit your needs.
 Changes to "config.txt" take effect only after restarting the program. Options include the following:
 
-    RECORD_FRAME_RATE                      # Frame rate of recorded video. If not specified, defaults to camera's native frame rate
+    RECORD_FRAME_RATE                      # Frame rate of recorded video. If not specified, defaults to camera's native frame rate, typically 30fps
     NATIVE_FRAME_RATE                      # Native frame rate of webcam. If not specified, will be auto-detected.
     DATA_FOLDER                            # Folder for saving. If not specified, defaults to program directory.
-    RESOLUTION                             # A string of the form (width,height), e.g. (640x480)
-    FOURCC                                 # Recording codec. Default h264 which gives smallest file sizes. Change to mp4v if needed to reduce CPU load.
-    NUM_TTL_PULSES_TO_START_SESSION        # Number of consecutive TTL pulses to start recording. Default 2
-    NUM_TTL_PULSES_TO_STOP_SESSION         # Number of consecutive TTL pulses to end recording. Default 3
+    RESOLUTION                             # A string of the form: (width,height), e.g. (640x480)
+    FOURCC                                 # Recording codec. Default h264 which gives smallest file sizes. Can also use mp4v, which is less CPU intensive, but gives larger files
 
 
 # GPIO TIMING PROTOCOL
 
-This program monitors GPIO inputs 4 through 7, which corresponds to the following cameras:
+Pi5WebcamRecorder monitors GPIO inputs 4 through 7, corresponding to the following cameras:
 
     GPIO4:          camera 1
     GPIO5:          camera 2
     GPIO6:          camera 3
     GPIO7:          camera 4
 
-These are 3.3V inputs, so you must use a level shifter when connecting to 5V devices.
-A standard pulse should be 100ms long. To deliver consecutive pulses (to start or stop recordings),
-the pause between pulses should be no longer than 50ms. For example, the following pulse sequence
-will initiate a recording:
+These are 3.3V inputs, so you must use a level shifter when connecting to 5V devices. In our lab, we
+use Med-PC running on a Windows machine to generate TTLs. Since those are 28V signals, they require an additional
+level shifter to convert from 28V to 5V.
+
+Timing accuracy must be within 50ms. Since neither Windows nor Linux
+are real-time operating systems, this technically cannot be guaranteed. However, Med-PC is generally accurate
+to just a few milliseconds, while the Pi5Recorder runs in high priority in superuser mode, which also reduces
+timing errors. So in practice, timing errors are not an issue, even though they could theoretically cause glitches.
+
+A standard pulse should be 100ms long. A double pulse will start a recording, and consists of two standard
+pulses with a 50ms pause in between:
 
     3.3V    100ms  100ms
              ___    ___      
@@ -106,16 +103,10 @@ will initiate a recording:
     0V -----     --     --------
                 50ms
 
-Pulse onset/offset timestamps are saved to the *_TTL.txt file.
+Once a session is started, three consecutive pulses will stop the recording. (Again, pulses are 100ms with 50ms pauses).
 
-Med-PC can transmit a binary animal ID via the TTL line. This consists of the following sequence of events:
-
-1. 200ms high pulse to initiate binary ID transmission
-2. 16 binary bits. Least significant bit is first. 50ms duration indicates "0", 150ms duration indicates "1". 50ms low period between each bit
-3. 200ms low period
-4. final checksum parity bit: 50ms duration if there are an odd number of "1"s in ID, 150ms duration if odd number
-
-Graphically, this looks like the following:
+If an animal IDs was transmitted prior to recording start, it will show up in the filename. ID transmission is graphically
+represented below:
 
     3.3V    200ms    <16 binary bits, 50/150ms>     <Parity bit 50/150ms>
              ____   _   _   _                   _       _
@@ -123,21 +114,21 @@ Graphically, this looks like the following:
     0V -----      -   -   -   -               -   -----   ---------------
                  50ms low period between bits     200ms
 
+The sequence of events is as follows:
 
-Python code allows for 50ms of error in timing of binary bits. In practice, errors this large are
-rare if program is run as root (which allows program to elevate its own priority above most other
-processes on the Raspberry Pi).
+1. 200ms high pulse
+2. 16 binary bits, with least significant bit first, where 50ms duration indicates "0" and 150ms duration indicates "1". Gap between pulses is 50ms
+3. 200ms low period
+4. Checksum parity bit: 50ms duration if ID had an even number of "1"s, 150ms duration if odd
 
 
 
 # KNOWN SHORTCOMINGS:
 
-1. The last frame of video may not record. This appears to be a bug in FFMPEG, which is used by
-   OpenCV.
+1. The last frame of video may not record. This appears to be a bug in FFMPEG, which OpenCV uses.
 
-2. ImageJ/FIJI is a handy way to quickly view files on Windows, provided you install the
-   FFMPEG plugin. But on the Raspberry Pi does not appear able to correctly use this plugin.
-   A cumbersome way to use is to decompress video using:
+2. ImageJ/FIJI is a handy way to quickly view files on Windows, but this does not appear
+   to work on the Raspberry Pi, again due to issues with FFMPEG. A cumbersome workaround is to decompress video using:
      
          ffmpeg input.avi -c:v rawvideo output.avi
 
@@ -150,48 +141,40 @@ To install, follow these three steps:
 
   There are two ways to do this:
 
-  #### Method 1: Easy, but is read-only, i.e. you won't be able to upload changes to Github.
-  Open a command prompt, use "cd" to select a destination directory, then type:
+  #### Method 1: From command prompt, gives a read-only copy:
     
     git clone https://github.com/JhouLab/Pi5WebcamRecorder
 
-  #### Method 2: Harder, but gives you to ability to upload changes to the lab account
-  Download Github Desktop from these instructions:
-  https://pi-apps.io/install-app/install-github-desktop-on-raspberry-pi/
+  #### Method 2: Using Github Desktop: https://pi-apps.io/install-app/install-github-desktop-on-raspberry-pi/
 
-  To summarize the above, first install Pi-Apps:
+  First install Pi-Apps:
 
     wget -qO- https://raw.githubusercontent.com/Botspot/pi-apps/master/install | bash
 
-  Launch Pi-Apps, select "Programming", then "Github Desktop" (the purple cat icon), and
-  then click "Install". When it's done, launch Github from the main Raspberry Pi menu, under
-  "Accessories", then log into the lab github account.
+  Launch Pi-Apps, select "Programming", "Github Desktop" (the purple cat icon), and
+  click "Install". It will take a couple of minutes. Then launch Github from the main Raspberry Pi menu,
+  under "Accessories", then log into the lab github account. Then select "File",
+  "Clone repository", "Github.com", "JhouLab/Pi5WebcamRecorder":
 
-  Now, select "File", "Clone repository", "Github.com", then JhouLab/Pi5WebcamRecorder
-
-  Github Desktop only works correctly on Pis running 64-bit os. If you are running a 32-bit
+  Github Desktop only works on Pis running a 64-bit os. If you are running a 32-bit
   os, it may still install, but graphics will be weird and unusable.
 
 ## STEP 2: Install OpenCV.
-  Instructions for installing it on a Pi5 are here:
-  https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
 
-  I happened to use method #2 in the link above, using the following commands:
+  On the Pi5 command prompt, type the following:
 
     sudo apt-get install libopencv-dev
     sudo apt-get install python3-opencv
 
-  As of 6/12/2024, the above installs OpenCV version 4.6.0, which was released 6/12/2022, whereas
-  the latest version is 4.10. However, the old one seems to work well enough.
+  As of 6/12/2024, this installs OpenCV version 4.6.0, which is slightly outdated (released 6/12/2022),
+  but works well enough. For other ways to install OpenCV, see here:
+  https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
 
 ## STEP 3: Install rpi-lpgio
-  Annoyingly, the Pi5 uses different GPIO hardware than the Pi4, which is not compatible with the
-  default GPIO library RPi.GPIO. There are several workarounds. A simple one is to uninstall the
-  standard library and install python3-rpi-lpgio, a drop-in replacement:
+  Annoyingly, the Pi5 uses different GPIO hardware than the Pi4, but they didn't bother to update the
+  default GPIO library. To work around this, unstall the standard library and install python3-rpi-lpgio,
+  a drop-in replacement:
 
     sudo apt remove  python3-rpi.gpio
     sudo apt install python3-rpi-lgpio
-
-
-If the above does not work, please email jhoulab1@gmail.com for help.
 
