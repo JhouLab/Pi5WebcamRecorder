@@ -2,6 +2,7 @@ from __future__ import annotations  # Need this for type hints to work on older 
 
 import queue
 import tkinter.filedialog
+import tkinter.messagebox
 #
 # This file is intended to be imported by webcam_recorder.py
 #
@@ -31,6 +32,8 @@ import configparser
 from enum import Enum
 from ast import literal_eval as make_tuple  # Needed to parse resolution string in config
 from queue import Queue
+
+from extra.get_hardware_info import get_cam_usb_port
 
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
@@ -140,6 +143,10 @@ SAVE_ON_SCREEN_INFO: int = configParser.getint('options', 'SAVE_ON_SCREEN_INFO',
 USE_CALLBACK_FOR_GPIO: int = configParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=0)
 
 is_debug: int = configParser.getint('options', 'DEBUG', fallback=DEBUG)
+
+# First camera ID number
+FIRST_CAMERA_ID: int = configParser.getint('options', 'FIRST_CAMERA_ID', fallback=1)
+
 DEBUG = is_debug == 1
 
 # This makes an ENORMOUS text file that logs GPIO polling lag times. Because polling occurs
@@ -1035,6 +1042,12 @@ class CamObj:
                         self.cam = tmp
                         self.status = True
                         self.nextRetry = 0
+
+                        if IS_PI5:
+                            port = get_cam_usb_port(self.id_num)
+                            old_port = self.box_id - FIRST_CAMERA_ID
+                            if port != old_port:
+                                tkinter.messagebox.Message(f"Camera plugged into different USB port than before\n\nWas {old_port}, now {port}.")
                     else:
                         # Wait 5 seconds until next retry
                         self.nextRetry = time.time() + 5

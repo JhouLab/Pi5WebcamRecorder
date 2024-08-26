@@ -52,9 +52,6 @@ if IS_LINUX:
 sys.setswitchinterval(0.001)
 interval = sys.getswitchinterval()
 
-# First camera ID number
-FIRST_CAMERA_ID = 1
-
 # Expand window for stereotaxic camera?
 # Isn't practical because window becomes too big.
 EXPAND_VIDEO = False
