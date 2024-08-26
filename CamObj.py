@@ -155,6 +155,11 @@ BINARY_BIT_PULSE_THRESHOLD = 0.1
 # This allows font sizes to grow and shrink with camera resolution
 FONT_SCALE = HEIGHT / 480
 
+# Reading from webcam using MJPG generally allows higher frame rates
+# This definitely works on PI5, not tested elsewhere.
+# USE_MJPG = (WIDTH > 640)
+USE_MJPG = IS_PI5
+
 
 def get_date_string(include_time=True):
     now = datetime.datetime.now()
@@ -226,6 +231,41 @@ def get_disk_free_space():
         return gigabytes_avail
     else:
         return None
+
+
+# Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
+# If no camera found with that ID, will throw exception, which unfortunately is the only
+# way to enumerate what devices are connected. The caller needs to catch the exception and
+# handle it by excluding that ID from further consideration.
+def setup_cam(id):
+    if platform.system() == "Windows":
+        tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
+    else:
+        if USE_MJPG:
+            tmp = cv2.VideoCapture(id,
+                                   cv2.CAP_V4L2)  # This is needed for MJPG mode to work, allowing higher frame rates
+        else:
+            tmp = cv2.VideoCapture(id)
+
+    if tmp.isOpened():
+        if USE_MJPG:
+            # Higher resolutions are limited by USB transfer speeds to use lower frame rates.
+            # Changing to MJPG roughly doubles the max frame rate, at some cost of CPU cycles
+            tmp.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
+        if not tmp.isOpened():
+            print(f"MJPG not supported. Please edit code.")
+        tmp.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+        tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+
+        # fps readout does not seem to be reliable. On Linux, we always get 30fps, even if camera
+        # is set to a high resolution that can't deliver that frame rate. On Windows, always seem to get 0.
+        fps = tmp.get(cv2.CAP_PROP_FPS)
+        if not tmp.isOpened():
+            print(f"Resolution {WIDTH}x{HEIGHT} not supported. Please change config.txt.")
+    else:
+        fps = 0
+
+    return tmp, fps
 
 
 def verify_directory():
@@ -982,8 +1022,26 @@ class CamObj:
         TTL_on = None
 
         self.IsReady = True
+        self.nextRetry = 0
 
         while not self.pending == self.PendingAction.Exiting:
+
+            if self.nextRetry > 0:
+                if self.nextRetry > time.time():
+                    # Time to retry connection
+                    tmp, _ = setup_cam(self.id_num)
+                    if tmp.isOpened():
+                        # Successfully reconnected
+                        self.cam = tmp
+                        self.status = True
+                        self.nextRetry = 0
+                    else:
+                        # Wait 5 seconds until next retry
+                        self.nextRetry = time.time() + 5
+                else:
+                    # Not yet time to retry connection
+                    time.sleep(1)
+                continue
 
             if self.cam is not None and self.cam.isOpened():
                 try:
@@ -1015,7 +1073,8 @@ class CamObj:
 
                 # Remove camera resources
                 self.release()
-                return
+                self.nextRetry = time.time() + 5
+                continue
 
             count += 1
             if count == count_interval:
@@ -1040,13 +1099,10 @@ class CamObj:
             try:
                 frame, t, TTL = self.q.get(timeout=0.5)
             except queue.Empty:
-                # No frames received. Check status, and if false, exit immediately.
-                # If status is True, then assume camera is alive, but running slowly.
-                if self.status:
-                    continue
-                else:
-                    return
-                
+                # No frames received. Either camera is disconnected, or running slowly.
+                # Either way, just keep going, and hope camera eventually reconnects.
+                continue
+
             self.process_one_frame(frame, t, TTL)
 
             lag2 = time.time() - t

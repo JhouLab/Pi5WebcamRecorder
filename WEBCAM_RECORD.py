@@ -15,7 +15,8 @@ import numpy as np
 from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
-    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO
+    SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO, \
+    setup_cam
 from extra.get_hardware_info import *
 
 # Note that
@@ -123,46 +124,6 @@ else:
         SCREEN_RESOLUTION = (WIDTH, HEIGHT)
 
 SCREEN_RESOLUTION_INSET = (SCREEN_RESOLUTION[0] >> 1, SCREEN_RESOLUTION[1] >> 1)
-
-# Reading from webcam using MJPG generally allows higher frame rates
-# This definitely works on PI5, not tested elsewhere.
-# USE_MJPG = (WIDTH > 640)
-USE_MJPG = IS_PI5
-
-
-# Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
-# If no camera found with that ID, will throw exception, which unfortunately is the only
-# way to enumerate what devices are connected. The caller needs to catch the exception and
-# handle it by excluding that ID from further consideration.
-def setup_cam(id):
-    if platform.system() == "Windows":
-        tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
-    else:
-        if USE_MJPG:
-            tmp = cv2.VideoCapture(id,
-                                   cv2.CAP_V4L2)  # This is needed for MJPG mode to work, allowing higher frame rates
-        else:
-            tmp = cv2.VideoCapture(id)
-
-    if tmp.isOpened():
-        if USE_MJPG:
-            # Higher resolutions are limited by USB transfer speeds to use lower frame rates.
-            # Changing to MJPG roughly doubles the max frame rate, at some cost of CPU cycles
-            tmp.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
-        if not tmp.isOpened():
-            print(f"MJPG not supported. Please edit code.")
-        tmp.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-        tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
-
-        # fps readout does not seem to be reliable. On Linux, we always get 30fps, even if camera
-        # is set to a high resolution that can't deliver that frame rate. On Windows, always seem to get 0.
-        fps = tmp.get(cv2.CAP_PROP_FPS)
-        if not tmp.isOpened():
-            print(f"Resolution {WIDTH}x{HEIGHT} not supported. Please change config.txt.")
-    else:
-        fps = 0
-        
-    return tmp, fps
 
 
 def any_camera_recording(cam_list):
