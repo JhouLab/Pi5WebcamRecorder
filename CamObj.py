@@ -722,7 +722,7 @@ class CamObj:
     # Creates directory with current date in yyyy-mm-dd format.
     # Then verifies that directory exists, and if not, creates it
 
-    def get_filename_prefix(self, animal_ID=None, add_date=True):
+    def get_filename_prefix(self, animal_ID=None, add_date=True, join_path=True):
         
         path = verify_directory()
 
@@ -736,8 +736,11 @@ class CamObj:
             filename = get_date_string() + "_" + prefix_ending
         else:
             filename = prefix_ending
-            
-        return os.path.join(path, filename)
+
+        if join_path:
+            return os.path.join(path, filename)
+        else:
+            return path, filename
 
     def start_record(self, animal_ID: str = None, stress_test_mode: bool = False):
         # If animal ID is not specified, will first look for TTL
@@ -1282,25 +1285,28 @@ class CamObj:
             index = 1
             while True:
                 # Snapshot prefix is usually just camera number
-                fname = self.get_filename_prefix(add_date=False) + "_" + str(index) + ".png"
+                # We also add a numerical suffix 1, 2, 3, ... to make every snapshot filename
+                # unique
+                fpath = self.get_filename_prefix(add_date=False) + "_" + str(index) + ".png"
                 
-                if not os.path.exists(fname):
+                if not os.path.exists(fpath):
+                    # Found a filename not already used
                     break
 
                 index += 1
 
-            d = os.path.dirname(fname)
-            f = tkinter.filedialog.asksaveasfilename(confirmoverwrite=True, initialfile=fname, initialdir=d)
+            d, f = os.path.split(fpath)
+            fpath = tkinter.filedialog.asksaveasfilename(confirmoverwrite=True, initialfile=f, initialdir=d)
 
-            if f == '' or f == ():
+            if fpath == '' or fpath == ():
                 # Windows returns zero-length string, while Pi returns empty tuple
                 printt('User canceled save')
                 return ''
 
-            cv2.imwrite(f, self.frame)
+            cv2.imwrite(fpath, self.frame)
 
-            printt(f'Wrote snapshot to file {f}')
-            return f
+            printt(f'Wrote snapshot to file {fpath}')
+            return fpath
         else:
             return None
 
