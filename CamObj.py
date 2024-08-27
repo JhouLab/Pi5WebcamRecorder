@@ -1042,12 +1042,16 @@ class CamObj:
                         self.cam = tmp
                         self.status = True
                         self.nextRetry = 0
-
+  
                         if IS_PI5:
                             port = get_cam_usb_port(self.id_num)
                             old_port = self.box_id - FIRST_CAMERA_ID
                             if port != old_port:
-                                tkinter.messagebox.Message(f"Camera plugged into different USB port than before\n\nWas {old_port}, now {port}.")
+                                st1 = f"Warning: Camera plugged into different USB port than before."
+                                st2 = f"Was {old_port}, now {port}."
+                                printt(st1)
+                                printt(st2)
+                                tkinter.messagebox.showinfo("Warning", st1 + "\n\n" + st2)
                     else:
                         # Wait 5 seconds until next retry
                         self.nextRetry = time.time() + 5
@@ -1074,7 +1078,6 @@ class CamObj:
                     break
 
                 # Read failed. Remove this camera so we won't attempt to read it later.
-                # Should we set a flag to try to periodically reconnect?
 
                 if self.IsRecording:
                     self.stop_record()  # Close file writers
