@@ -1292,7 +1292,8 @@ class CamObj:
             d = os.path.dirname(fname)
             f = tkinter.filedialog.asksaveasfilename(confirmoverwrite=True, initialfile=fname, initialdir=d)
 
-            if f == '':
+            if f == '' or f == ():
+                # Windows returns zero-length string, while Pi returns empty tuple
                 printt('User canceled save')
                 return ''
 
