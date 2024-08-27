@@ -1282,7 +1282,7 @@ class CamObj:
             index = 1
             while True:
                 # Snapshot prefix is usually just camera number
-                fname = self.get_filename_prefix(add_date=False) + "_" + str(index) + ".jpg"
+                fname = self.get_filename_prefix(add_date=False) + "_" + str(index) + ".png"
                 
                 if not os.path.exists(fname):
                     break
