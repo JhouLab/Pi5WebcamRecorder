@@ -1302,6 +1302,9 @@ class CamObj:
                 # Windows returns zero-length string, while Pi returns empty tuple
                 printt('User canceled save')
                 return ''
+            
+            if not fpath.endswith('.png'):
+                fpath = fpath + '.png'
 
             cv2.imwrite(fpath, self.frame)
 
