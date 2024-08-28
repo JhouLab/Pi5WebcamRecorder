@@ -1,5 +1,6 @@
 from __future__ import annotations  # Need this for type hints to work on older Python versions
 
+import _io
 import queue
 import tkinter.filedialog
 import tkinter.messagebox
@@ -206,8 +207,8 @@ except:
         "Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and that you have permission to write to it.")
 
 
-# Write text to both screen and log file. The log file helps retrospectively figure out what happened when debugging.
-def printt(txt, omit_date_time=False, close_file=False):
+# Write text to both log file and (optional) screen. Log file helps with retrospective troubleshooting
+def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
     # Get the current date and time
     if not omit_date_time:
         now = datetime.datetime.now()
@@ -218,7 +219,8 @@ def printt(txt, omit_date_time=False, close_file=False):
             s = now.strftime("%Y-%m-%d %H:%M:%S: ") + txt
     else:
         s = txt
-    print(s, flush=True)
+    if print_to_screen:
+        print(s, flush=True)
     try:
         fid_log.write(s + "\n")
         fid_log.flush()
@@ -369,10 +371,10 @@ class CamObj:
         self.q: Queue = Queue()
 
         # Various file writer objects
-        self.Writer = None  # Writer for video file
-        self.fid = None  # Writer for timestamp file
-        self.fid_TTL = None  # Writer for TTL timestamp file
-        self.fid_diagnostic = None  # Writer for debugging info
+        self.Writer: [cv2.VideoWriter | None] = None  # Writer for video file
+        self.fid: [_io.TextIOWrapper | None] = None  # Writer for timestamp file
+        self.fid_TTL: [_io.TextIOWrapper | None] = None  # Writer for TTL timestamp file
+        self.fid_diagnostic: [_io.TextIOWrapper | None] = None  # Writer for debugging info
 
         # Status string to show on GUI
         self.final_status_string = '--'
@@ -703,6 +705,7 @@ class CamObj:
                 if self.fid_TTL is not None:
                     try:
                         self.fid_TTL.write(f"{self.TTL_num}\t{gpio_onset_time}\t{gpio_offset_time}\n")
+                        self.fid_TTL.flush()
                     except:
                         print(f"Unable to write TTL timestamp file for camera {self.box_id}")
                 else:
@@ -1128,13 +1131,13 @@ class CamObj:
             self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
             if self.CPU_lag_frames > 10:
                 now = time.time()
-                if now - CamObj.last_warning_time > 1.0:
-                    # What I'm calling CPU lag is mostly compression lag. This is fairly
+                if now - CamObj.last_warning_time > 2.0:
+                    # What I'm calling CPU lag is mostly compression lag. This is
                     # harmless until queue fills up. Queue is about 50 frames, so we don't
                     # issue warning until lag gets to 10 frames.
-                    if DEBUG:
-                        printt(f"Warning: high compression lag (box{self.box_id}, {self.CPU_lag_frames:.1f} frames)")
-                        CamObj.last_warning_time = now
+                    printt(f"Warning: high CPU lag (box{self.box_id}, {lag2:.2f} s, {self.CPU_lag_frames:.1f} frames)",
+                           print_to_screen=DEBUG)
+                    CamObj.last_warning_time = now
 
             frame_count += 1
 
