@@ -160,9 +160,14 @@ def make_instruction_frame():
 if not os.path.isdir(DATA_FOLDER):
     # Parent folder doesn't exist ... this could be due to USB drive being unplugged?
     # Default to program directory
-    messagebox.showinfo(
-        title="Warning",
-        message=f"Unable to find data folder:\n\n\"{DATA_FOLDER}\"\n\nWill save to program folder instead.")
+    if DATA_FOLDER == "":
+        messagebox.showinfo(
+            title="Warning",
+            message=f"No data folder specified in config.txt\n\nWill save to program folder instead.")
+    else:
+        messagebox.showinfo(
+            title="Warning",
+            message=f"Unable to find data folder:\n\n\"{DATA_FOLDER}\"\n\nWill save to program folder instead.")
     DATA_FOLDER = "."
 
 # Highest camera ID to search when first connecting. Some sources
