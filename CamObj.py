@@ -1114,7 +1114,7 @@ class CamObj:
         if now > CamObj.last_warning_time:
             CamObj.last_warning_time = now
 
-        frame_count = 0
+        frames_received = 0  # This tally is currently not used for anything
         while not self.pending == self.PendingAction.Exiting:
 
             #
@@ -1125,21 +1125,33 @@ class CamObj:
                 # Either way, just keep going, and hope camera eventually reconnects.
                 continue
 
+            lag1 = time.time() - t
+            if not self.IsRecording and lag1 > 2:
+                # CPU is lagging, and we are not recording. Skip frame to help catch up.
+                now = time.time()
+                if now - CamObj.last_warning_time > 5:
+                    # Only report to log file every 5 seconds
+                    printt(f"Warning: high CPU lag (box{self.box_id}, {lag1:.2f}s. Not recording so skipping frame",
+                           print_to_screen=DEBUG)
+                    CamObj.last_warning_time = now
+                frames_received += 1
+                continue
+
             self.process_one_frame(frame, t, TTL)
 
             lag2 = time.time() - t
             self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
-            if self.CPU_lag_frames > 10:
+            if lag2 > 2:
                 now = time.time()
-                if now - CamObj.last_warning_time > 2.0:
-                    # What I'm calling CPU lag is mostly compression lag. This is
-                    # harmless until queue fills up. Queue is about 50 frames, so we don't
-                    # issue warning until lag gets to 10 frames.
+                if now - CamObj.last_warning_time > 5:  # Only report every 2 seconds
+                    # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
+                    # However, if it exceeds 2 seconds then something is likely to be seriously
+                    # wrong, and might not be recoverable.
                     printt(f"Warning: high CPU lag (box{self.box_id}, {lag2:.2f} s, {self.CPU_lag_frames:.1f} frames)",
                            print_to_screen=DEBUG)
                     CamObj.last_warning_time = now
 
-            frame_count += 1
+            frames_received += 1
 
         if DEBUG:
             printt(f"Box {self.box_id} exiting consumer thread.")
