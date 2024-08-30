@@ -1142,6 +1142,7 @@ class CamObj:
 
             if lag1 > 60:
                 # Extreme level of lag (>30 seconds)
+                # Will drop frame, but must still increment frame counters
                 now = time.time()
                 if now - self.last_warning_time > 5:
                     # Only report to log file every 5 seconds
@@ -1149,6 +1150,8 @@ class CamObj:
                            print_to_screen=False)
                     printt(f"CPU lag > 30 seconds. Dropping frame.")
                     self.last_warning_time = now
+
+                # This increments frame counter, but doesn't save to file
                 self.process_one_frame(frame, t, TTL, drop_frame=True)
                 frames_received += 1
                 continue
@@ -1199,7 +1202,7 @@ class CamObj:
                         round(FONT_SCALE + 0.5))  # Line thickness
 
     # Reads a single frame from CamObj class and writes it to file
-    def process_one_frame(self, frame, timestamp, TTL_on, drop_frame = False):
+    def process_one_frame(self, frame, timestamp, TTL_on, drop_frame=False):
 
         with self.lock:
 
