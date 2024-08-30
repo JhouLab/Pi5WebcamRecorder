@@ -1114,7 +1114,7 @@ class CamObj:
         if now > CamObj.last_warning_time:
             CamObj.last_warning_time = now
 
-        frames_received = 0  # This tally is currently not used for anything
+        frames_received = 0  # This is used for diagnostic purposes only
         while not self.pending == self.PendingAction.Exiting:
 
             #
@@ -1123,6 +1123,7 @@ class CamObj:
             except queue.Empty:
                 # No frames received. Either camera is disconnected, or running slowly.
                 # Either way, just keep going, and hope camera eventually reconnects.
+                frames_received += 1
                 continue
 
             lag1 = time.time() - t
@@ -1131,7 +1132,7 @@ class CamObj:
                 now = time.time()
                 if now - CamObj.last_warning_time > 5:
                     # Only report to log file every 5 seconds
-                    printt(f"Warning: high CPU lag (box{self.box_id}, {lag1:.2f}s. Not recording so skipping frame",
+                    printt(f"Warning: high CPU lag, box{self.box_id}, frame {frames_received}, {lag1:.2f}s. Not recording so skipping frame",
                            print_to_screen=DEBUG)
                     CamObj.last_warning_time = now
                 frames_received += 1
@@ -1141,13 +1142,14 @@ class CamObj:
 
             lag2 = time.time() - t
             self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
-            if lag2 > 2:
+            if lag2 > 2 or (DEBUG and frames_received % 300 == 0):
                 now = time.time()
                 if now - CamObj.last_warning_time > 5:  # Only report every 2 seconds
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
                     # However, if it exceeds 2 seconds then something is likely to be seriously
                     # wrong, and might not be recoverable.
-                    printt(f"Warning: high CPU lag (box{self.box_id}, {lag2:.2f} s, {self.CPU_lag_frames:.1f} frames)",
+                    printt(f"Warning: high CPU lag, box{self.box_id}, frame # {frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.2f}s",
+#                    printt(f"Warning: high CPU lag (box{self.box_id}, {lag2:.2f} s, {self.CPU_lag_frames:.1f} frames)",
                            print_to_screen=DEBUG)
                     CamObj.last_warning_time = now
 
