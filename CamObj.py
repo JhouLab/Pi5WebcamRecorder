@@ -299,8 +299,6 @@ def verify_directory():
 
 class CamObj:
 
-    last_warning_time = 0
-
     cam = None  # this is the opencv camera object
     id_num = -1  # ID number assigned by operating system. May be unpredictable.
     box_id = -1  # User-friendly camera ID. Will usually be USB port position/screen position, starting from 1
@@ -315,6 +313,8 @@ class CamObj:
     GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
 
     frame_num = 0  # Number of frames recorded so far.
+
+    last_warning_time = 0
 
     class TTL_type(Enum):
         Normal = 0
@@ -369,6 +369,8 @@ class CamObj:
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
         self.q: Queue = Queue()
+        self.last_warning_time = 0
+
 
         # Various file writer objects
         self.Writer: [cv2.VideoWriter | None] = None  # Writer for video file
@@ -1130,28 +1132,42 @@ class CamObj:
             if not self.IsRecording and lag1 > 2:
                 # CPU is lagging, and we are not recording. Skip frame to help catch up.
                 now = time.time()
-                if now - CamObj.last_warning_time > 5:
+                if now - self.last_warning_time > 5:
                     # Only report to log file every 5 seconds
                     printt(f"Warning: high CPU lag, box{self.box_id}, frame {frames_received}, {lag1:.2f}s. Not recording so skipping frame",
                            print_to_screen=DEBUG)
-                    CamObj.last_warning_time = now
+                    self.last_warning_time = now
                 frames_received += 1
                 continue
 
+            if lag1 > 60:
+                # Extreme level of lag (>30 seconds)
+                now = time.time()
+                if now - self.last_warning_time > 5:
+                    # Only report to log file every 5 seconds
+                    printt(f"CPU lag, box{self.box_id}, frame # {frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.6f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s",
+                           print_to_screen=False)
+                    printt(f"CPU lag > 30 seconds. Dropping frame.")
+                    self.last_warning_time = now
+                self.process_one_frame(frame, t, TTL, drop_frame=True)
+                frames_received += 1
+                continue
+                
             self.process_one_frame(frame, t, TTL)
 
             lag2 = time.time() - t
             self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
+                
             if lag2 > 2 or (DEBUG and frames_received % 300 == 0):
                 now = time.time()
-                if now - CamObj.last_warning_time > 5:  # Only report every 2 seconds
+                if now - self.last_warning_time > 5:  # Only report every 2 seconds
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
                     # However, if it exceeds 2 seconds then something is likely to be seriously
                     # wrong, and might not be recoverable.
-                    printt(f"Warning: high CPU lag, box{self.box_id}, frame # {frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.2f}s",
-#                    printt(f"Warning: high CPU lag (box{self.box_id}, {lag2:.2f} s, {self.CPU_lag_frames:.1f} frames)",
+                    printt(f"CPU lag, box{self.box_id}, frame # {frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.6f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s",
                            print_to_screen=DEBUG)
-                    CamObj.last_warning_time = now
+                    self.last_warning_time = now
+                
 
             frames_received += 1
 
@@ -1183,7 +1199,7 @@ class CamObj:
                         round(FONT_SCALE + 0.5))  # Line thickness
 
     # Reads a single frame from CamObj class and writes it to file
-    def process_one_frame(self, frame, timestamp, TTL_on):
+    def process_one_frame(self, frame, timestamp, TTL_on, drop_frame = False):
 
         with self.lock:
 
@@ -1201,6 +1217,9 @@ class CamObj:
             if self.IsRecording and time_elapsed >= 0:
                 # Check if time_elapsed > 0, otherwise first couple of frames might be negative
                 self.frame_num += 1
+                
+            if drop_frame:
+                return
 
             if TTL_on:
                 # Add blue dot to indicate that GPIO is active
