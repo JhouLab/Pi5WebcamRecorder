@@ -1134,7 +1134,7 @@ class CamObj:
                 now = time.time()
                 if now - self.last_warning_time > 5:
                     # Only report to log file every 5 seconds
-                    printt(f"Warning: high CPU lag, box{self.box_id}, frame {frames_received}, {lag1:.2f}s. Not recording so skipping frame",
+                    printt(f"Warning: high CPU lag, box{self.box_id}, lag {lag1:.2f}s. Not recording so skipping frame",
                            print_to_screen=DEBUG)
                     self.last_warning_time = now
                 frames_received += 1
@@ -1142,11 +1142,11 @@ class CamObj:
 
             if lag1 > 60:
                 # Extreme level of lag (>30 seconds)
-                # Will drop frame, but must still increment frame counters
+                # Will drop frame even if recording. Must still increment frame counters
                 now = time.time()
                 if now - self.last_warning_time > 5:
                     # Only report to log file every 5 seconds
-                    printt(f"CPU lag, box{self.box_id}, frame # {frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.6f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s",
+                    printt(f"CPU lag, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.6f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s",
                            print_to_screen=False)
                     printt(f"CPU lag > 30 seconds. Dropping frame.")
                     self.last_warning_time = now
@@ -1167,7 +1167,7 @@ class CamObj:
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
                     # However, if it exceeds 2 seconds then something is likely to be seriously
                     # wrong, and might not be recoverable.
-                    printt(f"CPU lag, box{self.box_id}, frame # {frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.6f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s",
+                    printt(f"CPU lag, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.6f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s",
                            print_to_screen=DEBUG)
                     self.last_warning_time = now
                 
