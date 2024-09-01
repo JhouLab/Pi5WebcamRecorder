@@ -1131,6 +1131,9 @@ class CamObj:
                 continue
 
             if DEBUG and self.current_animal_ID == "StressTest":
+                # Add massive flicker to truly stress out the recording and compression algorithm.
+                # This will cause massive delays, and will crash the Pi in about 60 seconds unless
+                # we start dropping frames
                 if frames_received % 2 == 0:
                     frame = 1 - frame
 
@@ -1156,12 +1159,13 @@ class CamObj:
                     # Only report to log file every 5 seconds
                     printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames, queue size {self.q.qsize()}",
                            print_to_screen=False)
-                    printt(f"CPU lag > 400 frames. Dropping frame.")  # This isn't ending up in log file, for some reason
                     last_dropped_frame_warning = now
                     last_warning_time = now
 
                 # This increments frame counter, but doesn't save to file
                 self.process_one_frame(frame, t, TTL, drop_frame=True)
+
+                # Increment other diagnostic counters
                 frames_received += 1
                 self.dropped_recording_frames += 1
                 continue
