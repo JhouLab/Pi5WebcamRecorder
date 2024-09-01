@@ -308,7 +308,6 @@ class CamObj:
     filename_timestamp = "Timestamp.txt"
     filename_timestamp_TTL = "Timestamp_TTL.txt"
 
-    start_recording_time = -1  # Timestamp (in seconds) when recording started.
     IsRecording = False
     GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
 
@@ -373,6 +372,7 @@ class CamObj:
         self.fid: [_io.TextIOWrapper | None] = None  # Writer for timestamp file
         self.fid_TTL: [_io.TextIOWrapper | None] = None  # Writer for TTL timestamp file
         self.fid_diagnostic: [_io.TextIOWrapper | None] = None  # Writer for debugging info
+        self.start_recording_time = time.time()  # Timestamp (in seconds) when session or recording started
 
         # Status string to show on GUI
         self.final_status_string = '--'
@@ -1130,6 +1130,8 @@ class CamObj:
                     frame = 1 - frame
 
             lag1 = time.time() - t
+            self.CPU_lag_frames = lag1 * RECORD_FRAME_RATE
+
             if not self.IsRecording and lag1 > 2:
                 # CPU is lagging, and we are not recording. Skip frame to help catch up.
                 now = time.time()
@@ -1141,13 +1143,13 @@ class CamObj:
                 frames_received += 1
                 continue
 
-            if lag1 > 60:
-                # Extreme level of lag (>30 seconds)
+            if self.CPU_lag_frames > 400:
+                # Extreme level of lag
                 # Will drop frame even if recording. Must still increment frame counters
                 now = time.time()
                 if now - last_dropped_frame_warning > 5:
                     # Only report to log file every 5 seconds
-                    printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames",
+                    printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames, queue size {self.q.qsize()}",
                            print_to_screen=False)
                     printt(f"CPU lag > 60 seconds. Dropping frame.")  # This isn't ending up in log file, for some reason
                     last_dropped_frame_warning = now
@@ -1169,7 +1171,7 @@ class CamObj:
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
                     # However, if it exceeds 2 seconds then something is likely to be seriously
                     # wrong, and might not be recoverable.
-                    printt(f"CPU lag, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s",
+                    printt(f"CPU lag, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s, queue size {self.q.qsize()}",
                            print_to_screen=DEBUG)
                     last_warning_time = now
                 
@@ -1265,7 +1267,7 @@ class CamObj:
                 self.frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             if self.IsRecording and time_elapsed >= 0:
-                if self.fid is not None and self.start_recording_time > 0:
+                if self.fid is not None:
                     try:
                         if DEBUG:
                             lag = time.time() - timestamp
