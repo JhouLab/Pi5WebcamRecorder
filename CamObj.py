@@ -893,7 +893,10 @@ class CamObj:
             if self.IsRecording:
                 self.IsRecording = False
                 self.final_status_string = self.get_elapsed_time_string()
-                printt(f"Stopping recording camera {self.box_id} after " + self.final_status_string)
+                str1 = f"Stopping recording camera {self.box_id} after " + self.final_status_string
+                if self.dropped_recording_frames > 0:
+                    str1 += f", >= {self.dropped_recording_frames} dropped frames"
+                printt(str1)
 
             self.need_update_button_state_flag = True
             self.frame_num = 0
@@ -1305,7 +1308,7 @@ class CamObj:
             str1 = f"Elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
 
         if self.dropped_recording_frames > 0:
-            str1 += f", {self.dropped_recording_frames} dropped frames"
+            str1 += f", >={self.dropped_recording_frames} dropped frames"
         return str1
 
     def get_elapsed_time_string(self):
