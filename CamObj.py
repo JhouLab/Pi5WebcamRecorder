@@ -1125,8 +1125,13 @@ class CamObj:
             except queue.Empty:
                 # No frames received. Either camera is disconnected, or running slowly.
                 # Either way, just keep going, and hope camera eventually reconnects.
-                frames_received += 1
+                # Since timeout is 0.5 seconds, we will check twice a second until camera
+                # is back online
                 continue
+
+            if DEBUG and self.current_animal_ID == "StressTest":
+                if frames_received % 2 == 0:
+                    frame = 1 - frame
 
             lag1 = time.time() - t
             if not self.IsRecording and lag1 > 2:
