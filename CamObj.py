@@ -314,8 +314,6 @@ class CamObj:
 
     frame_num = 0  # Number of frames recorded so far.
 
-    last_warning_time = 0
-
     class TTL_type(Enum):
         Normal = 0
         Binary = 1
@@ -369,8 +367,6 @@ class CamObj:
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
         self.q: Queue = Queue()
-        self.last_warning_time = 0
-
 
         # Various file writer objects
         self.Writer: [cv2.VideoWriter | None] = None  # Writer for video file
@@ -1113,8 +1109,8 @@ class CamObj:
     def consumer_thread(self):
 
         now = time.time()
-        if now > CamObj.last_warning_time:
-            CamObj.last_warning_time = now
+        last_warning_time = now
+        last_dropped_frame_warning = now
 
         frames_received = 0  # This is used for diagnostic purposes only
         while not self.pending == self.PendingAction.Exiting:
@@ -1137,11 +1133,11 @@ class CamObj:
             if not self.IsRecording and lag1 > 2:
                 # CPU is lagging, and we are not recording. Skip frame to help catch up.
                 now = time.time()
-                if now - self.last_warning_time > 5:
+                if now - last_warning_time > 5:
                     # Only report to log file every 5 seconds
                     printt(f"Warning: high CPU lag, box{self.box_id}, lag {lag1:.3f}s. Not recording so skipping frame",
                            print_to_screen=DEBUG)
-                    self.last_warning_time = now
+                    last_warning_time = now
                 frames_received += 1
                 continue
 
@@ -1149,12 +1145,13 @@ class CamObj:
                 # Extreme level of lag (>30 seconds)
                 # Will drop frame even if recording. Must still increment frame counters
                 now = time.time()
-                if now - self.last_warning_time > 5:
+                if now - last_dropped_frame_warning > 5:
                     # Only report to log file every 5 seconds
                     printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames",
                            print_to_screen=False)
                     printt(f"CPU lag > 60 seconds. Dropping frame.")  # This isn't ending up in log file, for some reason
-                    self.last_warning_time = now
+                    last_dropped_frame_warning = now
+                    last_warning_time = now
 
                 # This increments frame counter, but doesn't save to file
                 self.process_one_frame(frame, t, TTL, drop_frame=True)
@@ -1168,13 +1165,13 @@ class CamObj:
                 
             if lag2 > 2 or (DEBUG and frames_received % 300 == 0):
                 now = time.time()
-                if now - self.last_warning_time > 5:  # Only report every 2 seconds
+                if now - last_warning_time > 5:  # Only report every 2 seconds
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
                     # However, if it exceeds 2 seconds then something is likely to be seriously
                     # wrong, and might not be recoverable.
                     printt(f"CPU lag, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s",
                            print_to_screen=DEBUG)
-                    self.last_warning_time = now
+                    last_warning_time = now
                 
 
             frames_received += 1

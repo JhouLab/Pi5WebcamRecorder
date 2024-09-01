@@ -57,8 +57,11 @@ interval = sys.getswitchinterval()
 EXPAND_VIDEO = False
 
 if DEBUG:
-    printt("Running in DEBUG mode. Extra diagnostics will appear on screen, along with Stress Test button. "
+    printt("\n\nRunning in DEBUG mode. Extra diagnostics will appear on screen, along with Stress Test button. "
            "Can also use keyboard 'd' to test blue TTL dot.")
+else:
+    # Newlines to help see session start in log file.
+    printt("\n\n")
 
 MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
 
@@ -1018,4 +1021,4 @@ rec_obj = RECORDER(cam_array, root_window=root)
 rec_obj.top_window.mainloop()
 
 if DEBUG:
-    printt("Exiting\n\n\n", close_file=True)
+    printt("Exiting\n\n", close_file=True)
