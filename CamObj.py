@@ -373,6 +373,7 @@ class CamObj:
         self.fid_TTL: [_io.TextIOWrapper | None] = None  # Writer for TTL timestamp file
         self.fid_diagnostic: [_io.TextIOWrapper | None] = None  # Writer for debugging info
         self.start_recording_time = time.time()  # Timestamp (in seconds) when session or recording started
+        self.dropped_recording_frames = None
 
         # Status string to show on GUI
         self.final_status_string = '--'
@@ -862,6 +863,7 @@ class CamObj:
                         print("Warning: unable to create DIAGNOSTIC text file.")
 
                 self.start_recording_time = time.time()
+                self.dropped_recording_frames = 0
 
                 # Set this flag last
                 self.IsRecording = True
@@ -1151,13 +1153,14 @@ class CamObj:
                     # Only report to log file every 5 seconds
                     printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames, queue size {self.q.qsize()}",
                            print_to_screen=False)
-                    printt(f"CPU lag > 60 seconds. Dropping frame.")  # This isn't ending up in log file, for some reason
+                    printt(f"CPU lag > 400 frames. Dropping frame.")  # This isn't ending up in log file, for some reason
                     last_dropped_frame_warning = now
                     last_warning_time = now
 
                 # This increments frame counter, but doesn't save to file
                 self.process_one_frame(frame, t, TTL, drop_frame=True)
                 frames_received += 1
+                self.dropped_recording_frames += 1
                 continue
                 
             self.process_one_frame(frame, t, TTL)
@@ -1300,6 +1303,9 @@ class CamObj:
             str1 = f"Camera {self.box_id} elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
         else:
             str1 = f"Elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
+
+        if self.dropped_recording_frames > 0:
+            str1 += f", {self.dropped_recording_frames} dropped frames"
         return str1
 
     def get_elapsed_time_string(self):
@@ -1307,10 +1313,10 @@ class CamObj:
         elapsed_sec = time.time() - self.start_recording_time
 
         if elapsed_sec < 120:
-            str1 = f"{elapsed_sec:.1f} seconds"
+            str1 = f"{elapsed_sec:.1f} s"
         else:
             elapsed_min = elapsed_sec / 60
-            str1 = f"{elapsed_min:.2f} minutes"
+            str1 = f"{elapsed_min:.2f} min"
 
         str1 += f", {self.frame_num} frames"
 

@@ -500,7 +500,7 @@ class RECORDER:
                 b.pack(side=tk.LEFT, ipadx=2)
                 w.SnapshotButton = b
                 
-            l = tk.Label(f3, text=f"", width=60, anchor=tk.W)
+            l = tk.Label(f3, text=f"", width=75, anchor=tk.W)
             l.pack(side=tk.LEFT, fill=tk.X)
             w.StatusLabel = l
 
