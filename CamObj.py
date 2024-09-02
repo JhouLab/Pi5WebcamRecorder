@@ -311,8 +311,6 @@ class CamObj:
     IsRecording = False
     GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
 
-    frame_num = 0  # Number of frames recorded so far.
-
     class TTL_type(Enum):
         Normal = 0
         Binary = 1
@@ -322,7 +320,6 @@ class CamObj:
     class PendingAction(Enum):
         Nothing = 0
         StartRecord = 1
-        EndRecord = 2
         Exiting = 3
 
     # Class variables related to TTL handling
@@ -374,6 +371,11 @@ class CamObj:
         self.fid_diagnostic: [_io.TextIOWrapper | None] = None  # Writer for debugging info
         self.start_recording_time = time.time()  # Timestamp (in seconds) when session or recording started
         self.dropped_recording_frames = None
+        self.last_frame_received_elapsed_time = 0
+        self.frames_received = 0  # Number of frames received, even if later dropped
+        self.frames_recorded = 0  # Number of frames recorded
+
+        self.pending_stop_record_time = 0
 
         # Status string to show on GUI
         self.final_status_string = '--'
@@ -766,7 +768,8 @@ class CamObj:
         # the three threads don't conflict.
         with self.lock:
             if not self.IsRecording:
-                self.frame_num = 0
+                self.frames_received = 0
+                self.frames_recorded = 0
                 self.TTL_num = 0
 
                 if stress_test_mode:
@@ -878,7 +881,10 @@ class CamObj:
     def stop_record(self):
 
         # Set flag so that camera loop will stop recording on the next frame
-        self.pending = self.PendingAction.EndRecord
+        self.pending_stop_record_time = time.time()
+        # Stop overrides any pending starts.
+        if self.pending == self.PendingAction.StartRecord:
+            self.pending = self.PendingAction.Nothing
 
     def __stop_recording_now(self):
 
@@ -899,7 +905,8 @@ class CamObj:
                 printt(str1)
 
             self.need_update_button_state_flag = True
-            self.frame_num = 0
+            self.frames_received = 0
+            self.frames_recorded = 0
 
             if self.Writer is not None:
                 try:
@@ -1157,7 +1164,7 @@ class CamObj:
                 now = time.time()
                 if now - last_dropped_frame_warning > 5:
                     # Only report to log file every 5 seconds
-                    printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames, queue size {self.q.qsize()}",
+                    printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames, queue size {self.q.qsize()}",
                            print_to_screen=False)
                     last_dropped_frame_warning = now
                     last_warning_time = now
@@ -1181,7 +1188,7 @@ class CamObj:
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
                     # However, if it exceeds 2 seconds then something is likely to be seriously
                     # wrong, and might not be recoverable.
-                    printt(f"CPU lag, box{self.box_id}, frame # {self.frame_num}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s, queue size {self.q.qsize()}",
+                    printt(f"CPU lag, box{self.box_id}, frame # {self.frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s, queue size {self.q.qsize()}",
                            print_to_screen=DEBUG)
                     last_warning_time = now
                 
@@ -1207,10 +1214,10 @@ class CamObj:
                         cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
                         round(FONT_SCALE + 0.5))  # Line thickness
 
-        if self.frame_num > 0:
+        if self.frames_received > 0:
             # Add frame # to video. Scale down font to 70% since this number can be large.
             # Location was originally 10,140, now moved to (WIDTH/2)),30
-            cv2.putText(frame, str(self.frame_num),
+            cv2.putText(frame, str(self.frames_received),
                         (int(WIDTH / 2), int(30 * FONT_SCALE)),
                         cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE * .7, (255, 128, 128),
                         round(FONT_SCALE + 0.5))  # Line thickness
@@ -1220,8 +1227,8 @@ class CamObj:
 
         with self.lock:
 
-            if self.pending == self.PendingAction.EndRecord:
-                self.pending = self.PendingAction.Nothing
+            if self.IsRecording and 0 < self.pending_stop_record_time < timestamp:
+                self.pending_stop_record_time = 0
                 self.__stop_recording_now()
             elif self.pending == self.PendingAction.StartRecord:
                 self.pending = self.PendingAction.Nothing
@@ -1231,12 +1238,17 @@ class CamObj:
                 return
 
             time_elapsed = timestamp - self.start_recording_time
+            self.last_frame_received_elapsed_time = time_elapsed
+
             if self.IsRecording and time_elapsed >= 0:
                 # Check if time_elapsed > 0, otherwise first couple of frames might be negative
-                self.frame_num += 1
+                self.frames_received += 1
                 
             if drop_frame:
                 return
+
+            if self.IsRecording and time_elapsed >= 0:
+                self.frames_recorded += 1
 
             if TTL_on:
                 # Add blue dot to indicate that GPIO is active
@@ -1281,9 +1293,9 @@ class CamObj:
                     try:
                         if DEBUG:
                             lag = time.time() - timestamp
-                            self.fid.write(f"{self.frame_num}\t{time_elapsed}\t{lag}\n")
+                            self.fid.write(f"{self.frames_received}\t{time_elapsed}\t{lag}\n")
                         else:
-                            self.fid.write(f"{self.frame_num}\t{time_elapsed}\n")
+                            self.fid.write(f"{self.frames_received}\t{time_elapsed}\n")
                     except:
                         print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
                         self.__stop_recording_now()
@@ -1293,7 +1305,7 @@ class CamObj:
                     # Write frame to AVI video file if possible
                     if self.Writer is not None:
                         self.Writer.write(self.frame)
-                        self.last_frame_written = self.frame_num
+                        self.last_frame_written = self.frames_received
                 except:
                     print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
                     self.__stop_recording_now()
@@ -1317,7 +1329,7 @@ class CamObj:
 
     def get_elapsed_time_string(self):
 
-        elapsed_sec = time.time() - self.start_recording_time
+        elapsed_sec = self.last_frame_received_elapsed_time
 
         if elapsed_sec < 120:
             str1 = f"{elapsed_sec:.1f} s"
@@ -1325,12 +1337,19 @@ class CamObj:
             elapsed_min = elapsed_sec / 60
             str1 = f"{elapsed_min:.2f} min"
 
-        str1 += f", {self.frame_num} frames"
+        str1 += f", {self.frames_received} frames"
 
         if elapsed_sec > 5:
-            fps = self.frame_num / elapsed_sec
-            return str1 + f", {fps:.2f} fps"
+            fps1 = self.frames_received / elapsed_sec
+            if abs(self.frames_received - self.frames_recorded) > 5:
+                # Report fps for both received and recorded frames (latter will be slightly smaller)
+                fps2 = self.frames_recorded / elapsed_sec
+                return str1 + f", {fps1:.2f}/{fps2:.2f} fps"
+            else:
+                # Report fps
+                return str1 + f", {fps1:.2f} fps"
         else:
+            # Don't report fps for first 5 seconds
             return str1
 
     def take_snapshot(self):
