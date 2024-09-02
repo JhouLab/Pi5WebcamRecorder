@@ -953,7 +953,7 @@ class RECORDER:
                 if cam is not None and w.StatusLabel is not None:
                     if cam.IsRecording:
                         # Print elapsed time for each camera that is actively recording.
-                        s = cam.get_elapsed_recording_time()
+                        s = f"Elapsed: {cam.get_elapsed_time_string()}"
                         w.StatusLabel.config(text=s)
                     elif cam.final_status_string is not None:
                         w.StatusLabel.config(text=cam.final_status_string)

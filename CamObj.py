@@ -1317,23 +1317,6 @@ class CamObj:
                     print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
                     self.__stop_recording_now()
 
-    def get_elapsed_recording_time(self, include_cam_num=False):
-
-        if self.Writer is not None:
-            file_stats = os.stat(self.filename_video)
-            file_size = file_stats.st_size
-        else:
-            file_size = 0
-
-        if include_cam_num:
-            str1 = f"Camera {self.box_id} elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
-        else:
-            str1 = f"Elapsed: {self.get_elapsed_time_string()}, {file_size / (1024 * 1024)}MB"
-
-        if self.dropped_recording_frames > 0:
-            str1 += f", >={self.dropped_recording_frames} dropped frames"
-        return str1
-
     def get_elapsed_time_string(self):
 
         elapsed_sec = self.last_frame_received_elapsed_time
@@ -1351,13 +1334,23 @@ class CamObj:
             if abs(self.frames_received - self.frames_recorded) > 5:
                 # Report fps for both received and recorded frames (latter will be slightly smaller)
                 fps2 = self.frames_recorded / elapsed_sec
-                return str1 + f", {fps1:.2f}/{fps2:.2f} fps"
+                str1 += f", {fps1:.2f}/{fps2:.2f} fps"
             else:
                 # Report fps
-                return str1 + f", {fps1:.2f} fps"
+                str1 += f", {fps1:.2f} fps"
+
+        if self.Writer is not None:
+            file_stats = os.stat(self.filename_video)
+            file_size = file_stats.st_size
         else:
-            # Don't report fps for first 5 seconds
-            return str1
+            file_size = 0
+
+        str1 += f", {file_size / (1024 * 1024)}MB"
+
+        if self.dropped_recording_frames > 0:
+            str1 += f", >={self.dropped_recording_frames} dropped frames"
+
+        return str1
 
     def take_snapshot(self):
         if self.cam is None or self.frame is None:
