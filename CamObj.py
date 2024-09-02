@@ -1,25 +1,27 @@
-from __future__ import annotations  # Need this for type hints to work on older Python versions
-
-import _io
-import queue
-import tkinter.filedialog
-import tkinter.messagebox
+#
+# CamObj.py
 #
 # This file is intended to be imported by webcam_recorder.py
 #
-# It mainly contains the CamObj class, which helps manage independent
-# USB cameras.
+# It contains the CamObj class, which helps manage independent USB cameras.
 #
-# On Raspberry Pi and Windows, this just works.
-#
+# On Raspberry Pi and Windows, this works without additional effort.
 # On Windows Subsystem for Linux (WSL), need to first install usbipd-win:
 # https://learn.microsoft.com/en-us/windows/wsl/connect-usb#prerequisites
 # Then you might have to install kernel drivers:
 # https://github.com/dorssel/usbipd-win/wiki/WSL-support
 # https://github.com/dorssel/usbipd-win/wiki/WSL-support
 
+from __future__ import annotations  # Need this for type hints to work on older Python versions
+
+import _io
+import queue
+import tkinter.filedialog
+import tkinter.messagebox
+
 from typing import List
 import os
+import sys
 import psutil  # This is used to obtain disk free space
 import numpy as np
 import math
@@ -287,8 +289,17 @@ def verify_directory():
 
     target_path = os.path.join(DATA_FOLDER, date)
     try:
-        if not os.path.isdir(target_path):
-            os.mkdir(target_path)
+        if os.path.isdir(target_path):
+            # check permissions
+            m = os.stat(target_path).st_mode & 0o777
+            if m != 0o777:
+                # Now make read/write/executable by owner, group, and other.
+                # This is necessary since these folders are often made by root, but accessed by others.
+                # os.chmod(target_path, mode=0o777) # This fails if created by root and we are not root
+                proc = subprocess.Popen(['sudo', 'chmod', '777', target_path])
+        else:
+            os.mkdir(target_path, mode=0o777) # Note linux umask is usually 755, which limits what permissions non-root can make
+            subprocess.Popen(['chmod', '777', target_path])  # This should always work
             print("Folder was not found, but created at: ", target_path)
         return target_path
     except Exception as ex:
@@ -823,8 +834,11 @@ class CamObj:
                                                       RECORD_FRAME_RATE,
                                                       self.resolution,
                                                       RECORD_COLOR == 1)
-                except:
-                    print(f"Warning: unable to create video file: '{self.filename_video}'")
+                except Exception as e:
+                    # Strangely, failure to open file does NOT trigger exception.
+                    str1 = f"ERROR: unable to create video file: '{self.filename_video}'"
+                    printt(str1)
+                    tkinter.messagebox.showinfo("Error", str1)
                     return False
 
                 self.filename_timestamp = prefix + prefix_unique + "_Frames.txt"
@@ -832,8 +846,12 @@ class CamObj:
 
                 if not self.Writer.isOpened():
                     # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
-                    print(f"Warning: unable to create video file: '{self.filename_video}'")
-                    return False
+                    # If lacking permission to write to folder, will also end up here. However, OpenCV will not report
+                    # any error, it just won't do it.
+                    str1 = f"ERROR: unable to create video file:\n\n'{self.filename_video}'\n\nMake sure you have permission to write file and that codec is installed."
+                    printt(str1)
+                    tkinter.messagebox.showinfo("Error", str1)
+                    # return False
 
                 try:
                     # Create text file for frame timestamps
@@ -842,23 +860,28 @@ class CamObj:
                         self.fid.write('Frame_number\tTime_in_seconds\tQueue_lag\tcompression_lag\n')
                     else:
                         self.fid.write('Frame_number\tTime_in_seconds\n')
-                except:
-                    print("Warning: unable to create text file for frame timestamps")
+                except Exception as e:
+                    str1 = f"ERROR while creating frame timestamp text file:\n\n{self.filename_timestamp}\n\n" + str(e)
+                    printt(str1)
 
                     # Close the previously-created writer objects
                     self.Writer.release()
+                    tkinter.messagebox.showinfo("Error", str1)
                     return False
 
                 try:
                     # Create text file for TTL timestamps
                     self.fid_TTL = open(self.filename_timestamp_TTL, 'w')
                     self.fid_TTL.write('TTL_event_number\tONSET (seconds)\tOFFSET (seconds)\n')
-                except:
-                    print("Warning: unable to create text file for TTL timestamps")
+                except Exception as e:
+                    str1 = f"ERROR creating TTL text file:\n\n{self.filename_timestamp_TTL}\n\n" + str(e)
+                    
+                    printt(str1)
 
                     # Close the previously-created writer objects
                     self.fid.close()
                     self.Writer.release()
+                    tkinter.messagebox.showinfo("Error", str1)
                     return False
 
                 if DEBUG and MAKE_DEBUG_DIAGNOSTIC_GPIO_LAG_TEXT_FILE:
@@ -867,8 +890,9 @@ class CamObj:
 
                         self.fid_diagnostic = open(prefix + prefix_unique + "_diagnostic.txt", 'w')
                         self.fid_diagnostic.write('Time\tGPIO_lag1\tGPIO_lag2\n')
-                    except:
-                        print("Warning: unable to create DIAGNOSTIC text file.")
+                    except Exception as e:
+                        str1 = "ERROR creating diagnostic text file:\n   " + str(e)
+                        printt(str1)
 
                 self.start_recording_time = time.time()
                 self.dropped_recording_frames = 0

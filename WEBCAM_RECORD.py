@@ -306,7 +306,7 @@ def browse_data_folder():
         # Open data folder in the Pi's file manager, PCMan.
         # Must use subprocess.Popen() rather than os.system(), as the latter blocks until the window is closed.
         if os.getuid() == 0:
-            # If running as superuser, then switch to jhoulab account or else VLC player (and possibly other
+            # If running as superuser, then we must switch to jhoulab account or else VLC player (and possibly other
             # programs) won't work.
             
             # But first find what accounts are on this machine besides root
