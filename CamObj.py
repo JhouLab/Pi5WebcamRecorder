@@ -704,11 +704,16 @@ class CamObj:
 
                 self.TTL_num += 1
                 if self.fid_TTL is not None:
-                    try:
-                        self.fid_TTL.write(f"{self.TTL_num}\t{gpio_onset_time}\t{gpio_offset_time}\n")
-                        self.fid_TTL.flush()
-                    except:
-                        print(f"Unable to write TTL timestamp file for camera {self.box_id}")
+                    if 0 < self.pending_stop_record_time < self.most_recent_gpio_rising_edge_time:
+                        # If stop_record has been issued, and TTL is later, then don't save
+                        printt("TTL received after recording stop, won't save")
+                    else:
+                        # Only record TTL if stop has not been issued, or if stop time is later than this pulse
+                        try:
+                            self.fid_TTL.write(f"{self.TTL_num}\t{gpio_onset_time}\t{gpio_offset_time}\n")
+                            self.fid_TTL.flush()
+                        except:
+                            printt(f"Unable to write TTL timestamp file for camera {self.box_id}")
                 else:
                     # We shouldn't ever get here. If so, something usually has gone wrong with file system,
                     # e.g. USB drive has come unplugged.
@@ -880,11 +885,13 @@ class CamObj:
 
     def stop_record(self):
 
-        # Set flag so that camera loop will stop recording on the next frame
-        self.pending_stop_record_time = time.time()
-        # Stop overrides any pending starts.
-        if self.pending == self.PendingAction.StartRecord:
-            self.pending = self.PendingAction.Nothing
+        with self.lock:
+            # Set time flag so that recording will stop when frame exceeds this value.
+            # This allows already-queued frames to get recorded, even if not processed until later.
+            self.pending_stop_record_time = time.time()
+            # stop_record() overrides any pending starts.
+            if self.pending == self.PendingAction.StartRecord:
+                self.pending = self.PendingAction.Nothing
 
     def __stop_recording_now(self):
 
