@@ -1063,6 +1063,9 @@ class CamObj:
 
         # Downsampling interval. Must be integer, hence use of ceiling function
         count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
+        
+        if DEBUG:
+            printt(f'Will save every {count_interval} frames')
 
         # Start thread that will process the frames sent by this loop.
         # This allows read_camera_continuous(), i.e. this thread, to
@@ -1076,19 +1079,20 @@ class CamObj:
         TTL_on = None
 
         self.IsReady = True
-        self.nextRetry = 0
+        nextRetry = 0
+        last_dropped_frame_warning = time.time()
 
         while not self.pending == self.PendingAction.Exiting:
 
-            if self.nextRetry > 0:
-                if self.nextRetry > time.time():
+            if nextRetry > 0:
+                if nextRetry > time.time():
                     # Time to retry connection
                     tmp, _ = setup_cam(self.id_num)
                     if tmp.isOpened():
                         # Successfully reconnected
                         self.cam = tmp
                         self.status = True
-                        self.nextRetry = 0
+                        nextRetry = 0
   
                         if IS_PI5:
                             port = get_cam_usb_port(self.id_num)
@@ -1101,7 +1105,7 @@ class CamObj:
                                 tkinter.messagebox.showinfo("Warning", st1 + "\n\n" + st2)
                     else:
                         # Wait 5 seconds until next retry
-                        self.nextRetry = time.time() + 5
+                        nextRetry = time.time() + 5
                 else:
                     # Not yet time to retry connection
                     time.sleep(1)
@@ -1125,7 +1129,6 @@ class CamObj:
                     break
 
                 # Read failed. Remove this camera so we won't attempt to read it later.
-
                 if self.IsRecording:
                     self.stop_record()  # Close file writers
 
@@ -1136,15 +1139,21 @@ class CamObj:
 
                 # Remove camera resources
                 self.release()
-                self.nextRetry = time.time() + 5
+                nextRetry = time.time() + 5
                 continue
 
             count += 1
             if count == count_interval:
                 count = 0
-                self.q.put((frame, frame_time, TTL_on))
-
-            frame_count += 1
+                frame_count += 1
+                if self.q.qsize() > 250:
+                    if frame_time - last_dropped_frame_warning > 5:
+                        # Only report to log file every 5 seconds
+                        printt(f"DROPPING FRAME, box{self.box_id}, frame # {frame_count}, time={frame_time - self.start_recording_time:.3f}s",
+                               print_to_screen=False)
+                        last_dropped_frame_warning = frame_time
+                else:                
+                    self.q.put((frame, frame_time, TTL_on, frame_count))
 
         if DEBUG:
             printt(f"Box {self.box_id} exiting camera read (producer) thread.")
@@ -1153,21 +1162,23 @@ class CamObj:
 
         now = time.time()
         last_warning_time = now
-        last_dropped_frame_warning = now
+        prev_frames_received = 0
 
-        frames_received = 0  # This is used for diagnostic purposes only
         while not self.pending == self.PendingAction.Exiting:
 
             #
             try:
-                frame, t, TTL = self.q.get(timeout=0.5)
+                frame, t, TTL, frames_received = self.q.get(timeout=0.5)
             except queue.Empty:
                 # No frames received. Either camera is disconnected, or running slowly.
                 # Either way, just keep going, and hope camera eventually reconnects.
                 # Since timeout is 0.5 seconds, we will check twice a second until camera
                 # is back online
                 continue
-
+            
+            gap = frames_received - prev_frames_received
+            prev_frames_received = frames_received
+            
             if DEBUG and self.current_animal_ID == "StressTest":
                 # Add massive flicker to truly stress out the recording and compression algorithm.
                 # This will cause massive delays, and will crash the Pi in about 60 seconds unless
@@ -1186,29 +1197,9 @@ class CamObj:
                     printt(f"Warning: high CPU lag, box{self.box_id}, lag {lag1:.3f}s. Not recording so skipping frame",
                            print_to_screen=DEBUG)
                     last_warning_time = now
-                frames_received += 1
                 continue
 
-            if self.CPU_lag_frames > 400:
-                # Extreme level of lag
-                # Will drop frame even if recording. Must still increment frame counters
-                now = time.time()
-                if now - last_dropped_frame_warning > 5:
-                    # Only report to log file every 5 seconds
-                    printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames, queue size {self.q.qsize()}",
-                           print_to_screen=False)
-                    last_dropped_frame_warning = now
-                    last_warning_time = now
-
-                # This increments frame counter, but doesn't save to file
-                self.process_one_frame(frame, t, TTL, drop_frame=True)
-
-                # Increment other diagnostic counters
-                frames_received += 1
-                self.dropped_recording_frames += 1
-                continue
-                
-            self.process_one_frame(frame, t, TTL)
+            self.process_one_frame(frame, t, TTL, gap=gap)
 
             lag2 = time.time() - t
             self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
@@ -1219,12 +1210,9 @@ class CamObj:
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
                     # However, if it exceeds 2 seconds then something is likely to be seriously
                     # wrong, and might not be recoverable.
-                    printt(f"CPU lag, box{self.box_id}, frame # {self.frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag2:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s, queue size {self.q.qsize()}",
+                    printt(f"CPU lag, box{self.box_id}, frame # {self.frames_received}={t - self.start_recording_time:.3f}s, CPU lag {lag2:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s, queue size {self.q.qsize()}",
                            print_to_screen=DEBUG)
                     last_warning_time = now
-                
-
-            frames_received += 1
 
         if DEBUG:
             printt(f"Box {self.box_id} exiting consumer thread.")
@@ -1254,7 +1242,7 @@ class CamObj:
                         round(FONT_SCALE + 0.5))  # Line thickness
 
     # Reads a single frame from CamObj class and writes it to file
-    def process_one_frame(self, frame, timestamp, TTL_on, drop_frame=False):
+    def process_one_frame(self, frame, timestamp, TTL_on, gap=1):
 
         with self.lock:
 
@@ -1273,11 +1261,10 @@ class CamObj:
 
             if self.IsRecording and time_elapsed >= 0:
                 # Check if time_elapsed > 0, otherwise first couple of frames might be negative
-                self.frames_received += 1
+                self.frames_received += gap
+                if gap > 1:
+                    self.dropped_recording_frames += (gap - 1)
                 
-            if drop_frame:
-                return
-
             if self.IsRecording and time_elapsed >= 0:
                 self.frames_recorded += 1
 
