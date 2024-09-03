@@ -1321,8 +1321,9 @@ class CamObj:
                             self.fid.write(f"{self.frames_received}\t{time_elapsed}\t{lag}\n")
                         else:
                             self.fid.write(f"{self.frames_received}\t{time_elapsed}\n")
-                    except:
-                        print(f"Unable to write text file for camera f{self.box_id}. Will stop recording")
+                    except Exception as e:
+                        print(f'ERROR: {e}')
+                        print(f"... while writing frame timestamp for camera {self.box_id}, frame {self.frames_received}. Will stop recording")
                         self.__stop_recording_now()
                         return
 
