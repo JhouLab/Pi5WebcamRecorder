@@ -331,6 +331,7 @@ class CamObj:
     class PendingAction(Enum):
         Nothing = 0
         StartRecord = 1
+        ForceStop = 2
         Exiting = 3
 
     # Class variables related to TTL handling
@@ -907,12 +908,15 @@ class CamObj:
 
                 return True
 
-    def stop_record(self):
+    def stop_record(self, force=False):
 
         with self.lock:
-            # Set time flag so that recording will stop when frame exceeds this value.
-            # This allows already-queued frames to get recorded, even if not processed until later.
-            self.pending_stop_record_time = time.time()
+            if force:
+                self.pending = self.PendingAction.ForceStop
+            else:
+                # Set time flag so that recording will stop when frame exceeds this value.
+                # This allows already-queued frames to get recorded, even if not processed until later.
+                self.pending_stop_record_time = time.time()
             # stop_record() overrides any pending starts.
             if self.pending == self.PendingAction.StartRecord:
                 self.pending = self.PendingAction.Nothing
@@ -1246,6 +1250,9 @@ class CamObj:
 
         with self.lock:
 
+            if self.pending == self.PendingAction.ForceStop:
+                self.pending = self.PendingAction.Nothing
+                self.__stop_recording_now()
             if self.IsRecording and 0 < self.pending_stop_record_time < timestamp:
                 self.pending_stop_record_time = 0
                 self.__stop_recording_now()
@@ -1404,7 +1411,7 @@ class CamObj:
         # Only call this when exiting program. Will stop all recordings, and release camera resources
 
         if self.IsRecording:
-            self.stop_record()  # This will set flag to be read by process_frame()
+            self.stop_record(force=True)  # This will immediately stop recording. Queued frames may be lost.
             while self.IsRecording:
                 time.sleep(0.1)
 

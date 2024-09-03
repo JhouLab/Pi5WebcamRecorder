@@ -641,7 +641,7 @@ class RECORDER:
         f = tk.Frame(w)  # , highlightbackground="black", highlightthickness=1, relief="flat", borderwidth=5)
         f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
 
-        l1 = tk.Label(f, text="Camera(s) still recording. Quitting will end recordings.", anchor="e", justify=tk.RIGHT)
+        l1 = tk.Label(f, text="Camera(s) still recording. Quitting will end recordings immediately.", anchor="e", justify=tk.RIGHT)
         l1.pack(side=tk.TOP)
 
         f1 = tk.Frame(w)
