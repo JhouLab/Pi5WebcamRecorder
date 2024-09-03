@@ -1076,19 +1076,19 @@ class CamObj:
         TTL_on = None
 
         self.IsReady = True
-        self.nextRetry = 0
+        nextRetry = 0
 
         while not self.pending == self.PendingAction.Exiting:
 
-            if self.nextRetry > 0:
-                if self.nextRetry > time.time():
+            if nextRetry > 0:
+                if nextRetry > time.time():
                     # Time to retry connection
                     tmp, _ = setup_cam(self.id_num)
                     if tmp.isOpened():
                         # Successfully reconnected
                         self.cam = tmp
                         self.status = True
-                        self.nextRetry = 0
+                        nextRetry = 0
   
                         if IS_PI5:
                             port = get_cam_usb_port(self.id_num)
@@ -1101,7 +1101,7 @@ class CamObj:
                                 tkinter.messagebox.showinfo("Warning", st1 + "\n\n" + st2)
                     else:
                         # Wait 5 seconds until next retry
-                        self.nextRetry = time.time() + 5
+                        nextRetry = time.time() + 5
                 else:
                     # Not yet time to retry connection
                     time.sleep(1)
@@ -1136,12 +1136,14 @@ class CamObj:
 
                 # Remove camera resources
                 self.release()
-                self.nextRetry = time.time() + 5
+                nextRetry = time.time() + 5
                 continue
 
             count += 1
             if count == count_interval:
                 count = 0
+                if self.q.qsize() > 250:
+                    frame = 0
                 self.q.put((frame, frame_time, TTL_on))
 
             frame_count += 1
@@ -1168,6 +1170,11 @@ class CamObj:
                 # is back online
                 continue
 
+            if isinstance(frame, int):
+                # Producer thread saw full queue and dropped frame pre-emptively
+                frames_received += 1
+                continue
+
             if DEBUG and self.current_animal_ID == "StressTest":
                 # Add massive flicker to truly stress out the recording and compression algorithm.
                 # This will cause massive delays, and will crash the Pi in about 60 seconds unless
@@ -1189,13 +1196,13 @@ class CamObj:
                 frames_received += 1
                 continue
 
-            if self.CPU_lag_frames > 400:
-                # Extreme level of lag
+            if self.CPU_lag_frames > 250:
+                # 250 frames of lag is about 8-9 seconds.
                 # Will drop frame even if recording. Must still increment frame counters
                 now = time.time()
                 if now - last_dropped_frame_warning > 5:
                     # Only report to log file every 5 seconds
-                    printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames, queue size {self.q.qsize()}",
+                    printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frames_received}={t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames, queue size {self.q.qsize()}",
                            print_to_screen=False)
                     last_dropped_frame_warning = now
                     last_warning_time = now
@@ -1219,10 +1226,9 @@ class CamObj:
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
                     # However, if it exceeds 2 seconds then something is likely to be seriously
                     # wrong, and might not be recoverable.
-                    printt(f"CPU lag, box{self.box_id}, frame # {self.frames_received}, frame time {t - self.start_recording_time:.3f}s, CPU lag {lag2:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s, queue size {self.q.qsize()}",
+                    printt(f"CPU lag, box{self.box_id}, frame # {self.frames_received}={t - self.start_recording_time:.3f}s, CPU lag {lag2:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s, queue size {self.q.qsize()}",
                            print_to_screen=DEBUG)
                     last_warning_time = now
-                
 
             frames_received += 1
 
