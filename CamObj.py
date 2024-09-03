@@ -331,6 +331,7 @@ class CamObj:
     class PendingAction(Enum):
         Nothing = 0
         StartRecord = 1
+        ForceStop = 2
         Exiting = 3
 
     # Class variables related to TTL handling
@@ -907,12 +908,15 @@ class CamObj:
 
                 return True
 
-    def stop_record(self):
+    def stop_record(self, force=False):
 
         with self.lock:
-            # Set time flag so that recording will stop when frame exceeds this value.
-            # This allows already-queued frames to get recorded, even if not processed until later.
-            self.pending_stop_record_time = time.time()
+            if force:
+                self.pending = self.PendingAction.ForceStop
+            else:
+                # Set time flag so that recording will stop when frame exceeds this value.
+                # This allows already-queued frames to get recorded, even if not processed until later.
+                self.pending_stop_record_time = time.time()
             # stop_record() overrides any pending starts.
             if self.pending == self.PendingAction.StartRecord:
                 self.pending = self.PendingAction.Nothing
@@ -1063,6 +1067,9 @@ class CamObj:
 
         # Downsampling interval. Must be integer, hence use of ceiling function
         count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
+        
+        if DEBUG:
+            printt(f'Will save every {count_interval} frames')
 
         # Start thread that will process the frames sent by this loop.
         # This allows read_camera_continuous(), i.e. this thread, to
@@ -1077,6 +1084,7 @@ class CamObj:
 
         self.IsReady = True
         nextRetry = 0
+        last_dropped_frame_warning = time.time()
 
         while not self.pending == self.PendingAction.Exiting:
 
@@ -1125,7 +1133,6 @@ class CamObj:
                     break
 
                 # Read failed. Remove this camera so we won't attempt to read it later.
-
                 if self.IsRecording:
                     self.stop_record()  # Close file writers
 
@@ -1142,11 +1149,15 @@ class CamObj:
             count += 1
             if count == count_interval:
                 count = 0
+                frame_count += 1
                 if self.q.qsize() > 250:
-                    frame = 0
-                self.q.put((frame, frame_time, TTL_on))
-
-            frame_count += 1
+                    if frame_time - last_dropped_frame_warning > 5:
+                        # Only report to log file every 5 seconds
+                        printt(f"DROPPING FRAME, box{self.box_id}, frame # {frame_count}, time={frame_time - self.start_recording_time:.3f}s",
+                               print_to_screen=False)
+                        last_dropped_frame_warning = frame_time
+                else:                
+                    self.q.put((frame, frame_time, TTL_on, frame_count))
 
         if DEBUG:
             printt(f"Box {self.box_id} exiting camera read (producer) thread.")
@@ -1155,26 +1166,23 @@ class CamObj:
 
         now = time.time()
         last_warning_time = now
-        last_dropped_frame_warning = now
+        prev_frames_received = 0
 
-        frames_received = 0  # This is used for diagnostic purposes only
         while not self.pending == self.PendingAction.Exiting:
 
             #
             try:
-                frame, t, TTL = self.q.get(timeout=0.5)
+                frame, t, TTL, frames_received = self.q.get(timeout=0.5)
             except queue.Empty:
                 # No frames received. Either camera is disconnected, or running slowly.
                 # Either way, just keep going, and hope camera eventually reconnects.
                 # Since timeout is 0.5 seconds, we will check twice a second until camera
                 # is back online
                 continue
-
-            if isinstance(frame, int):
-                # Producer thread saw full queue and dropped frame pre-emptively
-                frames_received += 1
-                continue
-
+            
+            gap = frames_received - prev_frames_received
+            prev_frames_received = frames_received
+            
             if DEBUG and self.current_animal_ID == "StressTest":
                 # Add massive flicker to truly stress out the recording and compression algorithm.
                 # This will cause massive delays, and will crash the Pi in about 60 seconds unless
@@ -1193,29 +1201,9 @@ class CamObj:
                     printt(f"Warning: high CPU lag, box{self.box_id}, lag {lag1:.3f}s. Not recording so skipping frame",
                            print_to_screen=DEBUG)
                     last_warning_time = now
-                frames_received += 1
                 continue
 
-            if self.CPU_lag_frames > 250:
-                # 250 frames of lag is about 8-9 seconds.
-                # Will drop frame even if recording. Must still increment frame counters
-                now = time.time()
-                if now - last_dropped_frame_warning > 5:
-                    # Only report to log file every 5 seconds
-                    printt(f"DROPPING FRAME, box{self.box_id}, frame # {self.frames_received}={t - self.start_recording_time:.3f}s, CPU lag {lag1:.1f}s={self.CPU_lag_frames:.1f} frames, queue size {self.q.qsize()}",
-                           print_to_screen=False)
-                    last_dropped_frame_warning = now
-                    last_warning_time = now
-
-                # This increments frame counter, but doesn't save to file
-                self.process_one_frame(frame, t, TTL, drop_frame=True)
-
-                # Increment other diagnostic counters
-                frames_received += 1
-                self.dropped_recording_frames += 1
-                continue
-                
-            self.process_one_frame(frame, t, TTL)
+            self.process_one_frame(frame, t, TTL, gap=gap)
 
             lag2 = time.time() - t
             self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
@@ -1229,8 +1217,6 @@ class CamObj:
                     printt(f"CPU lag, box{self.box_id}, frame # {self.frames_received}={t - self.start_recording_time:.3f}s, CPU lag {lag2:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s, queue size {self.q.qsize()}",
                            print_to_screen=DEBUG)
                     last_warning_time = now
-
-            frames_received += 1
 
         if DEBUG:
             printt(f"Box {self.box_id} exiting consumer thread.")
@@ -1260,10 +1246,13 @@ class CamObj:
                         round(FONT_SCALE + 0.5))  # Line thickness
 
     # Reads a single frame from CamObj class and writes it to file
-    def process_one_frame(self, frame, timestamp, TTL_on, drop_frame=False):
+    def process_one_frame(self, frame, timestamp, TTL_on, gap=1):
 
         with self.lock:
 
+            if self.pending == self.PendingAction.ForceStop:
+                self.pending = self.PendingAction.Nothing
+                self.__stop_recording_now()
             if self.IsRecording and 0 < self.pending_stop_record_time < timestamp:
                 self.pending_stop_record_time = 0
                 self.__stop_recording_now()
@@ -1279,11 +1268,10 @@ class CamObj:
 
             if self.IsRecording and time_elapsed >= 0:
                 # Check if time_elapsed > 0, otherwise first couple of frames might be negative
-                self.frames_received += 1
+                self.frames_received += gap
+                if gap > 1:
+                    self.dropped_recording_frames += (gap - 1)
                 
-            if drop_frame:
-                return
-
             if self.IsRecording and time_elapsed >= 0:
                 self.frames_recorded += 1
 
@@ -1423,7 +1411,7 @@ class CamObj:
         # Only call this when exiting program. Will stop all recordings, and release camera resources
 
         if self.IsRecording:
-            self.stop_record()  # This will set flag to be read by process_frame()
+            self.stop_record(force=True)  # This will immediately stop recording. Queued frames may be lost.
             while self.IsRecording:
                 time.sleep(0.1)
 
