@@ -366,15 +366,16 @@ class RECORDER:
 
     def handle_keypress(self, key, keycode, CV2KEY=False):
 
-        # On Raspberry Pi, CV2KEY will be True, and key will be a one-character string
-        # On Windows machines, CV2KEY will be False, and key will be an integer
+        # This handles key presses either from OpenCV or from Tk callback
+        # Use CV2KEY flag to indicate which kind of key we have
+        # OpenCV keys are integers, Tk keys are single characters
 
         if CV2KEY:
-            key2 = key >> 16  # On Windows, arrow keys are encoded here
+            key2 = key >> 16  # OpenCV encodes arrow keys here on Windows
             key1 = (key >> 8) & 0xFF  # This always seems to be 0
-            key = key & 0xFF  # On Raspberry Pi, arrow keys are coded here along with all other keys
+            key = key & 0xFF  # OpenCV encodes arrow keys here on Raspberry Pi
         else:
-            # On Windows machines, key is a single character, so must be converted to ASCII for consistency with Pi
+            # Tk callback key is a single character, so must be converted to ASCII for consistency with Pi
             if len(key) > 0:
                 key = ord(key)
             else:
@@ -404,17 +405,20 @@ class RECORDER:
                         if res:
                             cam_obj.stop_record()
         else:
-            if platform.system() == "Linux":
-                # Raspberry Pi encodes arrow keys in lowest byte
+            if CV2KEY:
+                # OpenCV encodes arrow keys in lowest byte
+                # OpenCV waitKey() on Windows doesn't seem to work at all, so we never get here in Windows???
                 isLeftArrow = key == 81
                 isRightArrow = key == 83
-            elif platform.system() == "Windows":
-                # Windows encodes arrow keys in highest byte
-                isLeftArrow = (keycode == 37 or keycode == 113)
-                isRightArrow = (keycode == 39 or keycode == 114)
             else:
-                isLeftArrow = False
-                isRightArrow = False
+                # Tk encodes arrow keys in separate keycode variable. Value is 37/39 in Windows, and
+                # 113/114 in Raspberry Pi.
+                if IS_PI:
+                    isLeftArrow = (keycode == 113)
+                    isRightArrow = (keycode == 114)
+                else:
+                    isLeftArrow = (keycode == 37)
+                    isRightArrow = (keycode == 39)
 
             if isLeftArrow:  # Left arrow key
                 self.change_cam(self.CAM_VALS.PREV)
