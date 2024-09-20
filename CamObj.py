@@ -41,14 +41,19 @@ from extra.get_hardware_info import get_cam_usb_port
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
 IS_WINDOWS = (PLATFORM == 'windows')
+IS_PI4 = False
 IS_PI5 = False
 
 if IS_LINUX:
 
     try:
-        r = subprocess.run(['uname', '-m'], stdout=subprocess.PIPE)
-        cpu_type = r.stdout
-        IS_PI5 = cpu_type.startswith(b'aarch64')
+        r1 = subprocess.run(['cat', '/proc/cpuinfo'], stdout=subprocess.PIPE)
+        r2 = subprocess.run(['grep', 'Model'], stdout=subprocess.PIPE, input=r1.stdout)
+        r3 = subprocess.run(['cut', '-d', '":"', '-f', '2'], stdout=subprocess.PIPE, input=r2.stdout)
+
+        model = r3.stdout
+        IS_PI4 = model.startswith(b'Raspberry Pi 4')
+        IS_PI5 = model.startswith(b'Raspberry Pi 5')
     except:
         pass
 
