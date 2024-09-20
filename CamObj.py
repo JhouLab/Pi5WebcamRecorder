@@ -41,23 +41,35 @@ from extra.get_hardware_info import get_cam_usb_port
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
 IS_WINDOWS = (PLATFORM == 'windows')
+IS_PI = False
 IS_PI4 = False
 IS_PI5 = False
 
 if IS_LINUX:
 
     try:
+        # This method for determining if running on Pi is different from what is in get_hardware_info.py, since
+        # that method doesn't work in WSL Linux, whereas this does.
         r1 = subprocess.run(['cat', '/proc/cpuinfo'], stdout=subprocess.PIPE)
         r2 = subprocess.run(['grep', 'Model'], stdout=subprocess.PIPE, input=r1.stdout)
-        r3 = subprocess.run(['cut', '-d', '":"', '-f', '2'], stdout=subprocess.PIPE, input=r2.stdout)
 
-        model = r3.stdout
-        IS_PI4 = model.startswith(b'Raspberry Pi 4')
-        IS_PI5 = model.startswith(b'Raspberry Pi 5')
+        if len(r2.stdout) > 0:
+            r3 = subprocess.run(['cut', '-d', ':', '-f', '2'], stdout=subprocess.PIPE, input=r2.stdout)
+
+            model = r3.stdout
+            # model will typically have a leading space. Use "in" to ignore that
+            if b'Raspberry Pi' in model:
+                IS_PI = True
+            if b'Raspberry Pi 4' in model:
+                IS_PI4 = True
+            elif b'Raspberry Pi 5' in model:
+                IS_PI5 = True
     except:
         pass
 
-if IS_PI5:
+if IS_PI:
+    #
+    # Raspberry Pi will read GPIOs. All other platforms do not.
     #
     # Note that the standard RPi.GPIO library does NOT work on Pi5 (only Pi4).
     # On Pi5, please uninstall the standard library and install the following
@@ -173,7 +185,7 @@ FONT_SCALE = HEIGHT / 480
 # Reading from webcam using MJPG generally allows higher frame rates
 # This definitely works on PI5, not tested elsewhere.
 # USE_MJPG = (WIDTH > 640)
-USE_MJPG = IS_PI5
+USE_MJPG = IS_PI
 
 
 def get_date_string(include_time=True):
@@ -1103,7 +1115,7 @@ class CamObj:
                         self.status = True
                         nextRetry = 0
   
-                        if IS_PI5:
+                        if IS_PI:
                             port = get_cam_usb_port(self.id_num)
                             old_port = self.box_id - FIRST_CAMERA_ID
                             if port != old_port:

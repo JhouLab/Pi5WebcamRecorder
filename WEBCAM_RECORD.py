@@ -14,7 +14,7 @@ import sys
 import numpy as np
 from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
-    FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI5, IS_WINDOWS, \
+    FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO, \
     setup_cam, FIRST_CAMERA_ID
 from extra.get_hardware_info import *
@@ -65,7 +65,7 @@ else:
 
 MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
 
-if IS_PI5:
+if IS_PI:
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
 
     # Identify camera via USB port position, rather than ID number which is unpredictable.
@@ -279,7 +279,7 @@ printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be di
 for idx1, cam_obj1 in enumerate(cam_array):
     if cam_obj1 is not None:
         cam_obj1.start_read_thread()
-        if IS_PI5:
+        if IS_PI:
             time.sleep(0.25)
 
 
