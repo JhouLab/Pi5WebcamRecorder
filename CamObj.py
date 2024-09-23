@@ -382,7 +382,6 @@ class CamObj:
         self.cached_frame_time = None
         self.cached_frame = None
         self.stable_frame = None
-        self.cam_lock = threading.RLock()
         self.need_update_button_state_flag = None
         self.process = None  # This is used if calling FF_MPEG directly. Probably won't use this in the future.
         self.cam = cam
@@ -951,7 +950,7 @@ class CamObj:
             if self.IsRecording:
                 self.IsRecording = False
                 self.final_status_string = self.get_elapsed_time_string()
-                str1 = f"Stopping recording camera {self.box_id} after " + self.final_status_string
+                str1 = f"Stopped recording camera {self.box_id} after " + self.final_status_string
                 if self.dropped_recording_frames > 0:
                     str1 += f", >= {self.dropped_recording_frames} dropped frames"
                 printt(str1)
