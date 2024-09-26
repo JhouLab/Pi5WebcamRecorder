@@ -1,7 +1,7 @@
 
 # HOW TO USE:
 
-Instructions version 1.5
+Instructions, version 1.5
 
 Updated Aug 18, 2024.
 
@@ -12,7 +12,7 @@ If you have problems, questions, or suggestions, please email jhoulab1@gmail.com
 
 # GETTING STARTED:
 
-On most JhouLab computers, the program is in the following folder:
+On most JhouLab computers, the program is installed to the following folder:
 
     /home/jhoulab/Documents/github/Pi5WebcamRecorder
 
@@ -37,7 +37,7 @@ the physical USB port position:
     |  3  |  4  |
     -------------
 
-You can start/stop recording from the GUI, from external 3.3V logic (see "GPIO PROTOCOL" seciont below),
+You can start/stop recording from the GUI, from external 3.3V logic (see "GPIO PROTOCOL" section below),
 or with keyboard shortcuts:
 
     1-4:            Typing a camera number will start/stop recording that camera.
@@ -45,12 +45,14 @@ or with keyboard shortcuts:
     Right cursor:   Cycles through cameras in ascending order
     "Q":            Quits program. (Any ongoing records will also be stopped).
 
-By default, videos saved to the program directory, but it is recommended to
-change this to an external drive, to avoid filling up your SD card. Specify drive path by editing config.txt
-(see CONFIGURING section below). Default format is 640x480, 30fps, with h264 encoding. These can also be
+By default, videos save to the program directory, but I recommend you
+change this to an external drive, to avoid filling up your SD card.
+This is done by creating/editing a config.txt file (see CONFIGURING section below).
+
+Default video format is 640x480, 30fps, with h264 encoding. These can also be
 changed in config.txt.
 
-Each recording generates three files:
+Each recording session generates three files:
 
     YYYY-MM-DD_HHmm_CamX_AnimalID_Video.avi         # Video file in h264 format.
     YYYY-MM-DD_HHmm_CamX_AnimalID_Frames.txt        # Tab-delimited text file with timestamps of each video frame
@@ -66,14 +68,14 @@ Many default parameters can be changed using a "config.txt" file. I've included 
     config_example1     A detailed file with all possible configuration options
     config_example2     A bare-bones file with only the most commonly used options.
 
-To use either file, open it in any text editor, rename it to "config.txt", then edit to suit your needs.
+To use either file, open it in any text editor, resave it as "config.txt", then edit to suit your needs.
 Changes to "config.txt" take effect only after restarting the program. Options include the following:
 
-    RECORD_FRAME_RATE                      # Frame rate of recorded video. If not specified, defaults to camera's native frame rate, typically 30fps
-    NATIVE_FRAME_RATE                      # Native frame rate of webcam. If not specified, will be auto-detected.
-    DATA_FOLDER                            # Folder for saving. If not specified, defaults to program directory.
-    RESOLUTION                             # A string of the form: (width,height), e.g. (640x480)
-    FOURCC                                 # Recording codec. Default h264 which gives smallest file sizes. Can also use mp4v, which is less CPU intensive, but gives larger files
+    RECORD_FRAME_RATE            # Frame rate of recorded video. If not specified, defaults to camera's native frame rate, typically 30fps
+    NATIVE_FRAME_RATE            # Native frame rate of webcam. If not specified, will be auto-detected.
+    DATA_FOLDER                  # Folder for saving. If not specified, defaults to program directory.
+    RESOLUTION                   # A string of the form: (width,height), e.g. (640x480)
+    FOURCC                       # Recording codec. Default h264 which gives smallest file sizes. Can also use mp4v, which is less CPU intensive, but gives larger files
 
 
 # GPIO TIMING PROTOCOL
@@ -86,16 +88,17 @@ Pi5WebcamRecorder monitors GPIO inputs 4 through 7, corresponding to the followi
     GPIO7:          camera 4
 
 These are 3.3V inputs, so you must use a level shifter when connecting to 5V devices. In our lab, we
-use Med-PC running on a Windows machine to generate TTLs. Since those are 28V signals, they require an additional
-level shifter to convert from 28V to 5V.
+use Med-PC to control our operant chambers. Since these produce 28V signals, they require an additional
+level shifter (purchased from Med Associates) to convert from 28V to 5V.
 
-Timing accuracy must be within 50ms. Since neither Windows nor Linux
-are real-time operating systems, this technically cannot be guaranteed. However, Med-PC is generally accurate
+One can also transmit an animal ID number via the GPIO pins as a 16-bit binary number. For this to work,
+pulse timing must be accurate to within +/-50ms. Since neither Windows nor Linux  are real-time operating
+systems, this degree of accuracy technically cannot be guaranteed. However, Med-PC is generally accurate
 to just a few milliseconds, while the Pi5Recorder runs in high priority in superuser mode, which also reduces
-timing errors. So in practice, timing errors are not an issue, even though they could theoretically cause glitches.
+timing errors. So in practice, we have yet to encounter any glitches related to timing errors.
 
-A standard pulse should be 100ms long. A double pulse will start a recording, and consists of two standard
-pulses with a 50ms pause in between:
+A standard pulse should be 100ms long. Sending two consecutive pulses (with a 50ms pause in between) will
+start a recording, as follows:
 
     3.3V    100ms  100ms
              ___    ___      
@@ -103,7 +106,7 @@ pulses with a 50ms pause in between:
     0V -----     --     --------
                 50ms
 
-Once a session is started, three consecutive pulses will stop the recording. (Again, pulses are 100ms with 50ms pauses).
+Once a session is started, three consecutive pulses will stop the recording (also with 50ms pause between each pulse)
 
 If an animal IDs was transmitted prior to recording start, it will show up in the filename. ID transmission is graphically
 represented below:
@@ -116,9 +119,9 @@ represented below:
 
 The sequence of events is as follows:
 
-1. 200ms high pulse
-2. 16 binary bits, with least significant bit first, where 50ms duration indicates "0" and 150ms duration indicates "1". Gap between pulses is 50ms
-3. 200ms low period
+1. 200ms high pulse to start binary transmission
+2. 16 binary bits, LSB first. 50ms duration indicates "0" and 150ms duration indicates "1". Gap between pulses is 50ms
+3. 200ms low period to end binary transmission
 4. Checksum parity bit: 50ms duration if ID had an even number of "1"s, 150ms duration if odd
 
 
