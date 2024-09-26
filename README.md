@@ -18,18 +18,22 @@ On most JhouLab computers, the program is installed to the following folder:
 
 If you need to install on a new machine, skip to the botton section on this page: "Installing on a new machine"
 
-Launch the program with one of the following methods:
+Then launch the program with one of the following methods:
 
-    Method 1: From command line (must be in program folder):
+    Method 1: From command line:
 
+      cd Documents/github/Pi5WebcamRecorder
       python -m RUN_AS_ROOT
 
-    Method 2: From Thonny (Pi's pre-installed Python IDE).
-      Click "Load", select RUN_AS_ROOT.py,
-      then click "Run" (green button with white triangle).
+    Method 2: From Thonny:
+      Click "Load", select "RUN_AS_ROOT.py", then click "Run" (green button with white triangle).
 
-Upon launch, program displays USB cameras in a 2x2 grid, where the grid position matches
-the physical USB port position:
+Upon launch, the program will auto-detect USB cameras, open a control bar, and display up to 4 cameras in a 2x2 grid,
+like below:
+
+![img.png](extra/screenshot.png)
+
+The position of each camera in the grid will match the physical USB port position as follows:
 
     -------------
     |  1  |  2  |
@@ -37,13 +41,7 @@ the physical USB port position:
     |  3  |  4  |
     -------------
 
-You can start/stop recording from the GUI, from external 3.3V logic (see "GPIO PROTOCOL" section below),
-or with keyboard shortcuts:
-
-    1-4:            Typing a camera number will start/stop recording that camera.
-    Left cursor:    Cycles through cameras in descending order
-    Right cursor:   Cycles through cameras in ascending order
-    "Q":            Quits program. (Any ongoing records will also be stopped).
+You can start/stop recording from the GUI, or from external GPIO logic inputs (see "GPIO PROTOCOL" section below).
 
 By default, videos save to the program directory, but I recommend you
 change this to an external drive, to avoid filling up your SD card.
@@ -52,18 +50,18 @@ This is done by creating/editing a config.txt file (see CONFIGURING section belo
 Default video format is 640x480, 30fps, with h264 encoding. These can also be
 changed in config.txt.
 
-Each recording session generates three files:
+Each recording session generates three files, with the following names and contents:
 
-    YYYY-MM-DD_HHmm_CamX_AnimalID_Video.avi         # Video file in h264 format.
-    YYYY-MM-DD_HHmm_CamX_AnimalID_Frames.txt        # Tab-delimited text file with timestamps of each video frame
-    YYYY-MM-DD_HHmm_CamX_AnimalID_TTLs.txt          # Tab-delimited text file with timestamps of each TTL pulse
+    YYYY-MM-DD_HHmm_CamX_AnimalID_Video.avi     # Video file in h264 format.
+    YYYY-MM-DD_HHmm_CamX_AnimalID_Frames.txt    # Tab-delimited text file with timestamps of each video frame
+    YYYY-MM-DD_HHmm_CamX_AnimalID_TTLs.txt      # Tab-delimited text file with timestamps of each TTL pulse
 
-Where YYYY-MM-DD_HHmm is the date and time, X is the camera number, and AnimalID is entered
+In the above filenames, YYYY-MM-DD_HHmm is the date and time, X is the camera number (1-4), and AnimalID is entered
 manually or transmitted via GPIO logic inputs.
 
 # CONFIGURING:
 
-Many default parameters can be changed using a "config.txt" file. I've included two working examples:
+Many default parameters can be changed using a "config.txt" text file. I've included two working examples:
 
     config_example1     A detailed file with all possible configuration options
     config_example2     A bare-bones file with only the most commonly used options.
@@ -87,35 +85,43 @@ Pi5WebcamRecorder monitors GPIO inputs 4 through 7, corresponding to the followi
     GPIO6:          camera 3
     GPIO7:          camera 4
 
-These are 3.3V inputs, so you must use a level shifter when connecting to 5V devices. In our lab, we
-use Med-PC to control our operant chambers. Since these produce 28V signals, they require an additional
-level shifter (purchased from Med Associates) to convert from 28V to 5V.
+These are 3.3V inputs, so you must use a level shifter when connecting to 5V devices. If you use Med-PC
+to generate timing signals, remember that those are 28V signals, which require an additional
+level shifter (purchased from Med Associates) to convert from 28V to 5V, which in turn is converted to 3.3V.
 
-One can also transmit an animal ID number via the GPIO pins as a 16-bit binary number. For this to work,
-pulse timing must be accurate to within +/-50ms. Since neither Windows nor Linux  are real-time operating
-systems, this degree of accuracy technically cannot be guaranteed. However, Med-PC is generally accurate
-to just a few milliseconds, while the Pi5Recorder runs in high priority in superuser mode, which also reduces
-timing errors. So in practice, we have yet to encounter any glitches related to timing errors.
+Sending two consecutive 100ms pulses (with a 50ms pause in between) will start a recording, as follows:
 
-A standard pulse should be 100ms long. Sending two consecutive pulses (with a 50ms pause in between) will
-start a recording, as follows:
-
-    3.3V    100ms  100ms
-             ___    ___      
+            100ms  100ms
+    3.3V     ___    ___      
             |   |  |   |    
     0V -----     --     --------
                 50ms
 
-Once a session is started, three consecutive pulses will stop the recording (also with 50ms pause between each pulse)
+Once a session is started, three consecutive pulses will stop the recording:
 
-If an animal IDs was transmitted prior to recording start, it will show up in the filename. ID transmission is graphically
-represented below:
+            100ms  100ms  100ms
+    3.3V     ___    ___    ___    
+            |   |  |   |  |   |
+    0V -----     --     --     ----
+                50ms    50ms
 
-    3.3V    200ms    <16 binary bits, 50/150ms>     <Parity bit 50/150ms>
-             ____   _   _   _                   _       _
-            |    | | | | | | |    .. etc..     | |     | |
-    0V -----      -   -   -   -               -   -----   ---------------
-                 50ms low period between bits     200ms
+While a session is ongoing, any single pulse will be recorded in the timestamp file. This can be used to
+synchronize video with behavioral events:
+
+            100ms
+    3.3V     ___ 
+            |   |
+    0V -----     ----------
+
+
+One can also transmit an animal ID number via the GPIO pins as a 16-bit binary number. The ID number will then
+show up in the filename. ID transmission looks like the pulse sequence below:
+
+    3.3V      200ms  <16 binary bits, 50 or 150ms>     <Parity bit 50 or 150ms>
+             ______   _   _   _                   _       _
+            |      | | | | | | |    .. etc..     | |     | |
+    0V -----        -   -   -   -               -   -----   ---------------
+                      50ms between ID bits          200ms pause before parity bit
 
 The sequence of events is as follows:
 
