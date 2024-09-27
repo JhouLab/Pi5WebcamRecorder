@@ -333,9 +333,9 @@ class CamObj:
     box_id = -1  # User-friendly camera ID. Will usually be USB port position/screen position, starting from 1
     status = -1  # True if camera is operational and connected
     frame = None  # Most recently obtained video frame. If camera lost connection, this will be a black frame with some text
-    filename_video: str = "Video.avi"
-    filename_timestamp = "Timestamp.txt"
-    filename_timestamp_TTL = "Timestamp_TTL.txt"
+    filename_video: str = "file_Video.avi"
+    filename_timestamp = "file_Frames.txt"
+    filename_timestamp_TTL = "file_TTLs.txt"
 
     IsRecording = False
     GPIO_pin = -1  # Which GPIO pin corresponds to this camera? First low-high transition will start recording.
@@ -997,6 +997,10 @@ class CamObj:
         status, frame = self.cam.read()
         
         if not status:
+            # Even though camera was detected a few seconds earlier, read can still fail. For
+            # example, if camera is connected to Pi through a passive extension cable, the connection
+            # might be good enough to detect camera, but not good enough to receive data. In that case,
+            # we will fail here. Solution there is to use an active extender (e.g. hub).
             printt(f"Unable to read cam {self.box_id} initial frame")
             return -1
 

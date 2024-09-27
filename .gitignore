@@ -2,6 +2,9 @@
 *.avi
 config.txt
 *log.txt
+*Frames.txt
+*TTLs.txt
+*diagnostic.txt
 
 # Ignore PyCharm folders
 __pycache__
