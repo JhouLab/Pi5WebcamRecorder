@@ -1,6 +1,7 @@
 # Ignore recordings
 *.avi
 config.txt
+*log.txt
 
 # Ignore PyCharm folders
 __pycache__
