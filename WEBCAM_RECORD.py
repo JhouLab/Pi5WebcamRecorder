@@ -449,7 +449,10 @@ class RECORDER:
         self.cached_frame = [None] * 4
         self.cam_array = _cam_array
 
-        while True:
+        t1 = time.time()
+        t2 = t1 + 5.0
+        while time.time() < t2:
+            # Wait 5 seconds until at least one camera is ready
             is_ready = True
             for c in _cam_array:
                 if c.cam is None:

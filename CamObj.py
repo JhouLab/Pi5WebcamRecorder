@@ -173,7 +173,7 @@ is_debug: int = configParser.getint('options', 'DEBUG', fallback=DEBUG)
 # First camera ID number
 FIRST_CAMERA_ID: int = configParser.getint('options', 'FIRST_CAMERA_ID', fallback=1)
 
-DEBUG = is_debug == 1
+DEBUG = DEBUG or is_debug == 1
 
 # This makes an ENORMOUS text file that logs GPIO polling lag times. Because polling occurs
 # at 1kHz, there will be 3600 lines per minute. This didn't turn out to be as useful as I thought,
@@ -994,13 +994,21 @@ class CamObj:
 
         # First frame always takes longer to read, so get it out of the way
         # before conducting profiling
-        self.cam.read()
+        status, frame = self.cam.read()
+        
+        if not status:
+            printt(f"Unable to read cam {self.box_id} initial frame")
+            return -1
 
         # Subsequent frames might actually read too fast, if they are coming
         # from internal memory buffer. So now clear out any frames in camera buffer
         old_time = time.time()
+        time_limit = old_time + 5
         while True:
-            self.cam.read()
+            status, frame = self.cam.read()
+            if not status:
+                printt(f"Unable to read cam {self.box_id} flushed frame")
+                return -1
             new_time = time.time()
             elapsed = new_time - old_time
             old_time = new_time
@@ -1017,7 +1025,10 @@ class CamObj:
         # Read frames for 1 second to estimate frame rate
         while time.time() < target_time:
 
-            self.cam.read()
+            status, frame = self.cam.read()
+            if not status:
+                printt(f"Unable to read cam {self.box_id} to determine frame rate")
+                return -1
 
             new_time = time.time()
 
@@ -1076,6 +1087,11 @@ class CamObj:
 
         if NATIVE_FRAME_RATE == 0:
             native_fps = self.profile_fps()
+            if native_fps < 0:
+                self.cam = None
+                self.frame = make_blank_frame(f"{self.box_id} Camera lost connection")
+                printt(f"Camera {self.box_id} not connected. Will not start producer or consumer threads.")
+                return
         else:
             native_fps = NATIVE_FRAME_RATE
 
