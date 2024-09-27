@@ -60,6 +60,7 @@ if IS_LINUX:
             # model will typically have a leading space. Use "in" to ignore that
             if b'Raspberry Pi' in model:
                 IS_PI = True
+                
             if b'Raspberry Pi 4' in model:
                 IS_PI4 = True
             elif b'Raspberry Pi 5' in model:
@@ -160,6 +161,11 @@ SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON
 SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
 SAVE_ON_SCREEN_INFO: int = configParser.getint('options', 'SAVE_ON_SCREEN_INFO', fallback=1)
 
+# Reading webcam using MJPG allows higher frame rates,
+# possibly at slightly lower image quality.
+USE_MJPG: int = configParser.getint('options', 'USE_MJPG', fallback=IS_PI)
+
+# This option should be removed in future versions, it doesn't work well, and is always False now.
 USE_CALLBACK_FOR_GPIO: int = configParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=0)
 
 is_debug: int = configParser.getint('options', 'DEBUG', fallback=DEBUG)
@@ -181,11 +187,6 @@ BINARY_BIT_PULSE_THRESHOLD = 0.1
 
 # This allows font sizes to grow and shrink with camera resolution
 FONT_SCALE = HEIGHT / 480
-
-# Reading from webcam using MJPG generally allows higher frame rates
-# This definitely works on PI5, not tested elsewhere.
-# USE_MJPG = (WIDTH > 640)
-USE_MJPG = IS_PI
 
 
 def get_date_string(include_time=True):
