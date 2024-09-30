@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "BOB12009")(type "KiCad")(uri "${KIPRJMOD}/level_shifter/BOB-12009.kicad_sym")(options "")(descr ""))
+)
