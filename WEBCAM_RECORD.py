@@ -612,7 +612,7 @@ class RECORDER:
         cv2.waitKey(1)
         
         self.skipped_display_frames = 0
-        self.zoom_center = False
+        self.zoom_center = 0
 
         self.start = time.time()
         # This is actually target time for the frame AFTER the next, since the next one will be read immediately
@@ -621,7 +621,7 @@ class RECORDER:
 
     def toggle_zoom(self):
 
-        self.zoom_center = not self.zoom_center
+        self.zoom_center = (self.zoom_center + 1) % 3
 
     def confirm_quit(self, widget, value):
 
@@ -715,7 +715,7 @@ class RECORDER:
         
         cam_obj = self.cam_array[cam_num]
         fname = cam_obj.take_snapshot()
-        if fname == None:
+        if fname is None:
             tk.messagebox.showinfo("Error", "Failed to write snapshot file")
 
     def show_start_record_dialog(self, cam_idx: int):
@@ -898,11 +898,20 @@ class RECORDER:
                 img = self.cached_frame[which_disp]
 
                 if cam_obj.status:
-                    if self.zoom_center:
-                        x1 = WIDTH >> 2
-                        x2 = x1 * 3
-                        y1 = HEIGHT >> 2
-                        y2 = y1 * 3
+                    if self.zoom_center == 1:
+                        # Display from 0.25-0.75 along x and y dimensions
+                        x1 = WIDTH >> 2    # 1/4
+                        x2 = x1 * 3        # 3/4
+                        y1 = HEIGHT >> 2   # 1/4
+                        y2 = y1 * 3        # 3/4
+                        img = img[y1:y2, x1:x2]
+                        img = cv2.resize(img, [WIDTH, HEIGHT])
+                    elif self.zoom_center == 2:
+                        # Display from 0.375-0.625 along x and y dimensions
+                        x1 = (WIDTH >> 3) + (WIDTH >> 2)   # 3/8
+                        x2 = x1 + (WIDTH >> 2)             # 3/8 + 1/4 = 5/8
+                        y1 = (HEIGHT >> 3) + (HEIGHT >> 2) # 3/8
+                        y2 = y1 + (HEIGHT >> 2)            # 3/8 + 1/4 = 5/8
                         img = img[y1:y2, x1:x2]
                         img = cv2.resize(img, [WIDTH, HEIGHT])
                 if SCREEN_RESOLUTION[0] != WIDTH:

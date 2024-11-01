@@ -266,15 +266,20 @@ def get_disk_free_space():
 # If no camera found with that ID, will throw exception, which unfortunately is the only
 # way to enumerate what devices are connected. The caller needs to catch the exception and
 # handle it by excluding that ID from further consideration.
-def setup_cam(id):
-    if platform.system() == "Windows":
-        tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
-    else:
-        if USE_MJPG:
-            tmp = cv2.VideoCapture(id,
-                                   cv2.CAP_V4L2)  # This is needed for MJPG mode to work, allowing higher frame rates
+def setup_cam(id, width=WIDTH, height=HEIGHT):
+    try:
+        if platform.system() == "Windows":
+            tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
         else:
-            tmp = cv2.VideoCapture(id)
+            if USE_MJPG:
+                tmp = cv2.VideoCapture(id,
+                                       cv2.CAP_V4L2)  # This is needed for MJPG mode to work, allowing higher frame rates
+            else:
+                tmp = cv2.VideoCapture(id)
+    except Exception as ex:
+        print(f"Error while attempting to connect camera")
+        print("    Error type is: ", ex.__class__.__name__)
+        return None, None
 
     if tmp.isOpened():
         if USE_MJPG:
@@ -283,14 +288,14 @@ def setup_cam(id):
             tmp.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
         if not tmp.isOpened():
             print(f"MJPG not supported. Please edit code.")
-        tmp.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-        tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+        tmp.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
         # fps readout does not seem to be reliable. On Linux, we always get 30fps, even if camera
         # is set to a high resolution that can't deliver that frame rate. On Windows, always seem to get 0.
         fps = tmp.get(cv2.CAP_PROP_FPS)
         if not tmp.isOpened():
-            print(f"Resolution {WIDTH}x{HEIGHT} not supported. Please change config.txt.")
+            print(f"Resolution {width}x{height} not supported. Please change config.txt.")
     else:
         fps = 0
 
@@ -306,24 +311,31 @@ def verify_directory():
     date = '{}-{}-{}'.format(year, month, day)
 
     target_path = os.path.join(DATA_FOLDER, date)
-    try:
-        if os.path.isdir(target_path):
-            # check permissions
-            m = os.stat(target_path).st_mode & 0o777
-            if m != 0o777:
-                # Now make read/write/executable by owner, group, and other.
-                # This is necessary since these folders are often made by root, but accessed by others.
-                # os.chmod(target_path, mode=0o777) # This fails if created by root and we are not root
-                proc = subprocess.Popen(['sudo', 'chmod', '777', target_path])
-        else:
-            os.mkdir(target_path, mode=0o777) # Note linux umask is usually 755, which limits what permissions non-root can make
+
+    if os.path.isdir(target_path):
+        # check permissions
+        m = os.stat(target_path).st_mode & 0o777
+        if m != 0o777:
+            # Now make read/write/executable by owner, group, and other.
+            # This is necessary since these folders are often made by root, but accessed by others.
+            # os.chmod(target_path, mode=0o777) # This fails if created by root and we are not root
+            proc = subprocess.Popen(['sudo', 'chmod', '777', target_path])
+    else:
+        try:
+            os.mkdir(target_path,
+                 mode=0o777)  # Note linux umask is usually 755, which limits what permissions non-root can make
+        except Exception as ex:
+            print(f"Error while attempting to create folder {target_path}")
+            print("    Error type is: ", ex.__class__.__name__)
+            return ''  # This will force file to go to program folder
+
+        if IS_LINUX:
+            # Make writeable by all users on Linux (we need this because when running as root,
+            # we need to make this folder accessible to non-root users also)
             subprocess.Popen(['chmod', '777', target_path])  # This should always work
-            print("Folder was not found, but created at: ", target_path)
-        return target_path
-    except Exception as ex:
-        print(f"Error while attempting to create folder {target_path}")
-        print("    Error type is: ", ex.__class__.__name__)
-        return ''  # This will force file to go to program folder
+        print("Folder was not found, but created at: ", target_path)
+    return target_path
+
 
 
 class CamObj:
@@ -1022,11 +1034,18 @@ class CamObj:
                 break
 
         old_time = time.time()
-        target_time = old_time + 1.0  # When to stop profiling
+        start_time = old_time
+        MAX_DURATION = 5.0
+        MAX_FRAMES = 20
+        FRAME_GROUP = 4
+        target_time = old_time + MAX_DURATION  # When to stop profiling
         frame_count = 0
         min_elapsed4 = 1000
 
-        # Read frames for 1 second to estimate frame rate
+        # Read frames for 5 seconds or until 20 frames have been received, whichever comes first.
+        # This is surprisingly tricky, since frames can arrive late, or occasionally early. To
+        # reduce variance, we calculate interval between groups of 4 frames, then calculate rate
+        # from the shortest interval.
         while time.time() < target_time:
 
             status, frame = self.cam.read()
@@ -1037,25 +1056,28 @@ class CamObj:
             new_time = time.time()
 
             frame_count += 1
-            if frame_count % 4 == 0:
+            if frame_count % FRAME_GROUP == 0:
                 elapsed = new_time - old_time
                 if elapsed > 0.06:
                     if elapsed < min_elapsed4:
                         # Finds minimum interval between any 4 frames
                         min_elapsed4 = elapsed
                 old_time = new_time
+                if frame_count == MAX_FRAMES:
+                    break
 
         if min_elapsed4 < 1000:
             # Upper bound on frame rate
-            estimated_frame_rate = 4.0 / min_elapsed4
+            estimated_frame_rate = FRAME_GROUP / min_elapsed4
             # Lower bound on frame rate
             estimated_frame_rate2 = frame_count
         else:
-            # Unable to determine frame rate
-            printt("Unable to determine frame rate, defaulting to config setting")
-            estimated_frame_rate = RECORD_FRAME_RATE
+            # Frame rate might be very slow. Don't use 4-group averages, as there will likely only be
+            # one measurement?
+            printt("Frame rate could not be determined - might be < 1fps.")
+            estimated_frame_rate = float(frame_count) / (new_time - start_time)
 
-        printt(f'Box {self.box_id} estimated native frame rate {estimated_frame_rate:.2f}fps')
+        printt(f'Box {self.box_id} estimated native frame rate {estimated_frame_rate:.3f}fps')
 
         # Sometimes will get value slightly lower or higher than real frame rate, e.g. 29.9 or 30.2 instead of 30
         if estimated_frame_rate > 55:
@@ -1070,8 +1092,12 @@ class CamObj:
             estimated_frame_rate = 10
         elif estimated_frame_rate > 6.5:
             estimated_frame_rate = 7.5
-        else:
+        elif estimated_frame_rate > 4:
             estimated_frame_rate = 5
+        elif estimated_frame_rate > .8:
+            estimated_frame_rate = 1
+        else:
+            estimated_frame_rate = 1
 
         printt(f'Rounded frame rate to {estimated_frame_rate}')
 
@@ -1090,8 +1116,10 @@ class CamObj:
             return
 
         if NATIVE_FRAME_RATE == 0:
+            # Determine native frame rate by grabbing a few frames and measuring latency
             native_fps = self.profile_fps()
             if native_fps < 0:
+                # Camera has become disconnected
                 self.cam = None
                 self.frame = make_blank_frame(f"{self.box_id} Camera lost connection")
                 printt(f"Camera {self.box_id} not connected. Will not start producer or consumer threads.")
@@ -1099,8 +1127,8 @@ class CamObj:
         else:
             native_fps = NATIVE_FRAME_RATE
 
-        count = 0
-        frame_count = 0
+        count_cycle = 0
+        count_sent_frames = 0
 
         # Downsampling interval. Must be integer, hence use of ceiling function
         count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
@@ -1108,7 +1136,7 @@ class CamObj:
         if DEBUG:
             printt(f'Will save every {count_interval} frames')
 
-        # Start thread that will process the frames sent by this loop.
+        # Start CONSUMER thread that will process the frames sent by this loop.
         # This allows read_camera_continuous(), i.e. this thread, to
         # run at max speed.
         self.thread_consumer = threading.Thread(target=self.consumer_thread)
@@ -1136,6 +1164,9 @@ class CamObj:
                         nextRetry = 0
   
                         if IS_PI:
+                            # We reconnected using the camera's ID, not the actual USB port #. So
+                            # we should now check that camera is plugged into the same port as
+                            # before.
                             port = get_cam_usb_port(self.id_num)
                             old_port = self.box_id - FIRST_CAMERA_ID
                             if port != old_port:
@@ -1183,18 +1214,19 @@ class CamObj:
                 nextRetry = time.time() + 5
                 continue
 
-            count += 1
-            if count == count_interval:
-                count = 0
-                frame_count += 1
+            count_cycle += 1
+
+            if count_cycle == count_interval:
+                count_cycle = 0
+                count_sent_frames += 1
                 if self.q.qsize() > 250:
                     if frame_time - last_dropped_frame_warning > 5:
                         # Only report to log file every 5 seconds
-                        printt(f"DROPPING FRAME, box{self.box_id}, frame # {frame_count}, time={frame_time - self.start_recording_time:.3f}s",
+                        printt(f"DROPPING FRAME, box{self.box_id}, frame # {count_sent_frames}, time={frame_time - self.start_recording_time:.3f}s",
                                print_to_screen=False)
                         last_dropped_frame_warning = frame_time
                 else:                
-                    self.q.put((frame, frame_time, TTL_on, frame_count))
+                    self.q.put((frame, frame_time, TTL_on, count_sent_frames))
 
         if DEBUG:
             printt(f"Box {self.box_id} exiting camera read (producer) thread.")
@@ -1204,27 +1236,33 @@ class CamObj:
         now = time.time()
         last_warning_time = now
         prev_frames_received = 0
+        reported_frame_size = False
 
         while not self.pending == self.PendingAction.Exiting:
 
             #
             try:
-                frame, t, TTL, frames_received = self.q.get(timeout=0.5)
+                frame, t, TTL, frame_count = self.q.get(timeout=0.5)
             except queue.Empty:
                 # No frames received. Either camera is disconnected, or running slowly.
                 # Either way, just keep going, and hope camera eventually reconnects.
                 # Since timeout is 0.5 seconds, we will check twice a second until camera
                 # is back online
                 continue
+
+            if not reported_frame_size:
+                reported_frame_size = True
+                res = np.shape(frame)
+                printt(f"Camera {self.box_id} resolution is {res[1]} x {res[0]}")
             
-            gap = frames_received - prev_frames_received
-            prev_frames_received = frames_received
+            gap = frame_count - prev_frames_received
+            prev_frames_received = frame_count
             
             if DEBUG and self.current_animal_ID == "StressTest":
                 # Add massive flicker to truly stress out the recording and compression algorithm.
                 # This will cause massive delays, and will crash the Pi in about 60 seconds unless
                 # we start dropping frames
-                if frames_received % 2 == 0:
+                if frame_count % 2 == 0:
                     frame = 1 - frame
 
             lag1 = time.time() - t
@@ -1245,7 +1283,7 @@ class CamObj:
             lag2 = time.time() - t
             self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
                 
-            if lag2 > 2 or (DEBUG and frames_received % 300 == 0):
+            if lag2 > 2 or (DEBUG and frame_count % 300 == 0):
                 now = time.time()
                 if now - last_warning_time > 5:  # Only report every 2 seconds
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
