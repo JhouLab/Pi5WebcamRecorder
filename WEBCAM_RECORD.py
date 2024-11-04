@@ -809,6 +809,29 @@ class RECORDER:
         else:
             self.disk_free_label.config(text=f"Disk path \"{DATA_FOLDER}\" invalid.")
 
+    def add_id_string(self, cached_frame, idx, IsRecording, zoom_level=0):
+        id_string = str(FIRST_CAMERA_ID + idx)
+
+        if zoom_level == 1:
+            id_string = "Cam " + id_string + ", 2x zoom"
+        elif zoom_level == 2:
+            id_string = "Cam " + id_string + ", 4x zoom"
+
+        # Add text to top left to show camera number. This will NOT show in recording
+        cv2.putText(cached_frame, id_string,
+                    (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
+                    cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
+                    round(FONT_SCALE + 0.5))  # Line thickness
+        if IsRecording:
+            # Add red circle if recording. Again, this does not show in recorded file.
+            cv2.circle(cached_frame,
+                       (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
+                       int(8 * FONT_SCALE),  # Radius
+                       (0, 0, 255),  # Red dot (color is in BGR order)
+                       -1)  # -1 thickness fills circle
+
+        return cached_frame
+
     def update_image(self):
 
         if self.pendingActionVar == self.PendingAction.Exiting:
@@ -845,21 +868,9 @@ class RECORDER:
                 self.cached_frame[idx] = cam_obj.frame
 
                 if cam_obj.status:
-                    # Add text to top left to show camera number. This will NOT show in recording
-                    cv2.putText(self.cached_frame[idx], str(FIRST_CAMERA_ID + idx),
-                                (int(10 * FONT_SCALE), int(30 * FONT_SCALE)),
-                                cv2.FONT_HERSHEY_SIMPLEX, FONT_SCALE, (255, 128, 128),
-                                round(FONT_SCALE + 0.5))  # Line thickness
-                    if cam_obj.IsRecording:
-                        # Add red circle if recording. Again, this does not show in recorded file.
-                        cv2.circle(self.cached_frame[idx],
-                                   (int(20 * FONT_SCALE), int(50 * FONT_SCALE)),  # x-y position
-                                   int(8 * FONT_SCALE),  # Radius
-                                   (0, 0, 255),  # Red dot (color is in BGR order)
-                                   -1)  # -1 thickness fills circle
 
                     if not SAVE_ON_SCREEN_INFO:
-                        # If not saving on-screen info, then it won't be in frame, so we have to add it now
+                        # If not saving on-screen info (i.e. frame number), then it won't be in frame, so we have to add it now
                         cam_obj.add_on_screen_info(self.cached_frame[idx])
 
         if num_cams_lag > 0:
@@ -894,7 +905,8 @@ class RECORDER:
                 # Show just one of the 4 cameras
                 cam_obj = self.cam_array[which_disp]
 
-                # Need to make NEW ARRAY here, or else array might get overwritten before we can show it
+                # Need to make NEW ARRAY here before resizing, or else array might get overwritten before we can show it
+                # Also need to show camera ID string AFTER possible resizing
                 img = self.cached_frame[which_disp]
 
                 if cam_obj.status:
@@ -914,13 +926,22 @@ class RECORDER:
                         y2 = y1 + (HEIGHT >> 2)            # 3/8 + 1/4 = 5/8
                         img = img[y1:y2, x1:x2]
                         img = cv2.resize(img, [WIDTH, HEIGHT])
+
+                # Add camera ID string BEFORE possible downsampling, since font size scales with
+                # original image resolution
+                img = self.add_id_string(img, which_disp, cam_obj.IsRecording, self.zoom_center)
+
                 if SCREEN_RESOLUTION[0] != WIDTH:
                     img = cv2.resize(img, SCREEN_RESOLUTION)
+
             elif which_disp == self.CAM_VALS.ALL.value:
                 # Show all 4 cameras on one screen (downsized 2x)
                 for index, elt in enumerate(self.cam_array):
                     if elt is not None and elt.frame is not None:
-                        # Downsize
+                        # Add camera ID string BEFORE possible downsampling, since font size scales with
+                        # original image resolution
+                        self.cached_frame[index] = self.add_id_string(self.cached_frame[index], index, elt.IsRecording)
+                        # Downsize to fit into 2x2 grid
                         subframes[index] = cv2.resize(self.cached_frame[index], SCREEN_RESOLUTION_INSET)
 
                 # Concatenate 4 images into 1

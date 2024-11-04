@@ -337,7 +337,6 @@ def verify_directory():
     return target_path
 
 
-
 class CamObj:
 
     cam = None  # this is the opencv camera object
