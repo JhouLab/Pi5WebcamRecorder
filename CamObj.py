@@ -295,13 +295,16 @@ def setup_cam(id, width=WIDTH, height=HEIGHT):
         height2 = tmp.get(cv2.CAP_PROP_FRAME_HEIGHT)
         
         if width2 != width or height2 != height:
-            print(f"Resolution {width}x{height} not supported, camera returned {width2}x{height2} instead.")
+            msg1 = f"Resolution {int(width)}x{int(height)} not supported by camera, try {int(width2)}x{int(height2)} instead."
+            print(msg1)
+            msg2 = f"Resolution {int(width)}x{int(height)} not supported by camera.\n\nTry {int(width2)}x{int(height2)} instead."
+            tkinter.messagebox.showinfo("Warning", msg2)
 
         # fps readout does not seem to be reliable. On Linux, we always get 30fps, even if camera
         # is set to a high resolution that can't deliver that frame rate. On Windows, always seem to get 0.
         fps = tmp.get(cv2.CAP_PROP_FPS)
         if not tmp.isOpened():
-            print(f"Resolution {width}x{height} not supported. Please change config.txt.")
+            print(f"Resolution {int(width)}x{int(height)} not supported. Please change config.txt.")
     else:
         fps = 0
 
