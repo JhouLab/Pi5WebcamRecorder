@@ -291,6 +291,12 @@ def setup_cam(id, width=WIDTH, height=HEIGHT):
         tmp.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
+        width2 = tmp.get(cv2.CAP_PROP_FRAME_WIDTH)
+        height2 = tmp.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        
+        if width2 != width or height2 != height:
+            print(f"Resolution {width}x{height} not supported, camera returned {width2}x{height2} instead.")
+
         # fps readout does not seem to be reliable. On Linux, we always get 30fps, even if camera
         # is set to a high resolution that can't deliver that frame rate. On Windows, always seem to get 0.
         fps = tmp.get(cv2.CAP_PROP_FPS)
