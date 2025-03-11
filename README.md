@@ -6,8 +6,8 @@ Instructions, version 1.5, Updated March 10, 2025.
 This is intended to run on a Raspberry Pi 5, which is much faster than the Pi 4. It
 can handle 4 simultaneous cameras at 640x480 and 30 frames per second.
 
-This program will run on a Pi 4, and will be fast enough to handle a single camera, but
-not four of them.
+Although this program will run on the older Pi 4, it will be slower, and would be best
+suited for controlling a single camera.
 
 If you have problems, questions, or suggestions, please email jhoulab1@gmail.com
 
