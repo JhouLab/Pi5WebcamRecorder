@@ -1,31 +1,32 @@
 
 # HOW TO USE:
 
-Instructions, version 1.5
+Instructions, version 1.5, Updated March 10, 2025.
 
-Updated Aug 18, 2024.
-
-For best results, run on a Raspberry Pi 5, which is much faster than the Pi 4. It
+This is intended to run on a Raspberry Pi 5, which is much faster than the Pi 4. It
 can handle 4 simultaneous cameras at 640x480 and 30 frames per second.
+
+This program will run on a Pi 4, and will be fast enough to handle a single camera, but
+not four of them.
 
 If you have problems, questions, or suggestions, please email jhoulab1@gmail.com
 
 # GETTING STARTED:
 
-On most JhouLab computers, the program is installed to the following folder:
+To install on a new machine, first follow the instructions at the bottom of this page, under: "Installing on Raspberry Pi 5".
+
+On most JhouLab Pi's, the program is already installed to the following folder:
 
     /home/jhoulab/Documents/github/Pi5WebcamRecorder
 
-If you need to install on a new machine, skip to the botton section on this page: "Installing on a new machine"
-
-Then launch the program with one of the following methods:
+Once installed, launch the program with one of the following methods:
 
     Method 1: From command line:
 
       cd Documents/github/Pi5WebcamRecorder
       python -m RUN_AS_ROOT
 
-    Method 2: From Thonny:
+    Method 2: From the Pi's built-in Thonny app:
       Click "Load", select "RUN_AS_ROOT.py", then click "Run" (green button with white triangle).
 
 Upon launch, the program will auto-detect USB cameras, open a control bar, and display up to 4 cameras in a 2x2 grid,
@@ -33,7 +34,7 @@ like below:
 
 ![img.png](extra/screenshot.png)
 
-The position of each camera in the grid will match the physical USB port position as follows:
+Cameras plugged into any of the four USB ports will show up on the screen in the following positions:
 
     -------------
     |  1  |  2  |
@@ -41,7 +42,8 @@ The position of each camera in the grid will match the physical USB port positio
     |  3  |  4  |
     -------------
 
-You can start/stop recording from the GUI, or from external GPIO logic inputs (see "GPIO PROTOCOL" section below).
+The program will show a bar at the top with buttons to start/stop recording. You can also control recording
+from external GPIO logic inputs (see "GPIO PROTOCOL" section below).
 
 By default, videos save to the program directory, but I recommend you
 change this to an external drive, to avoid filling up your SD card.
@@ -87,7 +89,9 @@ Pi5WebcamRecorder monitors GPIO inputs 4 through 7, corresponding to the followi
 
 These are 3.3V inputs, so you must use a level shifter when connecting to 5V devices. If you use Med-PC
 to generate timing signals, remember that those are 28V signals, which require an additional
-level shifter (purchased from Med Associates) to convert from 28V to 5V, which in turn is converted to 3.3V.
+voltage shifter (purchased from Med Associates) to convert from 28V to 5V, which in turn is converted to 3.3V
+through the level-shifter, i.e. you will need to devices. Setting these up requires some
+familiarity with electronics.
 
 Sending two consecutive 100ms pulses (with a 50ms pause in between) will start a recording, as follows:
 
@@ -105,7 +109,7 @@ Once a session is started, three consecutive pulses will stop the recording:
     0V -----     --     --     ----
                 50ms    50ms
 
-While a session is ongoing, any single pulse will be recorded in the timestamp file. This can be used to
+While a session is ongoing, any single pulse will be recorded as a row of text in the timestamp file. This can be used to
 synchronize video with behavioral events:
 
             100ms
@@ -115,7 +119,7 @@ synchronize video with behavioral events:
 
 
 One can also transmit an animal ID number via the GPIO pins as a 16-bit binary number. The ID number will then
-show up in the filename. ID transmission looks like the pulse sequence below:
+show up in the filename. ID transmission begins with a 200ms pulse, followed by 16 binary bits as shown below:
 
     3.3V      200ms  <16 binary bits, 50 or 150ms>     <Parity bit 50 or 150ms>
              ______   _   _   _                   _       _
@@ -126,7 +130,7 @@ show up in the filename. ID transmission looks like the pulse sequence below:
 The sequence of events is as follows:
 
 1. 200ms high pulse to start binary transmission
-2. 16 binary bits, LSB first. 50ms duration indicates "0" and 150ms duration indicates "1". Gap between pulses is 50ms
+2. 16 binary bits, least significant bit first, with 50ms pulse for "0" and 150ms pulse for "1", and 50ms gaps between pulses.
 3. 200ms low period to end binary transmission
 4. Checksum parity bit: 50ms duration if ID had an even number of "1"s, 150ms duration if odd
 
@@ -134,9 +138,9 @@ The sequence of events is as follows:
 
 # KNOWN SHORTCOMINGS:
 
-1. The last frame of video may not record. This appears to be a bug in FFMPEG, which OpenCV uses.
+1. The last frame of video may not be recorded to the hard drive. This appears to be a bug in FFMPEG, which OpenCV uses.
 
-2. ImageJ/FIJI is a handy way to quickly view files on Windows, but this does not appear
+2. On Windows, it is convenient to use ImageJ/FIJI to quickly view videos, but this does not appear
    to work on the Raspberry Pi, again due to issues with FFMPEG. A cumbersome workaround is to decompress video using:
      
          ffmpeg input.avi -c:v rawvideo output.avi
@@ -150,7 +154,7 @@ To install, follow these three steps:
 
   There are two ways to do this:
 
-  #### Method 1: From command prompt, gives a read-only copy:
+  #### Method 1: From command prompt:
     
     git clone https://github.com/JhouLab/Pi5WebcamRecorder
 
@@ -179,11 +183,14 @@ To install, follow these three steps:
   but works well enough. For other ways to install OpenCV, see here:
   https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
 
-## STEP 3: Install rpi-lpgio
+## STEP 3: Install rpi-lpgio (only needed if controlling from external GPIOs)
   Annoyingly, the Pi5 uses different GPIO hardware than the Pi4, but they didn't bother to update the
-  default GPIO library. To work around this, unstall the standard library and install python3-rpi-lpgio,
-  a drop-in replacement:
+  default GPIO library. To work around this, use the following two commands to uninstall the standard library
+  and install python3-rpi-lpgio, a drop-in replacement:
 
     sudo apt remove  python3-rpi.gpio
     sudo apt install python3-rpi-lgpio
 
+At this point, you should be able to launch the app and see live video on the screen.
+
+T
