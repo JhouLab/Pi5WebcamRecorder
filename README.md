@@ -118,10 +118,14 @@ synchronize video with behavioral events:
     0V -----     ----------
 
 
-One can also transmit an animal ID number via the GPIO pins as a 16-bit binary number. The ID number will then
-show up in the filename. ID transmission begins with a 200ms pulse, followed by 16 binary bits as shown below:
+One can also transmit an animal ID number via the GPIO pins as a 16-bit binary number.
+The ID number has to be transmitted BEFORE starting the session, and will show up
+in the filename. If you transmit the ID after a session has already started, it will likely
+get interpreted as a triple pulse, which will stop the recording.
 
-    3.3V      200ms  <16 binary bits, 50 or 150ms>     <Parity bit 50 or 150ms>
+ID transmission begins with a 300ms pulse, followed by 16 binary bits as shown below:
+
+    3.3V      300ms  <16 binary bits, 50 or 150ms>     <Parity bit 50 or 150ms>
              ______   _   _   _                   _       _
             |      | | | | | | |    .. etc..     | |     | |
     0V -----        -   -   -   -               -   -----   ---------------
@@ -129,7 +133,7 @@ show up in the filename. ID transmission begins with a 200ms pulse, followed by 
 
 The sequence of events is as follows:
 
-1. 200ms high pulse to start binary transmission
+1. 300ms high pulse to start binary transmission
 2. 16 binary bits, least significant bit first, with 50ms pulse for "0" and 150ms pulse for "1", and 50ms gaps between pulses.
 3. 200ms low period to end binary transmission
 4. Checksum parity bit: 50ms duration if ID had an even number of "1"s, 150ms duration if odd

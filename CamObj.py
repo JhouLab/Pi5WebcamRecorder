@@ -550,10 +550,8 @@ class CamObj:
 
         if self.TTL_mode == self.TTL_type.Binary:
             # If already in binary mode, then inter-bit pauses are 0.05s (used to be .025s)
-            # Long (0.2s) "off" pause switches to checksum mode for final pulse.
-            # We give 50ms leeway in either direction, i.e. .15 to .25, then extend upper
-            # boundary to .5 since there is no competing signal there. After .5, we still end
-            # binary mode, but issue warning.
+            # Long (0.2±0.05s) "off" pause switches to checksum mode for final pulse.
+            # If off pulse is longer than .5, we still end binary mode, but issue warning.
             if 0.15 < elapsed_pause < 0.5:
                 if self.TTL_binary_bits != 16:
                     printt(f'Warning: in binary mode received {self.TTL_binary_bits} bits instead of 16')
@@ -607,8 +605,8 @@ class CamObj:
 
         if self.TTL_mode == self.TTL_type.Normal:
             # In normal (not binary or checksum) mode, read the following types of pulses:
-            # 0.1s on-time (range 0.01-0.2) indicates trial start, or session start/stop if doubled/tripled
-            # 0.3s on time (range 0.2-0.4) initiates binary mode. USED TO BE 0.2.
+            # 0.1±.05s on-time indicates trial start, or session start/stop if doubled/tripled
+            # 0.3±0.1s on time initiates binary mode. USED TO BE 0.2.
             # 0.4s-2s ... ignored
             # 2.5s (range 2.4-2.6s) starts DEBUG TTL mode
             # >3s ... ignored
@@ -617,7 +615,7 @@ class CamObj:
                 self.handle_GPIO()
             elif on_time < 0.4:
                 # Sometimes a 0.1s pulse will glitch and be perceived as longer than 0.15s.
-                # So we moved range from .15-.25 to .2-.4
+                # So we increased binary-mode triggering pulse duration from .2±.05 to .3±.05s.
                 # We also reduce the chance of this by only starting binary mode if not recording.
                 if not self.IsRecording:
                     if DEBUG:
@@ -629,9 +627,14 @@ class CamObj:
                     self.TTL_checksum = 0
                     self.num_consec_TTLs = 0
                 else:
-                    # Pulse duration is between .2 and .4, and we are not recording. Assume regular TTL?
-                    # This should be extremely rare.
-                    printt(f'Box {self.box_id} received TTL pulse longer than the usual 0.1s ({on_time}s)')
+                    # Pulse duration is between .2 and .4, and we are not recording. This can happen if
+                    # the behavioral program has a bug and is sending the animal ID after session start, rather
+                    # than before.
+                    printt(f'Box {self.box_id} received TTL pulse much longer than the usual 0.1s ({on_time}s)')
+                    if 0.25 < on_time < 0.35:
+                        # If pulse duration is close to 0.3, then warn user that animal ID transmission must
+                        # be done before starting session, not while recording is ongoing
+                        printt('    It looks like you might be trying to send animal ID after recording is already running. This is not allowed')
                     self.num_consec_TTLs += 1
                     self.handle_GPIO()
             elif 2.4 < on_time < 2.6 and DEBUG:
