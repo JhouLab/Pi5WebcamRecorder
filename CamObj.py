@@ -515,8 +515,8 @@ class CamObj:
     #
     # New GPIO pattern as of 6/22/2024
     #
-    # Long high pulse (0.2s) starts binary mode, transmitting 16 bits of animal ID.
-    #     In binary mode, 75ms pulse is 1, 25ms pulse is 0. Off duration between pulses is 25ms
+    # Long high pulse (0.3s) starts binary mode, transmitting 16 bits of animal ID.
+    #     In binary mode, 150ms pulse is 1, 75ms pulse is 0. Off duration between pulses is 25ms
     #     Binary mode ends with long low period (0.2ms) followed by short high pulse (0.01ms)
     # In regular mode, pulses are high for 0.1s, then low for 0.025-0.4s gaps (used to be long, but now much
     # shorter.)
@@ -600,6 +600,10 @@ class CamObj:
             # But: sometimes these are a result of pulses piling up in Windows, then getting sent all at once.
             printt(f'Cam {self.box_id} ignoring short TTL of duration {on_time}')
             return
+        
+        if DEBUG:
+            printt(f'Received TTL pulse with duration {on_time}s')
+            
 
         if self.TTL_mode == self.TTL_type.Normal:
             # In normal (not binary or checksum) mode, read the following types of pulses:
