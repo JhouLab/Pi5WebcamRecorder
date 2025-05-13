@@ -101,7 +101,7 @@ Sending two consecutive 100ms pulses (with a 50ms pause in between) will start a
     0V -----     --     --------
                 50ms
 
-Once a session is started, three consecutive pulses will stop the recording:
+Once a session is started, three consecutive 100ms pulses will stop the recording:
 
             100ms  100ms  100ms
     3.3V     ___    ___    ___    
@@ -109,35 +109,45 @@ Once a session is started, three consecutive pulses will stop the recording:
     0V -----     --     --     ----
                 50ms    50ms
 
-While a session is ongoing, any single pulse will be recorded as a row of text in the timestamp file. This can be used to
-synchronize video with behavioral events:
+While a session is ongoing, any single pulse will be recorded in the timestamp file, which looks like the following:
+
+    TTL_event_number	ONSET (seconds)	OFFSET (seconds)
+    1	19.604753732681274	19.708051204681396
+    2	155.62897396087646	155.73339176177979
+    3	411.64712834358215	411.75243949890137
+    4	607.6641576290131	607.7683758735657
+    5	803.6808965206146	803.7854342460632
+    6	1059.6991975307465	1059.8032557964325
+
+Values are tab-delimited. The actual pulse is 100ms, as before.
 
             100ms
     3.3V     ___ 
             |   |
     0V -----     ----------
 
+With all pulses, the allowable range is 50-150ms, but it is recommended not to get too close to
+the endpoints of this range, as Linux is not a real-time operating system, so you want some
+margin of error in case of small timing errors.
 
 One can also transmit an animal ID number via the GPIO pins as a 16-bit binary number.
 The ID number has to be transmitted BEFORE starting the session, and will show up
-in the filename. If you transmit the ID after a session has already started, it will likely
-get interpreted as a triple pulse, which will stop the recording.
+in the filename and on the screen during recording.
 
-ID transmission begins with a 300ms pulse, followed by 16 binary bits as shown below:
+If you transmit the ID after a session has already started, it will likely
+get interpreted as a triple pulse, which will stop the recording. So don't do that.
 
-    3.3V      300ms  <16 binary bits, 50 or 150ms>     <Parity bit 50 or 150ms>
-             ______   _   _   _                   _       _
-            |      | | | | | | |    .. etc..     | |     | |
-    0V -----        -   -   -   -               -   -----   ---------------
-                      50ms between ID bits          200ms pause before parity bit
+ID transmission begins with 300ms pulse, followed by 16 binary bits as shown below:
 
-The sequence of events is as follows:
+    3.3V      300ms  <16 binary bits, 50 or 150ms each>            <Parity bit 50 or 150ms long>
+             ______   _   _   ___   _   ___                 _       _
+            |      | | | | | |   | | | |   |  .. etc..     | |     | |
+    0V -----        -   -   -     -   -     -             -   -----   ---------------
+                      50ms between ID bits                    200ms pause before parity bit
 
-1. 300ms high pulse to start binary transmission
-2. 16 binary bits, least significant bit first, with 50ms pulse for "0" and 150ms pulse for "1", and 50ms gaps between pulses.
-3. 200ms low period to end binary transmission
-4. Checksum parity bit: 50ms duration if ID had an even number of "1"s, 150ms duration if odd
 
+The bit order is MOST significant bit first, 50ms pulse for "0" and 150ms pulse for "1", and 50ms gaps between pulses.
+The final checksum parity bit is 50ms duration if the preceding ID had an even number of "1"s, 150ms duration if odd.
 
 
 # KNOWN SHORTCOMINGS:
