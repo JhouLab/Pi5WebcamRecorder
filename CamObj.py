@@ -1190,8 +1190,7 @@ class CamObj:
         # Downsampling interval. Must be integer, hence use of ceiling function
         count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
 
-        if count_interval > 1:
-            printt(f'Will save every {count_interval} frames to achieve target record frame rate of {RECORD_FRAME_RATE} fps.')
+        printt(f'Will save every {count_interval} frames to achieve target record frame rate of {RECORD_FRAME_RATE} fps relative to native rate of {native_fps}.')
 
         # Start CONSUMER thread that will process the frames sent by this loop.
         # This allows read_camera_continuous(), i.e. this thread, to
