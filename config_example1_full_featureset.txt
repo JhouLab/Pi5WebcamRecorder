@@ -13,7 +13,8 @@
 ;
 [options]
 
-; Target record frame rate
+; Target record frame rate. Must be a divisor of the actual frame rate. If this is not
+; specified, will assume 30 fps.
 RECORD_FRAME_RATE = 10
 
 ; Codec type. Usually either h264 or mp4v.
