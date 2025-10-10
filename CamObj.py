@@ -38,6 +38,9 @@ from queue import Queue
 
 from extra.get_hardware_info import get_cam_usb_port
 
+from tkinter import messagebox
+
+
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
 IS_WINDOWS = (PLATFORM == 'windows')
@@ -111,11 +114,46 @@ import cv2
 # If true, will print extra diagnostics, such as GPIO on/off times and consecutive TTL counter
 VERBOSE = False
 
-configParser = configparser.RawConfigParser()
+camParser = configparser.RawConfigParser()
 configFilePath = r'config.txt'
-configParser.read(configFilePath)
 
-DATA_FOLDER = configParser.get('options', 'DATA_FOLDER', fallback='')
+try:
+    camParser.read(configFilePath)
+except Exception as e:
+    print("")
+    print(f"Error: {e}")
+
+# sanity check
+parse_dict = dict(camParser.items('options'))
+
+for k in parse_dict.keys():
+    if not k in ['data_folder',
+                 'record_frame_rate',
+                 'native_frame_rate',
+                 'frame_rate_per_second',
+                 'resolution',
+                 'height',
+                 'width',
+                 'fourcc',
+                 'num_ttl_pulses_to_start_session',
+                 'num_ttl_pulses_to_stop_session',
+                 'record_color',
+                 'show_record_button',
+                 'show_snapshot_button',
+                 'show_zoom_button',
+                 'save_on_screen_info',
+                 'use_mjpg',
+                 'use_callback_for_gpio',
+                 'debug',
+                 'first_camera_id',
+                 'rotate180']:
+        print("")
+        print("Warning: unrecognized option '{}'".format(k))
+        messagebox.showinfo(
+            title="Warning",
+            message=f"Config file '{configFilePath}' contains unrecognized option '{k}'")
+
+DATA_FOLDER = camParser.get('options', 'DATA_FOLDER', fallback='')
 
 if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
     # Data folder doesn't end with either forward or backward slash
@@ -125,19 +163,19 @@ if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
         DATA_FOLDER = DATA_FOLDER + "/"
 
 # Native frame rate of camera(s). If not specified, will attempt to determine by profiling
-NATIVE_FRAME_RATE: float = configParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
+NATIVE_FRAME_RATE: float = camParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
 
 # This is the targeted RECORD frame rate, which may be lower than the camera's NATIVE frame rate
-RECORD_FRAME_RATE: float = configParser.getfloat('options', 'RECORD_FRAME_RATE', fallback=0)
+RECORD_FRAME_RATE: float = camParser.getfloat('options', 'RECORD_FRAME_RATE', fallback=0)
 if RECORD_FRAME_RATE == 0:
     # If the above is not found, then check old defunct config option
-    RECORD_FRAME_RATE: float = configParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=30)
+    RECORD_FRAME_RATE: float = camParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=30)
 
-ResolutionString = configParser.get('options', 'RESOLUTION', fallback='')
+ResolutionString = camParser.get('options', 'RESOLUTION', fallback='')
 
 if ResolutionString == '':
-    HEIGHT = configParser.getint('options', 'HEIGHT', fallback=480)
-    WIDTH = configParser.getint('options', 'WIDTH', fallback=640)
+    HEIGHT = camParser.getint('options', 'HEIGHT', fallback=480)
+    WIDTH = camParser.getint('options', 'WIDTH', fallback=640)
 else:
     # Parse height and width from string of type (WIDTH, HEIGHT)
     tmp_r = make_tuple(ResolutionString)
@@ -145,33 +183,37 @@ else:
     HEIGHT = tmp_r[1]
 
 if platform.system() == "Linux":
-    FOURCC = configParser.get('options', 'FOURCC', fallback='h264')
+    FOURCC = camParser.get('options', 'FOURCC', fallback='h264')
 else:
     # Note: h264 codec comes with OpenCV on Linux/Pi, but not Windows. Will default to using mp4v on
     # Windows. If you really want h264, there is a .DLL here: https://github.com/cisco/openh264/releases
     # but it has poor compression ratio, and doesn't always install anyway.
-    FOURCC = configParser.get('options', 'FOURCC', fallback='mp4v')
+    FOURCC = camParser.get('options', 'FOURCC', fallback='mp4v')
 
-NUM_TTL_PULSES_TO_START_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_START_SESSION', fallback=2)
-NUM_TTL_PULSES_TO_STOP_SESSION = configParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=3)
-RECORD_COLOR: int = configParser.getint('options', 'RECORD_COLOR', fallback=1)
+NUM_TTL_PULSES_TO_START_SESSION = camParser.getint('options', 'NUM_TTL_PULSES_TO_START_SESSION', fallback=2)
+NUM_TTL_PULSES_TO_STOP_SESSION = camParser.getint('options', 'NUM_TTL_PULSES_TO_STOP_SESSION', fallback=3)
+RECORD_COLOR: int = camParser.getint('options', 'RECORD_COLOR', fallback=1)
 
-SHOW_RECORD_BUTTON: int = configParser.getint('options', 'SHOW_RECORD_BUTTON', fallback=1)
-SHOW_SNAPSHOT_BUTTON: int = configParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
-SHOW_ZOOM_BUTTON: int = configParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
-SAVE_ON_SCREEN_INFO: int = configParser.getint('options', 'SAVE_ON_SCREEN_INFO', fallback=1)
+SHOW_RECORD_BUTTON: int = camParser.getint('options', 'SHOW_RECORD_BUTTON', fallback=1)
+SHOW_SNAPSHOT_BUTTON: int = camParser.getint('options', 'SHOW_SNAPSHOT_BUTTON', fallback=0)
+SHOW_ZOOM_BUTTON: int = camParser.getint('options', 'SHOW_ZOOM_BUTTON', fallback=0)
+SAVE_ON_SCREEN_INFO: int = camParser.getint('options', 'SAVE_ON_SCREEN_INFO', fallback=1)
 
 # Reading webcam using MJPG allows higher frame rates,
 # possibly at slightly lower image quality.
-USE_MJPG: int = configParser.getint('options', 'USE_MJPG', fallback=IS_PI)
+USE_MJPG: int = camParser.getint('options', 'USE_MJPG', fallback=IS_PI)
 
 # This option should be removed in future versions, it doesn't work well, and is always False now.
-USE_CALLBACK_FOR_GPIO: int = configParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=0)
+USE_CALLBACK_FOR_GPIO: int = camParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=0)
 
-is_debug: int = configParser.getint('options', 'DEBUG', fallback=DEBUG)
+is_debug: int = camParser.getint('options', 'DEBUG', fallback=DEBUG)
 
 # First camera ID number
-FIRST_CAMERA_ID: int = configParser.getint('options', 'FIRST_CAMERA_ID', fallback=1)
+FIRST_CAMERA_ID: int = camParser.getint('options', 'FIRST_CAMERA_ID', fallback=1)
+
+# Rotate video 180 degrees
+ROTATE180: int = camParser.getint('options', 'ROTATE180', fallback=0)
+
 
 DEBUG = DEBUG or is_debug == 1
 
@@ -1364,6 +1406,9 @@ class CamObj:
                 
             if self.IsRecording and time_elapsed >= 0:
                 self.frames_recorded += 1
+
+            if ROTATE180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
 
             if TTL_on:
                 # Add blue dot to indicate that GPIO is active

@@ -166,11 +166,11 @@ if not os.path.isdir(DATA_FOLDER):
     if DATA_FOLDER == "":
         messagebox.showinfo(
             title="Warning",
-            message=f"No data folder specified in config.txt\n\nWill save to program folder instead.")
+            message=f"config.txt lacks 'DATA_FOLDER' entry.\n\nWill save video to program folder instead, but it is recommended to add 'DATA_FOLDER' to config.txt.")
     else:
         messagebox.showinfo(
             title="Warning",
-            message=f"Unable to find data folder:\n\n\"{DATA_FOLDER}\"\n\nWill save to program folder instead.")
+            message=f"Unable to find data folder:\n\n\"{DATA_FOLDER}\"\n\nWill save to program folder instead, but you should fix the 'DATA_FOLDER' entry in config.txt.")
     DATA_FOLDER = "."
 
 # Highest camera ID to search when first connecting. Some sources
@@ -286,7 +286,7 @@ for idx1, cam_obj1 in enumerate(cam_array):
 if NATIVE_FRAME_RATE == 0 and SHOW_RECORD_BUTTON:
     # messagebox.showinfo() causes an extraneous blank "root" window to show up in corner of screen if you haven't
     # already created it.
-    tk.messagebox.showinfo("Warning", "config.txt file does not specify native camera frame rate.\n\nWill try to estimate it by profiling, but it is highly recommended to add the true value to config.txt")
+    tk.messagebox.showinfo("Warning", "config.txt file does not have 'NATIVE_FRAME_RATE' option.\n\nWill try to estimate frame rate by profiling, but it is highly recommended to add true value to config.txt")
 
 
 def get_key():
