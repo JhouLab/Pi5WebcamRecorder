@@ -292,7 +292,7 @@ def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
         pass
 
 
-def get_disk_free_space():
+def get_disk_free_space_GB():
     path = DATA_FOLDER
     if path == "":
         path = "./"
@@ -1498,7 +1498,7 @@ class CamObj:
         else:
             file_size = 0
 
-        str1 += f", {file_size / (1024 * 1024)}MB"
+        str1 += f", {file_size / (1024 * 1024):.2f}MB"
 
         if self.dropped_recording_frames > 0:
             str1 += f", >={self.dropped_recording_frames} dropped frames"

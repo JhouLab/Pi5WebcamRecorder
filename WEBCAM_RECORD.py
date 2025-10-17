@@ -14,7 +14,7 @@ import sys
 import numpy as np
 from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
-    FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space, IS_LINUX, IS_PI, IS_WINDOWS, \
+    FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space_GB, IS_LINUX, IS_PI, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO, \
     setup_cam, FIRST_CAMERA_ID
 from extra.get_hardware_info import *
@@ -800,14 +800,16 @@ class RECORDER:
                 tk.messagebox.showinfo("Warning", "Camera is not recording")
 
     def show_disk_space(self, msg=""):
-        disk_space = get_disk_free_space()
+        disk_space = get_disk_free_space_GB()
         if disk_space is not None:
             if any_camera_recording(self.cam_array):
-                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.3f}GB" + msg)
+                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space_GB():.3f} GB" + msg)
             else:
-                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space():.1f}GB" + msg)
+                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space_GB():.1f} GB" + msg)
+            return disk_space
         else:
             self.disk_free_label.config(text=f"Disk path \"{DATA_FOLDER}\" invalid.")
+            return 0
 
     def add_id_string(self, cached_frame, idx, IsRecording, zoom_level=0):
         id_string = str(FIRST_CAMERA_ID + idx)
@@ -838,7 +840,7 @@ class RECORDER:
             self.cleanup()
             return
 
-        if self.skipped_display_frames < 10:
+        if self.display_frame_count < 10 and self.skipped_display_frames < 10:
             # The plain GUI (that we use because it works fine as root, unlike the fancy one)
             # has persistent sizing issues at startup. Forcing resolution for first 10 frames seems
             # to work, albeit is a little hacky.
@@ -997,8 +999,15 @@ class RECORDER:
                         cam.final_status_string = None
 
                 if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 10) == 0:
-                    # Show total remaining disk space
-                    self.show_disk_space()
+                    # Show total remaining disk space every 10 seconds
+                    gb = self.show_disk_space()
+                    if cam.IsRecording:
+                        if gb < 850:
+                            print(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, stopping recording.")
+                            cam.stop_record(True)
+                        elif gb < 850:
+                            print(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, will stop recording when < 20MB")
+
 
                 if key != -1:
                     self.handle_keypress(key, key >> 16, CV2KEY=True)
