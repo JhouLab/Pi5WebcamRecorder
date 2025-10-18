@@ -50,6 +50,10 @@ FOURCC = h264
 ; Strangely, logitech c920e does not support 1024x768 and 1280x1024 formats.
 RESOLUTION = (640, 480)
 
+; If you set this >0, will attempt to force camera to deliver that frame rate. This
+; can help with Logitech cameras which would otherwise deliver variable frame rate
+; depending on lighting conditions.
+FORCE_CAMERA_FPS = 0
 
 ; Base folder for data storage. Make sure there is a trailing slash at the end of any directory.
 ; If you want to store data in the program folder, use an empty string.
