@@ -128,25 +128,26 @@ parse_dict = dict(camParser.items('options'))
 
 for k in parse_dict.keys():
     if not k in ['data_folder',
-                 'record_frame_rate',
-                 'native_frame_rate',
+                 'debug',
+                 'first_camera_id',
+                 'force_camera_fps',
+                 'fourcc',
                  'frame_rate_per_second',
                  'resolution',
-                 'height',
-                 'width',
-                 'fourcc',
+                 'height', 'width',
+                 'native_frame_rate',
                  'num_ttl_pulses_to_start_session',
                  'num_ttl_pulses_to_stop_session',
                  'record_color',
                  'show_record_button',
                  'show_snapshot_button',
                  'show_zoom_button',
+                 'record_frame_rate',
+                 'rotate180',
                  'save_on_screen_info',
                  'use_mjpg',
                  'use_callback_for_gpio',
-                 'debug',
-                 'first_camera_id',
-                 'rotate180']:
+                 ]:
         print("")
         print("Warning: unrecognized option '{}'".format(k))
         messagebox.showinfo(
@@ -202,6 +203,8 @@ SAVE_ON_SCREEN_INFO: int = camParser.getint('options', 'SAVE_ON_SCREEN_INFO', fa
 # Reading webcam using MJPG allows higher frame rates,
 # possibly at slightly lower image quality.
 USE_MJPG: int = camParser.getint('options', 'USE_MJPG', fallback=IS_PI)
+
+FORCE_CAMERA_FPS: int = camParser.getint('options', 'FORCE_CAMERA_FPS', fallback=0)
 
 # This option should be removed in future versions, it doesn't work well, and is always False now.
 USE_CALLBACK_FOR_GPIO: int = camParser.getint('options', 'USE_CALLBACK_FOR_GPIO', fallback=0)
@@ -329,9 +332,19 @@ def setup_cam(id, width=WIDTH, height=HEIGHT):
             # Changing to MJPG roughly doubles the max frame rate, at some cost of CPU cycles
             tmp.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
         if not tmp.isOpened():
-            print(f"MJPG not supported. Please edit code.")
+            print(f"MJPG not supported. Please edit config file to set this option false.")
         tmp.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         tmp.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+        if FORCE_CAMERA_FPS > 0:
+            # Attempt to set frame rate to a constant that matches record frame rate, or as close
+            # as the camera can match. This helps with Logitech cameras which otherwise try to
+            # auto-reduce frame rate in low light.
+            possible = tmp.set(cv2.CAP_PROP_FPS, FORCE_CAMERA_FPS)
+            if possible:
+                print(f"Able to set frame rate to {FORCE_CAMERA_FPS}")
+            else:
+                print(f"Unable to set frame rate to {FORCE_CAMERA_FPS}")
 
         width2 = tmp.get(cv2.CAP_PROP_FRAME_WIDTH)
         height2 = tmp.get(cv2.CAP_PROP_FRAME_HEIGHT)
