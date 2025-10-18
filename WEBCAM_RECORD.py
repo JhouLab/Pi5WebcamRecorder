@@ -1002,10 +1002,10 @@ class RECORDER:
                     # Show total remaining disk space every 10 seconds
                     gb = self.show_disk_space()
                     if cam.IsRecording:
-                        if gb < 850:
+                        if gb < .02:
                             print(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, stopping recording.")
                             cam.stop_record(True)
-                        elif gb < 850:
+                        elif gb < .10:
                             print(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, will stop recording when < 20MB")
 
 
