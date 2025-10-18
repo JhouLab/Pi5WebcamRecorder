@@ -20,7 +20,7 @@ from CamObj import CamObj, WIDTH, HEIGHT, \
 from extra.get_hardware_info import *
 
 # Note that
-import cv2
+import cv2     # Install opencv-python. Note that it may want to use an older version of numpy
 from enum import Enum
 from functools import partial
 

@@ -16,29 +16,31 @@ from __future__ import annotations  # Need this for type hints to work on older 
 
 import _io
 import queue
-import tkinter.filedialog
-import tkinter.messagebox
 
-from typing import List
-import os
-import sys
-import psutil  # This is used to obtain disk free space
-import numpy as np
-import math
 import time
 import datetime
 import platform
 import threading
 import subprocess
 from sys import gettrace
-import configparser
 from enum import Enum
-from ast import literal_eval as make_tuple  # Needed to parse resolution string in config
 from queue import Queue
+
+import tkinter.filedialog
+import tkinter.messagebox
+from tkinter import messagebox
+
+from typing import List
+import os
+
+import psutil  # This is used to obtain disk free space
+import numpy as np
+import math
+import configparser
+from ast import literal_eval as make_tuple  # Needed to parse resolution string in config
 
 from extra.get_hardware_info import get_cam_usb_port
 
-from tkinter import messagebox
 
 
 PLATFORM = platform.system().lower()
@@ -117,15 +119,28 @@ VERBOSE = False
 camParser = configparser.RawConfigParser()
 configFilePath = r'config.txt'
 
+if not os.path.exists(configFilePath):
+    messagebox.showinfo(
+        title="Error",
+        message=f"Config file '{configFilePath}' does not exist. Please create it from one of the provided templates.")
+    raise Exception("No config file present")
+
 try:
     camParser.read(configFilePath)
 except Exception as e:
     print("")
     print(f"Error: {e}")
 
-# sanity check
-parse_dict = dict(camParser.items('options'))
+try:
+    parse_dict = dict(camParser.items('options'))
+except Exception as e:
+    messagebox.showinfo(
+        title="Error",
+        message=f"Config file '{configFilePath}' could not be found, or lacks an 'options' section.")
+    print("Unable to parse config.txt file. Please make sure file exists, and has a section called 'options'.")
+    raise Exception(e)
 
+# sanity check
 for k in parse_dict.keys():
     if not k in ['data_folder',
                  'debug',
@@ -155,6 +170,12 @@ for k in parse_dict.keys():
             message=f"Config file '{configFilePath}' contains unrecognized option '{k}'")
 
 DATA_FOLDER = camParser.get('options', 'DATA_FOLDER', fallback='')
+
+if not os.path.exists(DATA_FOLDER):
+    messagebox.showinfo(
+        title="Error",
+        message=f"Data folder '{DATA_FOLDER}' does not exist. Please check config file.")
+    raise Exception("No data folder present")
 
 if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
     # Data folder doesn't end with either forward or backward slash
