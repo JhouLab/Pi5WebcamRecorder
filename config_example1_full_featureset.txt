@@ -56,7 +56,7 @@ RESOLUTION = (640, 480)
 FORCE_CAMERA_FPS = 0
 
 ; Base folder for data storage. Make sure there is a trailing slash at the end of any directory.
-; If you want to store data in the program folder, use an empty string.
+; If you want to store data in the program folder, use an empty string (Linux) or a single dot (Windows)
 ; Windows folders can use either backward or forward slash.
 DATA_FOLDER = /home/jhoulab/Videos/
 ; DATA_FOLDER = C:/Users/TomJhou/Videos/
@@ -75,3 +75,10 @@ USE_CALLBACK_FOR_GPIO = 0
 ; If 1, save frame number and animal ID to recorded video. This info will show in real-time display regardless
 ; of this setting.
 SAVE_ON_SCREEN_INFO = 1
+
+; If 1, then video is rotated 180 degrees
+ROTATE180 = 0
+
+; If 1, then recording will stop if camera disconnects. Otherwise will retry connection every 5 seconds,
+; and resume recording when successful.
+STOP_RECORDING_ON_DISCONNECT = 0

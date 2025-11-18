@@ -912,7 +912,7 @@ class RECORDER:
                 img = self.cached_frame[which_disp]
 
                 if cam_obj.status:
-                    if self.zoom_center == 1:
+                    if self.zoom_center == 1:  # Optional 2x zoom
                         # Display from 0.25-0.75 along x and y dimensions
                         x1 = WIDTH >> 2    # 1/4
                         x2 = x1 * 3        # 3/4
@@ -920,7 +920,7 @@ class RECORDER:
                         y2 = y1 * 3        # 3/4
                         img = img[y1:y2, x1:x2]
                         img = cv2.resize(img, [WIDTH, HEIGHT])
-                    elif self.zoom_center == 2:
+                    elif self.zoom_center == 2:  # Optional 4x zoom
                         # Display from 0.375-0.625 along x and y dimensions
                         x1 = (WIDTH >> 3) + (WIDTH >> 2)   # 3/8
                         x2 = x1 + (WIDTH >> 2)             # 3/8 + 1/4 = 5/8
@@ -928,6 +928,12 @@ class RECORDER:
                         y2 = y1 + (HEIGHT >> 2)            # 3/8 + 1/4 = 5/8
                         img = img[y1:y2, x1:x2]
                         img = cv2.resize(img, [WIDTH, HEIGHT])
+                else:
+                    # cam_obj.status is false, which means camera is disconnected.
+                    # Since recording might still be ongoing, we make copy of a blank frame
+                    # So that record dot can be added without disrupting the original blank frame,
+                    # allowing us to tell if recording was stopped.
+                    img = img.copy()
 
                 # Add camera ID string BEFORE possible downsampling, since font size scales with
                 # original image resolution

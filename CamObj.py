@@ -132,6 +132,8 @@ except Exception as e:
     print(f"Error: {e}")
 
 try:
+    # configparser is case sensitive for section name ('options') but retrieves actual keys as lower case, regardless
+    # of how it is spelled in file
     parse_dict = dict(camParser.items('options'))
 except Exception as e:
     messagebox.showinfo(
@@ -142,6 +144,7 @@ except Exception as e:
 
 # sanity check
 for k in parse_dict.keys():
+    # Note that camParser converts all strings to lower case, regardless of how they are spelled in file
     if not k in ['data_folder',
                  'debug',
                  'first_camera_id',
@@ -162,6 +165,7 @@ for k in parse_dict.keys():
                  'save_on_screen_info',
                  'use_mjpg',
                  'use_callback_for_gpio',
+                 'stop_recording_on_disconnect',
                  ]:
         print("")
         print("Warning: unrecognized option '{}'".format(k))
@@ -169,7 +173,7 @@ for k in parse_dict.keys():
             title="Warning",
             message=f"Config file '{configFilePath}' contains unrecognized option '{k}'")
 
-DATA_FOLDER = camParser.get('options', 'DATA_FOLDER', fallback='')
+DATA_FOLDER = camParser.get('options', 'DATA_FOLDER', fallback='.')
 
 if not os.path.exists(DATA_FOLDER):
     messagebox.showinfo(
@@ -238,6 +242,8 @@ FIRST_CAMERA_ID: int = camParser.getint('options', 'FIRST_CAMERA_ID', fallback=1
 # Rotate video 180 degrees
 ROTATE180: int = camParser.getint('options', 'ROTATE180', fallback=0)
 
+# Whether to stop recording if camera disconnects (default no)
+STOP_RECORDING_ON_DISCONNECT: int = camParser.getint('options', 'STOP_RECORDING_ON_DISCONNECT', fallback=0)
 
 DEBUG = DEBUG or is_debug == 1
 
@@ -1210,9 +1216,9 @@ class CamObj:
             # Determine native frame rate by grabbing a few frames and measuring latency
             native_fps = self.profile_fps()
             if native_fps < 0:
-                # Camera has become disconnected
+                # Camera has become disconnected during profiling, will not start threads
                 self.cam = None
-                self.frame = make_blank_frame(f"{self.box_id} Camera lost connection")
+                self.frame = make_blank_frame(f"{self.box_id} Camera lost connection.")
                 printt(f"Camera {self.box_id} not connected. Will not start producer or consumer threads.")
                 return
         else:
@@ -1244,6 +1250,7 @@ class CamObj:
         while not self.pending == self.PendingAction.Exiting:
 
             if nextRetry > 0:
+                # Camera feed has dropped, and so now we attempt to reconnect every 5 seconds
                 if nextRetry > time.time():
                     # Time to retry connection
                     tmp, _ = setup_cam(self.id_num)
@@ -1260,7 +1267,7 @@ class CamObj:
                             port = get_cam_usb_port(self.id_num)
                             old_port = self.box_id - FIRST_CAMERA_ID
                             if port != old_port:
-                                st1 = f"Warning: Camera plugged into different USB port than before."
+                                st1 = f"Warning: Camera plugged into different USB port than before, but will continue to show in old location until app is restarted."
                                 st2 = f"Was {old_port}, now {port}."
                                 printt(st1)
                                 printt(st2)
@@ -1268,10 +1275,11 @@ class CamObj:
                     else:
                         # Wait 5 seconds until next retry
                         nextRetry = time.time() + 5
+                        continue
                 else:
                     # Not yet time to retry connection
                     time.sleep(1)
-                continue
+                    continue
 
             if self.cam is not None and self.cam.isOpened():
                 try:
@@ -1290,32 +1298,41 @@ class CamObj:
                 if self.pending == self.PendingAction.Exiting:
                     break
 
-                # Read failed. Remove this camera so we won't attempt to read it later.
+                # Read failed, cancel any pending action
+                self.pending = self.PendingAction.Nothing
                 if self.IsRecording:
-                    self.stop_record()  # Close file writers
+                    #  Optionally stop recording
+                    if STOP_RECORDING_ON_DISCONNECT:
+                        self.__stop_recording_now()   # Because no new frames are being sent, we can't rely on usual stop_record() function, which only takes effect when next frame is received by consumer thread
 
-                self.frame = make_blank_frame(f"{self.box_id} Camera lost connection")
+                # Don't put this frame in queue, send directly to frame object so it will show immediately
+                self.frame = make_blank_frame(f"{self.box_id} Camera disconnected. Retrying...")
                 # Warn user that something is wrong.
                 printt(
                     f"Unable to read box {self.box_id}'s camera. Did it come unplugged?")
 
-                # Remove camera resources
+                # Remove camera resources for now
                 self.release()
+
+                # Start timer to attempt reconnection every 5 seconds
                 nextRetry = time.time() + 5
                 continue
 
             count_cycle += 1
 
             if count_cycle == count_interval:
+                # Ready to put frame into queue
                 count_cycle = 0
                 count_sent_frames += 1
                 if self.q.qsize() > 250:
-                    if frame_time - last_dropped_frame_warning > 5:
+                    # If we have more than 250 frames in buffer, then drop new frames.
+                    if frame_time - last_dropped_frame_warning > 5.0:
                         # Only report to log file every 5 seconds
                         printt(f"DROPPING FRAME, box{self.box_id}, frame # {count_sent_frames}, time={frame_time - self.start_recording_time:.3f}s",
                                print_to_screen=False)
                         last_dropped_frame_warning = frame_time
-                else:                
+                else:
+                    # Put frame in queue
                     self.q.put((frame, frame_time, TTL_on, count_sent_frames))
 
         if DEBUG:
@@ -1330,14 +1347,25 @@ class CamObj:
 
         while not self.pending == self.PendingAction.Exiting:
 
-            #
             try:
                 frame, t, TTL, frame_count = self.q.get(timeout=0.5)
             except queue.Empty:
                 # No frames received. Either camera is disconnected, or running slowly.
                 # Either way, just keep going, and hope camera eventually reconnects.
-                # Since timeout is 0.5 seconds, we will check twice a second until camera
-                # is back online
+                # Since q.get() timeout is 0.5 seconds, we will check twice a second until
+                # camera is back online
+
+                # Must handle possible pending actions
+                if self.pending == self.PendingAction.ForceStop:
+                    self.pending = self.PendingAction.Nothing
+                    self.__stop_recording_now()
+                if self.IsRecording and 0 < self.pending_stop_record_time < time.time():
+                    self.pending_stop_record_time = 0
+                    self.__stop_recording_now()
+                elif self.pending == self.PendingAction.StartRecord:
+                    # Don't start recording if camera is offline
+                    self.pending = self.PendingAction.Nothing
+
                 continue
 
             if not reported_frame_size:
@@ -1349,7 +1377,8 @@ class CamObj:
             prev_frames_received = frame_count
             
             if DEBUG and self.current_animal_ID == "StressTest":
-                # Add massive flicker to truly stress out the recording and compression algorithm.
+                # Add massive flicker (by inverting every alternate frame's luminance and color)
+                # to truly stress out the recording and compression algorithm.
                 # This will cause massive delays, and will crash the Pi in about 60 seconds unless
                 # we start dropping frames
                 if frame_count % 2 == 0:
