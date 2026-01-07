@@ -197,9 +197,10 @@ for idx, d in enumerate(DATA_FOLDER_LIST):
 
 
 if not any(folder_exists):
+    nl = "\n"
     messagebox.showinfo(
         title="Error",
-        message=f"Could not locate any of the following folders:\n\n{"\n".join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.")
+        message=f"Could not locate any of the following folders:\n\n{nl.join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.")
 
     raise Exception("No data folder present")
 

@@ -789,10 +789,12 @@ class RECORDER:
     def show_disk_space(self, msg=""):
         disk_space = get_disk_free_space_GB()
         if disk_space is not None:
+            tmp_txt=f"Folder:{get_storage_folder()}\nFree disk space:"
             if any_camera_recording(self.cam_array):
-                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space_GB():.3f} GB" + msg)
+                # Increase precision when recording
+                self.disk_free_label.config(text=f"{tmp_txt} {get_disk_free_space_GB():.3f} GB" + msg)
             else:
-                self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space_GB():.1f} GB" + msg)
+                self.disk_free_label.config(text=f"{tmp_txt} {get_disk_free_space_GB():.1f} GB" + msg)
             return disk_space
         else:
             self.disk_free_label.config(text=f"Disk path \"{get_storage_folder()}\" invalid.")
