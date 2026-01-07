@@ -60,7 +60,7 @@ FORCE_CAMERA_FPS = 0
 ; Windows folders can use either backward or forward slash.
 ; If you want to specify multiple folders, separate them with a semicolon, and program will use the first
 ; one that exists.
-DATA_FOLDER = //LABUNRAID/zfs48_share/behavior_videos;/mnt/smb/behavior_videos;/media/jhoulab/FADD-49D1/Behavioral_Recordings
+DATA_FOLDER = //LABUNRAID/zfs48_share/behavior_videos;/mnt/raid_share/behavior_videos;/media/jhoulab/FADD-49D1/Behavioral_Recordings
 ; DATA_FOLDER = C:/Users/TomJhou/Videos/
 
 ; Determines which buttons are shown on GUI. Can either show video recording, still snapshot, or both.
@@ -86,4 +86,5 @@ ROTATE180 = 0
 STOP_RECORDING_ON_DISCONNECT = 0
 
 ; Use this to run commands on Raspberry Pi. The line below mounts a shared SMB directory
-LINUX_START_SCRIPT = sudo mount -t cifs //labunraid/zfs48_share /mnt/smb -o user=tomjhou,pass=ithaca55
+LINUX_START_SCRIPT = mkdir /mnt/raid_share && sudo mount -t cifs //labunraid/zfs48_share /mnt/raid_share -o user=tomjhou,pass=ithaca55
+

@@ -49,9 +49,6 @@ if IS_LINUX:
 
     import RPi.GPIO as GPIO
 
-    if len(LINUX_START_SCRIPT) > 0:
-        subprocess.run(LINUX_START_SCRIPT)
-
 
 sys.setswitchinterval(0.001)
 interval = sys.getswitchinterval()

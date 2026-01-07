@@ -72,6 +72,7 @@ if IS_LINUX:
                 IS_PI5 = True
     except:
         pass
+    
 
 if IS_PI:
     #
@@ -174,8 +175,14 @@ for k in parse_dict.keys():
             title="Warning",
             message=f"Config file '{configFilePath}' contains unrecognized option '{k}'")
 
-data_folder_list_string = camParser.get('options', 'DATA_FOLDER', fallback='.')
+LINUX_START_SCRIPT = camParser.get('options', 'LINUX_START_SCRIPT', fallback='')
 
+if IS_LINUX:
+    if len(LINUX_START_SCRIPT) > 0:
+        # Mount SMB shared folder
+        os.system(LINUX_START_SCRIPT)
+
+data_folder_list_string = camParser.get('options', 'DATA_FOLDER', fallback='.')
 DATA_FOLDER_LIST = data_folder_list_string.split(";")
 
 if len(DATA_FOLDER_LIST) == 0:
@@ -196,7 +203,6 @@ for idx, d in enumerate(DATA_FOLDER_LIST):
             # just leave the empty string as is, so that we can default to the program directory.
             DATA_FOLDER_LIST[idx] = d + "/"
 
-
 if not any(folder_exists):
     nl = "\n"
     messagebox.showinfo(
@@ -204,7 +210,6 @@ if not any(folder_exists):
         message=f"Could not locate any of the following folders:\n\n{nl.join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.")
 
     raise Exception("No data folder present")
-
 
 # Function to dynamically return the first folder in the candidate list that is actually found.
 # This way, if cloud folder gets disconnected, will revert to
@@ -217,9 +222,6 @@ def get_storage_folder():
             return DATA_FOLDER_LIST[idx]
 
     raise Exception("Data folder not available")
-
-LINUX_START_SCRIPT = camParser.get('options', 'LINUX_START_SCRIPT', fallback='')
-
 
 # Native frame rate of camera(s). If not specified, will attempt to determine by profiling
 NATIVE_FRAME_RATE: float = camParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
