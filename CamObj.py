@@ -173,20 +173,49 @@ for k in parse_dict.keys():
             title="Warning",
             message=f"Config file '{configFilePath}' contains unrecognized option '{k}'")
 
-DATA_FOLDER = camParser.get('options', 'DATA_FOLDER', fallback='.')
+data_folder_list_string = camParser.get('options', 'DATA_FOLDER', fallback='.')
 
-if not os.path.exists(DATA_FOLDER):
+DATA_FOLDER_LIST = data_folder_list_string.split(";")
+
+if len(DATA_FOLDER_LIST) == 0:
     messagebox.showinfo(
         title="Error",
-        message=f"Data folder '{DATA_FOLDER}' does not exist. Please check config file.")
+        message=f"No data folders, please check config file.")
+
+    raise Exception("No data folders, please check config file.")
+
+folder_exists = []
+for idx, d in enumerate(DATA_FOLDER_LIST):
+    tmp_exists = os.path.isdir(d)
+    folder_exists.append(tmp_exists)
+    if len(d) > 0 and d != ".":
+        if not (d.endswith("/") or d.endswith("\\")):
+            # Data folder doesn't end with either forward or backward slash
+            # Only append slash if data folder is not the empty string. Otherwise,
+            # just leave the empty string as is, so that we can default to the program directory.
+            DATA_FOLDER_LIST[idx] = d + "/"
+
+
+if not any(folder_exists):
+    messagebox.showinfo(
+        title="Error",
+        message=f"Could not locate any of the following folders:\n\n{"\n".join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.")
+
     raise Exception("No data folder present")
 
-if not (DATA_FOLDER.endswith("/") or DATA_FOLDER.endswith("\\")):
-    # Data folder doesn't end with either forward or backward slash
-    if len(DATA_FOLDER) > 0 and DATA_FOLDER != ".":
-        # Only append slash if data folder is not the empty string. Otherwise,
-        # just leave the empty string as is, so that we can default to the program directory.
-        DATA_FOLDER = DATA_FOLDER + "/"
+
+# Function to dynamically return the first folder in the candidate list that is actually found.
+# This way, if cloud folder gets disconnected, will revert to
+def get_storage_folder():
+    for idx, d in enumerate(DATA_FOLDER_LIST):
+        tmp_exists = os.path.isdir(d)
+        folder_exists[idx] = tmp_exists
+        if tmp_exists:
+            # Find the first folder that actually exists
+            return DATA_FOLDER_LIST[idx]
+
+    raise Exception("Data folder not available")
+
 
 # Native frame rate of camera(s). If not specified, will attempt to determine by profiling
 NATIVE_FRAME_RATE: float = camParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
@@ -288,12 +317,13 @@ def make_blank_frame(txt, resolution=None):
     return tmp
 
 
-filename_log = DATA_FOLDER + get_date_string(include_time=False) + "_log.txt"
+filename_log = get_storage_folder() + get_date_string(include_time=False) + "_log.txt"
 
 try:
     # Create text file for frame timestamps. Note 'a' for appending.
     fid_log = open(filename_log, 'a')
     print("Logging events to file: \'" + filename_log + "\'")
+    fid_log.close()
 except:
     print(
         "Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and that you have permission to write to it.")
@@ -314,16 +344,16 @@ def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
     if print_to_screen:
         print(s, flush=True)
     try:
+        filename_log = get_storage_folder() + get_date_string(include_time=False) + "_log.txt"
+        fid_log = open(filename_log, 'a')
         fid_log.write(s + "\n")
-        fid_log.flush()
-        if close_file:
-            fid_log.close()
+        fid_log.close()
     except:
         pass
 
 
 def get_disk_free_space_GB():
-    path = DATA_FOLDER
+    path = get_storage_folder()
     if path == "":
         path = "./"
     if os.path.exists(path):
@@ -401,7 +431,7 @@ def verify_directory():
     day = '{:02d}'.format(now.day)
     date = '{}-{}-{}'.format(year, month, day)
 
-    target_path = os.path.join(DATA_FOLDER, date)
+    target_path = os.path.join(get_storage_folder(), date)
 
     if os.path.isdir(target_path):
         # check permissions
@@ -917,7 +947,7 @@ class CamObj:
 
                 if stress_test_mode:
                     # Stress test saves to same location every time, ignoring date and animal ID.
-                    prefix = os.path.join(DATA_FOLDER, f"stress_test_cam{self.box_id}")
+                    prefix = os.path.join(get_storage_folder(), f"stress_test_cam{self.box_id}")
                     self.current_animal_ID = "StressTest"
                 else:
                     # Generate filename prefix, which will be date string plus animal ID (or box ID

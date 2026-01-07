@@ -58,7 +58,9 @@ FORCE_CAMERA_FPS = 0
 ; Base folder for data storage. Make sure there is a trailing slash at the end of any directory.
 ; If you want to store data in the program folder, use an empty string (Linux) or a single dot (Windows)
 ; Windows folders can use either backward or forward slash.
-DATA_FOLDER = /home/jhoulab/Videos/
+; If you want to specify multiple folders, separate them with a semicolon, and program will use the first
+; one that exists.
+DATA_FOLDER = //LABUNRAID/zfs48_share/behavior_videos;/mnt/smb/behavior_videos;/media/jhoulab/FADD-49D1/Behavioral_Recordings
 ; DATA_FOLDER = C:/Users/TomJhou/Videos/
 
 ; Determines which buttons are shown on GUI. Can either show video recording, still snapshot, or both.

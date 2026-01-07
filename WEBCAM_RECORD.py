@@ -14,7 +14,7 @@ import sys
 import numpy as np
 from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
-    FONT_SCALE, printt, DATA_FOLDER, get_disk_free_space_GB, IS_LINUX, IS_PI, IS_WINDOWS, \
+    FONT_SCALE, printt, get_storage_folder, get_disk_free_space_GB, IS_LINUX, IS_PI, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO, \
     setup_cam, FIRST_CAMERA_ID
 from extra.get_hardware_info import *
@@ -160,19 +160,6 @@ def make_instruction_frame():
     return f
 
 
-if not os.path.isdir(DATA_FOLDER):
-    # Parent folder doesn't exist ... this could be due to USB drive being unplugged?
-    # Default to program directory
-    if DATA_FOLDER == "":
-        messagebox.showinfo(
-            title="Warning",
-            message=f"config.txt lacks 'DATA_FOLDER' entry.\n\nWill save video to program folder instead, but it is recommended to add 'DATA_FOLDER' to config.txt.")
-    else:
-        messagebox.showinfo(
-            title="Warning",
-            message=f"Unable to find data folder:\n\n\"{DATA_FOLDER}\"\n\nWill save to program folder instead, but you should fix the 'DATA_FOLDER' entry in config.txt.")
-    DATA_FOLDER = "."
-
 # Highest camera ID to search when first connecting. Some sources
 # recommend searching up to 99, but that takes too long and is usually
 # unnecessary. So far, I have not needed to search above about 8, but we
@@ -301,7 +288,7 @@ def get_key():
 def browse_data_folder():
     p = platform.system()
     if p == "Windows":
-        os.startfile(DATA_FOLDER)
+        os.startfile(os.path.normpath(get_storage_folder()))  # Need normpath to convert forward slahes to backslashes
     elif p == "Linux":
         # Open data folder in the Pi's file manager, PCMan.
         # Must use subprocess.Popen() rather than os.system(), as the latter blocks until the window is closed.
@@ -326,10 +313,10 @@ def browse_data_folder():
                     acct = 'jhoulab'
             # Run file manager after first restoring the original user's XDG_RUNTIME_DIR, which we saved
             # when we called this file from RUN_AS_ROOT.py
-            subprocess.Popen(f"sudo XDG_RUNTIME_DIR=$XDG_TMP -i -u {acct} pcmanfm \"{DATA_FOLDER}\"", shell=True)
+            subprocess.Popen(f"sudo XDG_RUNTIME_DIR=$XDG_TMP -i -u {acct} pcmanfm \"{get_storage_folder()}\"", shell=True)
         else:
             # Open folder in file manager
-            subprocess.Popen(f"pcmanfm \"{DATA_FOLDER}\"", shell=True)
+            subprocess.Popen(f"pcmanfm \"{get_storage_folder()}\"", shell=True)
 
 
 class RECORDER:
@@ -808,7 +795,7 @@ class RECORDER:
                 self.disk_free_label.config(text=f"Free disk space: {get_disk_free_space_GB():.1f} GB" + msg)
             return disk_space
         else:
-            self.disk_free_label.config(text=f"Disk path \"{DATA_FOLDER}\" invalid.")
+            self.disk_free_label.config(text=f"Disk path \"{get_storage_folder()}\" invalid.")
             return 0
 
     def add_id_string(self, cached_frame, idx, IsRecording, zoom_level=0):

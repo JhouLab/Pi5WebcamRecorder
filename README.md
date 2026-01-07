@@ -4,16 +4,16 @@
 Instructions, version 1.5, Updated March 10, 2025.
 
 This is intended to run on a Raspberry Pi 5, which is much faster than the Pi 4. It
-can handle 4 simultaneous cameras at 640x480 and 30 frames per second.
+can handle 4 simultaneous cameras at 640x480 resolution and 30 frames per second.
 
-Although this program will run on the older Pi 4, it will be slower, and would be best
-suited for controlling a single camera.
+It will run on an older Pi 4 (slowly), and is best suited for controlling a single camera.
 
 If you have problems, questions, or suggestions, please email jhoulab1@gmail.com
 
+
 # GETTING STARTED:
 
-To install on a new machine, first follow the instructions at the bottom of this page, under: "Installing on Raspberry Pi 5".
+To install on a new machine, follow the instructions at the bottom of this page, under: "Installing on Raspberry Pi 5".
 
 On most JhouLab Pi's, the program is already installed to the following folder:
 
@@ -23,7 +23,7 @@ Once installed, launch the program with one of the following methods:
 
     Method 1: From command line:
 
-      cd Documents/github/Pi5WebcamRecorder
+      cd ~/Documents/github/Pi5WebcamRecorder
       python -m RUN_AS_ROOT
 
     Method 2: From the Pi's built-in Thonny app:
@@ -60,6 +60,8 @@ Each recording session generates three files, with the following names and conte
 
 In the above filenames, YYYY-MM-DD_HHmm is the date and time, X is the camera number (1-4), and AnimalID is entered
 manually or transmitted via GPIO logic inputs.
+
+h264 codec is pretty efficient. Files are typically about 2MB/min, or 33kB/sec. This will reach 1GB after about 6-8 hours.
 
 # CONFIGURING:
 
@@ -109,7 +111,18 @@ Once a session is started, three consecutive 100ms pulses will stop the recordin
     0V -----     --     --     ----
                 50ms    50ms
 
-While a session is ongoing, any single pulse will be recorded in the timestamp file, which looks like the following:
+While a recording is ongoing, any single 100ms pulse will be recorded in the *_TTLs.txt file.
+The pulse will look like this:
+
+
+            100ms
+    3.3V     ___ 
+            |   |
+    0V -----     ----------
+
+
+The contents of the *_TTLs.txt file will be tab-delimited, and will will have three columns,
+corresponding to event number, onset time, and offset time:
 
     TTL_event_number	ONSET (seconds)	OFFSET (seconds)
     1	19.604753732681274	19.708051204681396
@@ -119,25 +132,18 @@ While a session is ongoing, any single pulse will be recorded in the timestamp f
     5	803.6808965206146	803.7854342460632
     6	1059.6991975307465	1059.8032557964325
 
-Values are tab-delimited. The actual pulse is 100ms, as before.
-
-            100ms
-    3.3V     ___ 
-            |   |
-    0V -----     ----------
 
 With all pulses, the allowable range is 50-150ms, but it is recommended not to get too close to
-the endpoints of this range, as Linux is not a real-time operating system, so you want some
-margin of error in case of small timing errors.
+the endpoints of this range, as errors can occur due to Linux not being a real-time operating system.
 
-One can also transmit an animal ID number via the GPIO pins as a 16-bit binary number.
+You can also transmit an animal ID number via the GPIO pins as a 16-bit binary number.
 The ID number has to be transmitted BEFORE starting the session, and will show up
 in the filename and on the screen during recording.
 
 If you transmit the ID after a session has already started, it will likely
 get interpreted as a triple pulse, which will stop the recording. So don't do that.
 
-ID transmission begins with 300ms pulse, followed by 16 binary bits as shown below:
+ID transmission begins with a 300ms pulse, followed by 16 binary bits as shown below:
 
     3.3V      300ms  <16 binary bits, 50 or 150ms each>            <Parity bit 50 or 150ms long>
              ______   _   _   ___   _   ___                 _       _
@@ -188,23 +194,44 @@ To install, follow these three steps:
 
 ## STEP 2: Install OpenCV.
 
-  On the Pi5 command prompt, type the following:
+  From the command prompt, type the following:
 
     sudo apt-get install libopencv-dev
     sudo apt-get install python3-opencv
 
-  As of 6/12/2024, this installs OpenCV version 4.6.0, which is slightly outdated (released 6/12/2022),
+  As of 6/12/2024, this installs OpenCV version 4.6.0, which is outdated (released 6/12/2022),
   but works well enough. For other ways to install OpenCV, see here:
   https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
 
 ## STEP 3: Install rpi-lpgio (only needed if controlling from external GPIOs)
-  Annoyingly, the Pi5 uses different GPIO hardware than the Pi4, but they didn't bother to update the
-  default GPIO library. To work around this, use the following two commands to uninstall the standard library
-  and install python3-rpi-lpgio, a drop-in replacement:
+  Annoyingly, the Pi5 uses different GPIO hardware than the Pi4, but the default GPIO library still assumes
+  the old hardware. To work around this, use the following two commands to replace the standard library
+  with python3-rpi-lpgio, a drop-in replacement:
 
     sudo apt remove  python3-rpi.gpio
     sudo apt install python3-rpi-lgpio
 
 At this point, you should be able to launch the app and see live video on the screen.
 
-T
+## Experimental: add tailscale access to SMB server for file storage
+
+From the command line, install tailscale, and then start it:
+
+    curl -fsSL https://tailscale.com/install.sh | sh
+	
+    sudo tailscale up
+	
+This should open a firefox window into which you should log into the lab tailscale account.
+
+Now install an smb client:
+    
+	apt-get install  samba-common smbclient samba-common-bin smbclient  cifs-utils
+	
+Create a new folder and link it:
+
+	mkdir /mnt/smb
+	sudo mount -t cifs //labunraid/zfs48_share /mnt/smb -o user=tomjhou,pass=ithaca55
+	
+
+  
+
