@@ -153,6 +153,7 @@ for k in parse_dict.keys():
                  'frame_rate_per_second',
                  'resolution',
                  'height', 'width',
+                 'linux_start_script',
                  'native_frame_rate',
                  'num_ttl_pulses_to_start_session',
                  'num_ttl_pulses_to_stop_session',
@@ -216,6 +217,8 @@ def get_storage_folder():
             return DATA_FOLDER_LIST[idx]
 
     raise Exception("Data folder not available")
+
+LINUX_START_SCRIPT = camParser.get('options', 'LINUX_START_SCRIPT', fallback='')
 
 
 # Native frame rate of camera(s). If not specified, will attempt to determine by profiling

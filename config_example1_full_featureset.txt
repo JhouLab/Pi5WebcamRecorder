@@ -84,3 +84,6 @@ ROTATE180 = 0
 ; If 1, then recording will stop if camera disconnects. Otherwise will retry connection every 5 seconds,
 ; and resume recording when successful.
 STOP_RECORDING_ON_DISCONNECT = 0
+
+; Use this to run commands on Raspberry Pi. The line below mounts a shared SMB directory
+LINUX_START_SCRIPT = sudo mount -t cifs //labunraid/zfs48_share /mnt/smb -o user=tomjhou,pass=ithaca55

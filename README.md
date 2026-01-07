@@ -218,18 +218,23 @@ At this point, you should be able to launch the app and see live video on the sc
 From the command line, install tailscale, and then start it:
 
     curl -fsSL https://tailscale.com/install.sh | sh
-	
     sudo tailscale up
-	
-This should open a firefox window into which you should log into the lab tailscale account.
 
-Now install an smb client:
-    
+When you run this, it should open a firefox window into which you should log into the lab tailscale account.
+
+After this, it will automatically reconnect when rebooting Pi, and you don't need to restart it again.
+
+Optional: can use this to prevent tailscale up from requiring sudo
+
+	sudo tailscale set --operator=$USER
+
+Now install smb client, and create a new folder:
+
 	apt-get install  samba-common smbclient samba-common-bin smbclient  cifs-utils
-	
-Create a new folder and link it:
-
 	mkdir /mnt/smb
+
+Mount shared folder. Must do this every time Pi is restarted:
+
 	sudo mount -t cifs //labunraid/zfs48_share /mnt/smb -o user=tomjhou,pass=ithaca55
 	
 

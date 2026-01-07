@@ -16,7 +16,7 @@ from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, get_storage_folder, get_disk_free_space_GB, IS_LINUX, IS_PI, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO, \
-    setup_cam, FIRST_CAMERA_ID
+    setup_cam, FIRST_CAMERA_ID, LINUX_START_SCRIPT
 from extra.get_hardware_info import *
 
 # Note that
@@ -39,7 +39,7 @@ root.withdraw()
 
 if IS_LINUX:
     try:
-        os.nice(-20)
+        os.nice(-20)   # Lower value means HIGHER priority. -20 is the max.
     except PermissionError:
         if SHOW_RECORD_BUTTON:
             res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n"
@@ -48,6 +48,10 @@ if IS_LINUX:
                 sys.exit()
 
     import RPi.GPIO as GPIO
+
+    if len(LINUX_START_SCRIPT) > 0:
+        subprocess.run(LINUX_START_SCRIPT)
+
 
 sys.setswitchinterval(0.001)
 interval = sys.getswitchinterval()
