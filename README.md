@@ -233,15 +233,16 @@ Optional: can use this to prevent tailscale up from requiring sudo
 Now install smb client, and create a new folder:
 
 	apt-get install  samba-common smbclient samba-common-bin smbclient  cifs-utils
-	mkdir /mnt/share_name_here
+	sudo mkdir /mnt/share_name_here
 
 Mount shared folder. This does not persist after Pi restart.
 
 	sudo mount -t cifs //labunraid/zfs48_share /mnt/share_name_here -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000
-	
+
 To ensure this works every time, add the following line to config.txt:
 
-    LINUX_START_SCRIPT = mkdir -p /mnt/share_name_here && sudo mount -t cifs //labunraid/zfs48_share /mnt/share_name_here -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000
-  
-Note the mkdir "-p" option to suppress error if folder already exists. Somehow it works fine even if omitted, not sure why.
+    LINUX_START_SCRIPT = sudo mkdir -p /mnt/share_name_here && sudo mount -t cifs //labunraid/zfs48_share /mnt/share_name_here -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000
+
+Note the mkdir "-p" option to suppress error if folder already exists. Somehow on raspberry pi, mount will still run even if mkdir throws error. Not sure why,
+as "&&" shouldn't allow that. Not actually a problem, just curious behavior. If mount exists, will throw "device or resource busy error". This can be safely ignored.
 

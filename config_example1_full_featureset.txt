@@ -86,5 +86,5 @@ ROTATE180 = 0
 STOP_RECORDING_ON_DISCONNECT = 0
 
 ; Use this to run commands on Raspberry Pi. The line below mounts a shared SMB directory with specific user as owner (otherwise only root will be able to modify files)
-LINUX_START_SCRIPT = mkdir /mnt/raid_share && sudo mount -t cifs //labunraid/zfs48_share /mnt/raid_share -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000
+LINUX_START_SCRIPT = sudo mkdir -p /mnt/raid_share && sudo mount -t cifs //labunraid/zfs48_share /mnt/raid_share -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000
 
