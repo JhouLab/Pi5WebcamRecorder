@@ -213,10 +213,12 @@ To install, follow these three steps:
 
 At this point, you should be able to launch the app and see live video on the screen.
 
-## Experimental: add tailscale access to SMB server for file storage
+## STEP 4: If saving to network storage, need to also add SMB client and tailscale
 
-From the command line, install tailscale, and then start it:
+From the command line, install both:
 
+    sudo apt update
+    sudo apt install cifs-utils smbclient -y
     curl -fsSL https://tailscale.com/install.sh | sh
     sudo tailscale up
 
@@ -231,12 +233,15 @@ Optional: can use this to prevent tailscale up from requiring sudo
 Now install smb client, and create a new folder:
 
 	apt-get install  samba-common smbclient samba-common-bin smbclient  cifs-utils
-	mkdir /mnt/smb
+	mkdir /mnt/share_name_here
 
-Mount shared folder. Must do this every time Pi is restarted:
+Mount shared folder. This does not persist after Pi restart.
 
-	sudo mount -t cifs //labunraid/zfs48_share /mnt/smb -o user=tomjhou,pass=ithaca55
+	sudo mount -t cifs //labunraid/zfs48_share /mnt/share_name_here -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000
 	
+To ensure this works every time, add the following line to config.txt:
 
+    LINUX_START_SCRIPT = mkdir -p /mnt/share_name_here && sudo mount -t cifs //labunraid/zfs48_share /mnt/share_name_here -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000
   
+Note the mkdir "-p" option to suppress error if folder already exists. Somehow it works fine even if omitted, not sure why.
 

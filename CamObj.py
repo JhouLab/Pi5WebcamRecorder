@@ -212,7 +212,7 @@ if not any(folder_exists):
     raise Exception("No data folder present")
 
 # Function to dynamically return the first folder in the candidate list that is actually found.
-# This way, if cloud folder gets disconnected, will revert to
+# This way, if cloud folder gets disconnected, will revert to local storage
 def get_storage_folder():
     for idx, d in enumerate(DATA_FOLDER_LIST):
         tmp_exists = os.path.isdir(d)
@@ -906,7 +906,8 @@ class CamObj:
     # Then verifies that directory exists, and if not, creates it
 
     def get_filename_prefix(self, animal_ID=None, add_date=True, join_path=True):
-        
+
+        # Find recommended storage directory. Will create if it doesn't already exist, e.g. if we have new month/day
         path = verify_directory()
 
         if self.current_animal_ID is not None:
@@ -951,27 +952,32 @@ class CamObj:
                 self.frames_recorded = 0
                 self.TTL_num = 0
 
-                if stress_test_mode:
-                    # Stress test saves to same location every time, ignoring date and animal ID.
-                    prefix = os.path.join(get_storage_folder(), f"stress_test_cam{self.box_id}")
-                    self.current_animal_ID = "StressTest"
-                else:
-                    # Generate filename prefix, which will be date string plus animal ID (or box ID
-                    # if no animal ID is available).
-                    if animal_ID is not None:
-                        # This will overwrite any TTL-derived ID value.
-                        self.current_animal_ID = animal_ID
-                    prefix = self.get_filename_prefix()
-
                 prefix_unique = ""
                 suffix_count = 0
 
                 try:
-
                     with self.global_lock:
-                        # Acquire global lock to make sure we get a filename that is not already in use
-                        # and is also unique to all instances. Now that we have box ID number in filename
-                        # this is less essential, as that will keep filename unique across all cameras.
+                        # Global lock is unique across all instances. We need this to make sure we
+                        # get a filename that is not already in use and is also unique.
+                        # Now that we have box ID number in filename this is less essential, as that
+                        # will keep filename unique across all cameras.
+
+                        # Getting storage folder needs to be called with global lock to avoid race conditions
+                        # where two threads try to create the same new storage folder (e.g. when month/day is
+                        # different from before) at the same time. Whichever succeeds first will cause the other
+                        # to generate a "folder exists" error, causing file to save to program directory.
+                        if stress_test_mode:
+                            # Stress test saves to same location every time, ignoring date and animal ID.
+                            prefix = os.path.join(get_storage_folder(), f"stress_test_cam{self.box_id}")
+                            self.current_animal_ID = "StressTest"
+                        else:
+                            # Generate filename prefix, which will be date string plus animal ID (or box ID
+                            # if no animal ID is available).
+                            if animal_ID is not None:
+                                # This will overwrite any TTL-derived ID value.
+                                self.current_animal_ID = animal_ID
+                            prefix = self.get_filename_prefix()
+
                         while True:
                             # Iterate until we get a unique filename
                             if suffix_count > 0:
