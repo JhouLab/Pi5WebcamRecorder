@@ -510,7 +510,7 @@ class RECORDER:
         # Add another row of buttons to frame3
         b_list2 = [
             ("Stop all recording", partial(self.show_stop_dialog, -1)),
-            ("Browse data folder", browse_data_folder),
+            ("Browse data folder", partial(browse_data_folder, FOLDER_THIS_SESSION)),
             ("        Close        ", self.show_quit_dialog),
         ]
 
