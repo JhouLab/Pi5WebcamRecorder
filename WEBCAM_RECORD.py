@@ -647,7 +647,8 @@ class RECORDER:
             # When we start up, we look for any existing files that didn't copy over earlier.
             for item in p.iterdir():
                 if item.is_file():
-                    copyMgr.file_queue.put(os.path.join(copyMgr.TEMP_LOCAL_DIRECTORY, item.name))
+                    if item.name.endswith('.avi') or item.name.endswith('.txt'):
+                        copyMgr.file_queue.put(os.path.join(copyMgr.TEMP_LOCAL_DIRECTORY, item.name))
         except Exception as e:
             # On first run, directory may not yet exist. Just ignore errors in that case.
             pass
@@ -898,7 +899,7 @@ class RECORDER:
         if copyMgr.IS_NETWORK_DRIVE:
             disk_space = self.cached_disk_space
         else:
-            disk_space = get_disk_free_space_GB()
+            disk_space = copyMgr.get_disk_free_space_GB()
 
         tmp_txt=f"Folder:{copyMgr.FOLDER_THIS_SESSION}\nFree disk space:"
 

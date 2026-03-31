@@ -53,14 +53,17 @@ class CopyManager():
                 # Semicolon at end sometimes causes parser to think there is an empty folder at end. Ignore.
                 continue
 
-            tmp_exists = check_exists(d)
+            tmp_exists = os.path.isdir(d)
             folder_exists.append(tmp_exists)
             if tmp_exists:
+                print(f'Found folder {d}, will use it for primary storage\n')
                 # Find the first folder that actually exists (or is creatable)
                 if FOLDER_THIS_SESSION is None:
                     FOLDER_THIS_SESSION = DATA_FOLDER_LIST[idx]
                     self.IS_NETWORK_DRIVE = is_network(FOLDER_THIS_SESSION)
                     break
+            else:
+                print(f'Unable to locate folder {d}\n')
 
         if FOLDER_THIS_SESSION is None:
             nl = "\n"
@@ -71,12 +74,20 @@ class CopyManager():
             FOLDER_THIS_SESSION = './'
 
         if TMP_LOCAL_FOLDER is None or TMP_LOCAL_FOLDER == "":
-            self.TEMP_LOCAL_DIRECTORY = './'
+            self.TEMP_LOCAL_DIRECTORY = './tmp_videos'
         else:
-            self.TEMP_LOCAL_DIRECTORY = TMP_LOCAL_FOLDER
+            if not os.path.isdir(TMP_LOCAL_FOLDER):
+                messagebox.showinfo(title="Warning", message=f"Unable to find local folder {TMP_LOCAL_FOLDER}, will use program folder instead, which may have limited space")
+                self.TEMP_LOCAL_DIRECTORY = "./tmp_videos"
+            else:
+                self.TEMP_LOCAL_DIRECTORY = TMP_LOCAL_FOLDER
 
         self.FOLDER_THIS_SESSION = FOLDER_THIS_SESSION
+        
+        return
+        
         self.filename_log = os.path.join(FOLDER_THIS_SESSION, get_date_string(include_time=False) + "_log.txt")
+
         try:
             # Create text file for frame timestamps. Note 'a' for appending.
             fid_log = open(self.filename_log, 'a')
@@ -88,6 +99,7 @@ class CopyManager():
                 "Unable to create log file: \'" + self.filename_log + "\'.\n  Please make sure folder exists and you have write permissions for it.")
 
     def printt_final(self, s):
+        return True
         # Print log file text to final destination (rather than cached local copy)
         try:
             # Regenerate log filename in case date has changed
