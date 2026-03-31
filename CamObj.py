@@ -10,7 +10,7 @@
 # https://learn.microsoft.com/en-us/windows/wsl/connect-usb#prerequisites
 # Then you might have to install kernel drivers:
 # https://github.com/dorssel/usbipd-win/wiki/WSL-support
-# https://github.com/dorssel/usbipd-win/wiki/WSL-support
+#
 
 from __future__ import annotations  # Need this for type hints to work on older Python versions
 
@@ -35,7 +35,6 @@ import os
 
 from pathlib import Path
 
-import psutil  # This is used to obtain disk free space
 import numpy as np
 import math
 import configparser
@@ -43,6 +42,7 @@ from ast import literal_eval as make_tuple  # Needed to parse resolution string 
 
 from extra.get_hardware_info import get_cam_usb_port
 from extra.check_exists import check_exists
+from extra.CopyManager import CopyManager, get_date_string
 
 wait_flag = threading.Event()
 
@@ -91,7 +91,7 @@ if IS_PI:
     #
 
     # PyCharm intellisense gives warning on the next line, but it is fine.
-    import RPi.GPIO as GPIO
+    import RPi.GPIO as GPIO  # type: ignore
 
 os.environ[
     "OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found. This statement must occur before importing cv2
@@ -172,6 +172,7 @@ for k in parse_dict.keys():
                  'use_mjpg',
                  'use_callback_for_gpio',
                  'stop_recording_on_disconnect',
+                 'tmp_local_folder',
                  ]:
         print("")
         print("Warning: unrecognized option '{}'".format(k))
@@ -189,6 +190,9 @@ if IS_LINUX:
 # Storage folder for this session
 data_folder_list_string = camParser.get('options', 'DATA_FOLDER', fallback='.')
 DATA_FOLDER_LIST = data_folder_list_string.split(";")
+
+TMP_LOCAL_FOLDER = camParser.get('options', 'TMP_LOCAL_FOLDER', fallback='')
+
 
 # Native frame rate of camera(s). If not specified, will attempt to determine by profiling
 NATIVE_FRAME_RATE: float = camParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
@@ -260,18 +264,6 @@ BINARY_BIT_PULSE_THRESHOLD = 0.1
 FONT_SCALE = HEIGHT / 480
 
 
-def get_date_string(include_time=True):
-    now = datetime.datetime.now()
-    year = '{:04d}'.format(now.year)
-    month = '{:02d}'.format(now.month)
-    day = '{:02d}'.format(now.day)
-    hour = '{:02d}'.format(now.hour)
-    minute = '{:02d}'.format(now.minute)
-    if include_time:
-        return '{}-{}-{}_{}{}'.format(year, month, day, hour, minute)
-    else:
-        return '{}-{}-{}'.format(year, month, day)
-
 
 def make_blank_frame(txt, resolution=None):
     if resolution is not None:
@@ -287,75 +279,7 @@ def make_blank_frame(txt, resolution=None):
     return tmp
 
 
-class CopyManager():
-    def __init__(self, DATA_FOLDER_LIST):
-
-        self.file_queue = queue.Queue()
-        self.text_queue = queue.Queue()
-
-        folder_exists = []
-
-        if RECORD_FRAME_RATE == 0:
-            # Assume 30 fps if not specified in config file
-            self.record_frame_rate = 30
-        else:
-            self.record_frame_rate = RECORD_FRAME_RATE
-
-        self.MAX_DISPLAY_FRAMES_PER_SECOND = self.record_frame_rate
-
-        FOLDER_THIS_SESSION: str | None = None
-        self.IS_NETWORK_DRIVE = False
-        self.BACKUP_DRIVE: str | None = None  # This is set if the main drive is a network drive
-
-        # Find the first folder that exists in the config file list, and establish that as the folder to use until program quits
-        for idx, d in enumerate(DATA_FOLDER_LIST):
-            if len(d) > 0 and d != ".":
-                if not (d.endswith("/") or d.endswith("\\")):
-                    # To ensure that all candidate folders end in slash, we add one here if it is
-                    # not already present. Make exception for empty string, which should not have slash
-                    # appended, otherwise it will look like system root.
-                    d += "/"
-
-            if len(d) == 0:
-                # Semicolon at end sometimes causes parser to think there is an empty folder at end. Ignore.
-                continue
-
-            tmp_exists = check_exists(d)
-            folder_exists.append(tmp_exists)
-            if tmp_exists:
-                # Find the first folder that actually exists (or is creatable)
-                if FOLDER_THIS_SESSION is None:
-                    FOLDER_THIS_SESSION = DATA_FOLDER_LIST[idx]
-                    self.IS_NETWORK_DRIVE = FOLDER_THIS_SESSION.startswith("//") or FOLDER_THIS_SESSION.startswith(
-                        "/mnt") or FOLDER_THIS_SESSION.startswith("\\\\")
-                elif self.BACKUP_DRIVE is None:
-                    # Find the second folder that exists or is creatable
-                    self.BACKUP_DRIVE = DATA_FOLDER_LIST[idx]
-                    break
-
-        if FOLDER_THIS_SESSION is None:
-            nl = "\n"
-            messagebox.showinfo(
-                title="Error",
-                message=f"Could not locate or create specified data folders:\n\n{nl.join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.\n\nFor now, will use program folder")
-
-            FOLDER_THIS_SESSION = ['./']
-
-        self.FOLDER_THIS_SESSION = FOLDER_THIS_SESSION
-        self.filename_log = os.path.join(FOLDER_THIS_SESSION, get_date_string(include_time=False) + "_log.txt")
-        try:
-            # Create text file for frame timestamps. Note 'a' for appending.
-            fid_log = open(self.filename_log, 'a')
-            print("Logging events to file: \'" + self.filename_log + "\'")
-            fid_log.close()
-        except:
-            fid_log = None
-            print(
-                "Unable to create log file: \'" + self.filename_log + "\'.\n  Please make sure folder exists and you have write permissions for it.")
-
-
-
-copyMgr = CopyManager(DATA_FOLDER_LIST)
+copyMgr = CopyManager(RECORD_FRAME_RATE, DATA_FOLDER_LIST, TMP_LOCAL_FOLDER)
 
 
 # Write text to both log file and (optional) screen. Log file helps with retrospective troubleshooting
@@ -380,32 +304,8 @@ def printt(txt, omit_date_time=False, print_to_screen=True):
         copyMgr.text_queue.put(s)
         return True
     else:
-        return printt_immediate(s)
+        return copyMgr.printt_final(s)
 
-
-def printt_immediate(s):
-    try:
-        # Regenerate log filename in case date has changed
-        filename_log = os.path.join(copyMgr.FOLDER_THIS_SESSION, get_date_string(include_time=False) + "_log.txt")
-        fid_log = open(filename_log, 'a')
-        fid_log.write(s)
-        fid_log.close()
-        return True
-    except Exception as e:
-        print(e)
-        return False
-
-
-def get_disk_free_space_GB():
-    path = copyMgr.FOLDER_THIS_SESSION
-    if path == "":
-        path = "./"
-    if os.path.exists(path):
-        bytes_avail = psutil.disk_usage(path).free
-        gigabytes_avail = bytes_avail / 1024 / 1024 / 1024
-        return gigabytes_avail
-    else:
-        return None
 
 
 # Tries to connect to a single camera based on ID. Returns a VideoCapture object if successful.
@@ -465,37 +365,6 @@ def setup_cam(cam_id, width=WIDTH, height=HEIGHT):
         fps = 0
 
     return tmp, fps
-
-
-TEMP_LOCAL_DIRECTORY = "./tmp/"
-
-
-def get_initial_save_directory():
-    if copyMgr.IS_NETWORK_DRIVE:
-        # If using network drive, then we first write to local folder
-        # If this is the Raspberry Pi SD card, then space will fill up
-        # quickly.
-        return check_exists(TEMP_LOCAL_DIRECTORY)
-    else:
-        return verify_directory()
-
-
-def verify_directory():
-    # get custom version of datetime for folder search/create
-    now = datetime.datetime.now()
-    year = '{:04d}'.format(now.year)
-    month = '{:02d}'.format(now.month)
-    day = '{:02d}'.format(now.day)
-    date = '{}-{}-{}'.format(year, month, day)
-
-    # Append subfolder with year, month day
-    target_path = os.path.join(copyMgr.FOLDER_THIS_SESSION, date)
-
-    # Check if we have to make folder and/or set permissions
-    if check_exists(target_path):
-        return target_path
-    else:
-        return ''   # Empty string will force saving to current folder
 
 
 def make_unique_filename(folder, prefix, suffix_final=""):
@@ -564,16 +433,15 @@ class CamObj:
     num_consec_TTLs = 0  # Use this to track double and triple pulses
 
     # PyCharm intellisense gives warning on the next line, but it is fine.
-    codec = cv2.VideoWriter_fourcc(*FOURCC)  # What codec to use. Usually h264
-    resolution: List[int] = (WIDTH, HEIGHT)
+    codec = cv2.VideoWriter_fourcc(*FOURCC)  # type: ignore # What codec to use. Usually h264
+    resolution: List[int] = [WIDTH, HEIGHT]
 
-    lock = None  # This lock object is local to this instance
     global_lock = threading.RLock()  # This lock is global to ALL instances, and is used to generate unique filenames
 
     GPIO_active = 0  # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0  # Used to show dark red dot while waiting to see if double pulse is not a triple pulse
 
-    def __init__(self, cam=None, id_num=-1, box_id=-1, GPIO_pin=-1):
+    def __init__(self, cam: cv2.VideoCapture | None =None, id_num=-1, box_id=-1, GPIO_pin=-1) -> None:
         self.thread_consumer = None
         self.thread_producer = None
         self.last_frame_written: int = 0
@@ -588,7 +456,7 @@ class CamObj:
         self.id_num = id_num  # ID number assigned by operating system. We don't use this, as it is unpredictable.
         self.box_id = box_id  # This is a user-friendly unique identifier for each box.
         self.GPIO_pin = GPIO_pin
-        self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
+        self.lock = threading.RLock()  # This will be local to the current instance. It is a reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
         self.q: Queue = Queue()   # Queue for camera frames. Must have one per camera object
 
@@ -1007,7 +875,7 @@ class CamObj:
                 self.TTL_num = 0
 
                 suffix_unique = ""
-                save_dir = get_initial_save_directory()
+                save_dir = copyMgr.get_initial_save_directory()
 
                 try:
                     with self.global_lock:
@@ -1678,7 +1546,7 @@ class CamObj:
                 # Snapshot prefix is usually just camera number
                 # We also add a numerical suffix 1, 2, 3, ... to make every snapshot filename
                 # unique
-                fpath = os.path.join(verify_directory(), self.make_filename_stem(add_date=False) + "_" + str(index) + ".png")
+                fpath = os.path.join(copyMgr.verify_directory(), self.make_filename_stem(add_date=False) + "_" + str(index) + ".png")
 
                 if not os.path.exists(fpath):
                     # Found a filename not already used

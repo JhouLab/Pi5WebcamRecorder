@@ -16,10 +16,10 @@ from datetime import datetime
 import numpy as np
 from CamObj import CamObj, WIDTH, HEIGHT, \
     NATIVE_FRAME_RATE, make_blank_frame,\
-    FONT_SCALE, printt, get_disk_free_space_GB, IS_LINUX, IS_PI, IS_WINDOWS, \
+    FONT_SCALE, printt, IS_LINUX, IS_PI, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO, \
-    printt_immediate, wait_flag, copyMgr, \
-    setup_cam, FIRST_CAMERA_ID, make_unique_filename, TEMP_LOCAL_DIRECTORY
+    wait_flag, copyMgr, \
+    setup_cam, FIRST_CAMERA_ID, make_unique_filename
 from extra.get_hardware_info import *
 from extra.check_exists import browse_data_folder, copy_file_cross_platform
 
@@ -602,7 +602,7 @@ class RECORDER:
     def copy_text_thread(self):
 
         # Cache initial value when thread first starts
-        self.cached_disk_space = get_disk_free_space_GB()
+        self.cached_disk_space = copyMgr.get_disk_free_space_GB()
         idx = 0
 
         while not exit_flag.is_set():
@@ -619,7 +619,7 @@ class RECORDER:
                 for idx in range(len(deque)):
                     text_to_write += deque[idx]   # Peek queue but don't remove item yet
 
-                if printt_immediate(text_to_write):
+                if copyMgr.printt_final(text_to_write):
                     # If writing to log file is successful, then remove items from queue
                     for idx in range(len(deque)):
                         copyMgr.text_queue.get_nowait()
@@ -628,11 +628,11 @@ class RECORDER:
             # remote drive goes down for a while.
             if any_camera_recording(self.cam_array):
                 # If recording, update cache every 5 seconds
-                self.cached_disk_space = get_disk_free_space_GB()
+                self.cached_disk_space = copyMgr.get_disk_free_space_GB()
             else:
                 if idx % 10 == 0:
                     # If not recording, update every 50 seconds-ish
-                    self.cached_disk_space = get_disk_free_space_GB()
+                    self.cached_disk_space = copyMgr.get_disk_free_space_GB()
 
             idx += 1
             wait_flag.clear()
@@ -642,12 +642,12 @@ class RECORDER:
 
     def copy_files_thread(self):
 
-        p = Path(TEMP_LOCAL_DIRECTORY)
+        p = Path(copyMgr.TEMP_LOCAL_DIRECTORY)
         try:
             # When we start up, we look for any existing files that didn't copy over earlier.
             for item in p.iterdir():
                 if item.is_file():
-                    copyMgr.file_queue.put(os.path.join(TEMP_LOCAL_DIRECTORY, item.name))
+                    copyMgr.file_queue.put(os.path.join(copyMgr.TEMP_LOCAL_DIRECTORY, item.name))
         except Exception as e:
             # On first run, directory may not yet exist. Just ignore errors in that case.
             pass
