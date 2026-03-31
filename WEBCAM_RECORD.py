@@ -22,6 +22,7 @@ from CamObj import CamObj, WIDTH, HEIGHT, \
     printt_immediate, text_queue, wait_flag, \
     setup_cam, FIRST_CAMERA_ID, make_unique_filename, TEMP_LOCAL_DIRECTORY
 from extra.get_hardware_info import *
+from extra.check_exists import browse_data_folder, copy_file_cross_platform
 
 # Note that
 import cv2     # Install opencv-python. Note that it may want to use an older version of numpy
@@ -263,7 +264,6 @@ if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
     MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
 
 
-
 print()
 printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
 
@@ -291,71 +291,8 @@ def get_key():
         return cv2.waitKeyEx(1)
 
 
-def browse_data_folder():
-    p = platform.system()
-    if p == "Windows":
-        os.startfile(os.path.normpath(FOLDER_THIS_SESSION))  # Need normpath to convert forward slahes to backslashes
-    elif p == "Linux":
-        # Open data folder in the Pi's file manager, PCMan.
-        # Must use subprocess.Popen() rather than os.system(), as the latter blocks until the window is closed.
-        if os.getuid() == 0:
-            # If running as superuser, then we must switch to jhoulab account or else VLC player (and possibly other
-            # programs) won't work.
-            
-            # But first find what accounts are on this machine besides root
-            try:
-                acct = os.environ['SUDO_USER']
-            except:
-                if DEBUG:
-                    printt('Unable to get environment variable SUDO_USER. Trying to find user account in /home')
-                acct_list = os.listdir('/home')
-                if len(acct_list) > 0:
-                    # This gets the alphabetically first user account. If there is more than one, then issue warning.
-                    acct = acct_list[0]
-                    if len(acct_list) > 1:
-                        tk.messagebox.showinfo("Warning", "More than 1 user account found. Using the first one.")
-                else:
-                    # Default to jhoulab
-                    acct = 'jhoulab'
-            # Run file manager after first restoring the original user's XDG_RUNTIME_DIR, which we saved
-            # when we called this file from RUN_AS_ROOT.py
-            subprocess.Popen(f"sudo XDG_RUNTIME_DIR=$XDG_TMP -i -u {acct} pcmanfm \"{FOLDER_THIS_SESSION}\"", shell=True)
-        else:
-            # Open folder in file manager
-            subprocess.Popen(f"pcmanfm \"{FOLDER_THIS_SESSION}\"", shell=True)
-
-
-import shutil
 from pathlib import Path
 
-
-def copy_file_cross_platform(source_file, destination_path):
-    try:
-        # Create Path objects for OS-agnostic path handling
-        src_path = Path(source_file)
-        dst_dir_path = Path(destination_path)
-
-        # Ensure the destination directory exists; create if not
-        parent_dir = Path(destination_path).parent
-        parent_dir.mkdir(exist_ok=True, parents=True)
-
-        # Define the full destination path including the file name
-        # If the destination is a directory, shutil.copy() uses the source's filename
-        destination_path = shutil.copy2(src_path, dst_dir_path)
-
-        print(f"File successfully COPIED\n    FROM: {src_path}\n    TO:   {destination_path}")
-        return True
-
-    except shutil.SameFileError:
-        print("Source and destination represent the same file.")
-    except PermissionError:
-        print("Permission denied.")
-    except FileNotFoundError:
-        print("The source file was not found.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-    return False
 
 class RECORDER:
     class PendingAction(Enum):
@@ -672,10 +609,15 @@ class RECORDER:
             if self.pendingActionVar == self.PendingAction.Exiting:
                 break
 
+            text_to_write = ""
             while not text_queue.empty():
-                text_to_write = text_queue.queue[0]
+
+                deque = text_queue.queue
+                for idx in range(len(deque)):
+                    text_to_write += deque[idx]   # Peek queue but don't remove item yet
                 if printt_immediate(text_to_write):
-                    text_queue.get_nowait()
+                    for idx in range(len(deque)):
+                        text_queue.get_nowait()   # Remove items from queue if successfully written to log file
                 else:
                     # Failed write, possibly because network drive is unavailable
                     break
@@ -742,27 +684,30 @@ class RECORDER:
                     target_dir = FOLDER_THIS_SESSION
 
                 destination_file, _ = make_unique_filename(target_dir, source_name)
-                if copy_file_cross_platform(source_path, destination_file):
+                err = copy_file_cross_platform(source_path, destination_file)
+
+                if err is None:
+                    printt(f"File successfully COPIED\n    FROM: {source_path}\n    TO:   {destination_file}")
+
                     # Successful copy. Remove from queue and try to delete original file
                     CamObj.file_queue.get_nowait()
                     try:
                         os.remove(source_path)
-                        print(f"File '{source_path}' has been deleted.")
+                        printt(f"Successful deletion of file: '{source_path}'.")
                     except FileNotFoundError:
-                        print(f"Error while deleting file '{source_path}': does not exist.")
+                        printt(f"File not found error while deleting: '{source_path}'.")
                     except PermissionError:
-                        print(f"Permission denied to delete the file '{source_path}'.")
+                        printt(f"Permission denied when deleting: '{source_path}'.")
                     except Exception as e:
-                        print(f"Error occurred: {e}")
+                        printt(f"Error: {e} when deleting: '{source_path}'.")
                 else:
                     # Failed to copy. Break from inner loop so that outer loop can go back to waiting 30 seconds
+                    printt(f"Error {err} when copying:\n    FROM: {source_path}\n    TO:   {destination_file}")
                     break
 
-            if DEBUG:
-                printt('Copy files thread about to sleep for 30 seconds...')
-
-            # Wait 30 seconds or until wait_flag.set() is called
+            # Clear flag in case a session end set it last time around
             wait_flag.clear()
+            # Wait 30 seconds or until wait_flag.set() is called
             wait_flag.wait(30)
 
         print('Exiting the copy files thread.')
@@ -1232,4 +1177,4 @@ rec_obj = RECORDER(cam_array, root_window=root)
 rec_obj.top_window.mainloop()
 
 if DEBUG:
-    printt("Exiting\n\n", close_file=True)
+    printt("Exiting\n\n")

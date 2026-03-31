@@ -324,7 +324,7 @@ def make_blank_frame(txt, resolution=None):
     return tmp
 
 
-filename_log = FOLDER_THIS_SESSION + get_date_string(include_time=False) + "_log.txt"
+filename_log = os.path.join(FOLDER_THIS_SESSION, get_date_string(include_time=False) + "_log.txt")
 
 try:
     # Create text file for frame timestamps. Note 'a' for appending.
@@ -339,7 +339,7 @@ text_queue = queue.Queue()
 
 
 # Write text to both log file and (optional) screen. Log file helps with retrospective troubleshooting
-def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
+def printt(txt, omit_date_time=False, print_to_screen=True):
     # Get the current date and time
     if not omit_date_time:
         now = datetime.datetime.now()
@@ -350,8 +350,11 @@ def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
             s = now.strftime("%Y-%m-%d %H:%M:%S: ") + txt
     else:
         s = txt
+
+    s = s + "\n"
+
     if print_to_screen:
-        print(s, flush=True)
+        print(s, flush=True, end='')
     if IS_NETWORK_DRIVE:
         # Use threaded write with queue, to avoid blocking if network drive is unavailable temporarily
         text_queue.put(s)
@@ -363,9 +366,9 @@ def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
 def printt_immediate(s):
     try:
         # Regenerate log filename in case date has changed
-        filename_log = FOLDER_THIS_SESSION + get_date_string(include_time=False) + "_log.txt"
+        filename_log = os.path.join(FOLDER_THIS_SESSION, get_date_string(include_time=False) + "_log.txt")
         fid_log = open(filename_log, 'a')
-        fid_log.write(s + "\n")
+        fid_log.write(s)
         fid_log.close()
         return True
     except Exception as e:
