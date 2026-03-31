@@ -46,10 +46,9 @@ if IS_LINUX:
         os.nice(-20)   # Lower value means HIGHER priority. -20 is the max.
     except PermissionError:
         if SHOW_RECORD_BUTTON:
-            res = messagebox.askquestion("Warning", "Unable to raise process priority.\n\n"
-                                         "Recommend running as root for optimal performance.\n\nProceed anyway?")
-            if res == 'no':
-                sys.exit()
+            res = messagebox.showinfo("Warning", "Unable to raise process priority,\n\n"
+                                         "probably because not running as root.\n\n"
+                                                 "Frame latencies might be higher as a result.")
 
     import RPi.GPIO as GPIO
 
