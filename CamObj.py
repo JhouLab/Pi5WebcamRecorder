@@ -44,6 +44,9 @@ from ast import literal_eval as make_tuple  # Needed to parse resolution string 
 from extra.get_hardware_info import get_cam_usb_port
 from extra.check_exists import check_exists
 
+wait_flag = threading.Event()
+
+
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
 IS_WINDOWS = (PLATFORM == 'windows')
@@ -134,7 +137,7 @@ except Exception as e:
     print(f"Error: {e}")
 
 try:
-    # configparser is case sensitive for section name ('options') but retrieves actual keys as lower case, regardless
+    # configparser is case-sensitive for section name ('options') but retrieves actual keys as lower case, regardless
     # of how it is spelled in file
     parse_dict = dict(camParser.items('options'))
 except Exception as e:
@@ -202,7 +205,7 @@ for idx, d in enumerate(DATA_FOLDER_LIST):
             d += "/"
 
     tmp_exists = check_exists(d)
-    folder_exists[idx] = tmp_exists
+    folder_exists.append(tmp_exists)
     if tmp_exists:
         # Find the first folder that actually exists (or is creatable)
         if FOLDER_THIS_SESSION is None:
@@ -320,6 +323,7 @@ def make_blank_frame(txt, resolution=None):
                 round(FONT_SCALE + 0.5))  # Line thickness
     return tmp
 
+
 filename_log = FOLDER_THIS_SESSION + get_date_string(include_time=False) + "_log.txt"
 
 try:
@@ -332,6 +336,7 @@ except:
         "Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and you have write permissions for it.")
 
 text_queue = queue.Queue()
+
 
 # Write text to both log file and (optional) screen. Log file helps with retrospective troubleshooting
 def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
@@ -423,9 +428,9 @@ def setup_cam(cam_id, width=WIDTH, height=HEIGHT):
         height2 = tmp.get(cv2.CAP_PROP_FRAME_HEIGHT)
         
         if width2 != width or height2 != height:
-            msg1 = f"Resolution {int(width)}x{int(height)} not supported by camera, try {int(width2)}x{int(height2)} instead."
+            msg1 = f"Resolution {int(width)}x{int(height)} not supported by camera {cam_id}, try {int(width2)}x{int(height2)} instead."
             print(msg1)
-            msg2 = f"Resolution {int(width)}x{int(height)} not supported by camera.\n\nTry {int(width2)}x{int(height2)} instead."
+            msg2 = f"Resolution {int(width)}x{int(height)} not supported by camera {cam_id}.\n\nTry {int(width2)}x{int(height2)} instead."
             tkinter.messagebox.showinfo("Warning", msg2)
 
         # fps readout does not seem to be reliable. On Linux, we always get 30fps, even if camera
@@ -438,9 +443,11 @@ def setup_cam(cam_id, width=WIDTH, height=HEIGHT):
 
     return tmp, fps
 
+
 TEMP_LOCAL_DIRECTORY = "./tmp/"
 
-def get_first_save_directory():
+
+def get_initial_save_directory():
     if IS_NETWORK_DRIVE:
         return check_exists(TEMP_LOCAL_DIRECTORY)
     else:
@@ -473,9 +480,9 @@ def make_unique_filename(folder, prefix, suffix_final=""):
     if not check_exists(folder):
         raise Exception(f"Folder {folder} does not exist and cannot be created.")
 
-    if prefix.endswith(".avi"):
+    if prefix.endswith(".avi") or prefix.endswith(".csv") or prefix.endswith(".txt"):
+        suffix_final = Path(prefix).suffix
         prefix = Path(prefix).stem
-        suffix_final = ".avi"
 
     while True:
         # Iterate until we get a unique filename
@@ -609,6 +616,8 @@ class CamObj:
         # <10ms) and all the rest were between 60-120ms. So if we allow 50ms
         # leeway, then we should have >99.99% accuracy.
 
+        printt(f'Box {self.box_id} Starting GPIO thread.\n')
+
         g = self.GPIO_pin
         s = GPIO.input(g)
         t = time.time()
@@ -640,6 +649,8 @@ class CamObj:
             else:
                 time.sleep(0.001)
                 t = time.time()
+
+        printt(f'Box {self.box_id} exiting GPIO thread.\n')
 
     def GPIO_callback_both(self, param):
 
@@ -748,7 +759,6 @@ class CamObj:
         
         if DEBUG:
             printt(f'Received TTL pulse with duration {on_time}s')
-            
 
         if self.TTL_mode == self.TTL_type.Normal:
             # In normal (not binary or checksum) mode, read the following types of pulses:
@@ -972,7 +982,7 @@ class CamObj:
                 self.TTL_num = 0
 
                 suffix_unique = ""
-                suffix_count = 0
+                save_dir = get_initial_save_directory()
 
                 try:
                     with self.global_lock:
@@ -989,7 +999,7 @@ class CamObj:
                             # Stress test saves to same location every time, ignoring date and animal ID.
                             prefix = f"stress_test_cam{self.box_id}"
                             self.current_animal_ID = "StressTest"
-                            self.filename_video = os.path.join(get_first_save_directory(), prefix + ".avi")
+                            self.filename_video = os.path.join(save_dir, prefix + ".avi")
                         else:
                             # Generate filename prefix, which will be date string plus animal ID (or box ID
                             # if no animal ID is available).
@@ -997,7 +1007,7 @@ class CamObj:
                                 # This will overwrite any TTL-derived ID value.
                                 self.current_animal_ID = animal_ID
                             prefix = self.make_filename_stem()
-                            self.filename_video, suffix_unique = make_unique_filename(get_first_save_directory(), prefix, suffix_final="_Video.avi")
+                            self.filename_video, suffix_unique = make_unique_filename(save_dir, prefix, suffix_final="_Video.avi")
 
                         # Create video file
                         self.Writer = cv2.VideoWriter(self.filename_video,
@@ -1012,8 +1022,8 @@ class CamObj:
                     tkinter.messagebox.showinfo("Error", str1)
                     return False
 
-                self.filename_timestamp = prefix + suffix_unique + "_Frames.txt"
-                self.filename_timestamp_TTL = prefix + suffix_unique + "_TTLs.txt"
+                self.filename_timestamp = os.path.join(save_dir, prefix + suffix_unique + "_Frames.txt")
+                self.filename_timestamp_TTL = os.path.join(save_dir, prefix + suffix_unique + "_TTLs.txt")
 
                 if not self.Writer.isOpened():
                     # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
@@ -1152,8 +1162,12 @@ class CamObj:
                     self.fid_diagnostic = None
 
             if need_queue:
-                # Send to queue for copying to destination
+                # Send files to queue for copying to destination
+                # Order from smallest file to largest
+                self.file_queue.put(self.filename_timestamp_TTL)
+                self.file_queue.put(self.filename_timestamp)
                 self.file_queue.put(self.filename_video)
+                wait_flag.set()
 
     def profile_fps(self):
 
@@ -1392,7 +1406,7 @@ class CamObj:
                     self.q.put((frame, frame_time, TTL_on, count_sent_frames))
 
         if DEBUG:
-            printt(f"Box {self.box_id} exiting camera read (producer) thread.")
+            printt(f"Box {self.box_id} exiting camera read (producer) thread.\n")
 
     def consumer_thread(self):
 
@@ -1458,18 +1472,19 @@ class CamObj:
             lag2 = time.time() - t
             self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
                 
-            if lag2 > 2 or (DEBUG and frame_count % 300 == 0):
+            if lag2 > 2:
                 now = time.time()
-                if now - last_warning_time > 5:  # Only report every 2 seconds
+                if now - last_warning_time > 5:  # Only report every 5 seconds, to avoid massive repeat warnings
                     # CPU lag (mostly from compression time) is theoretically harmless since queue size is infinite.
                     # However, if it exceeds 2 seconds then something is likely to be seriously
                     # wrong, and might not be recoverable.
+
                     printt(f"CPU lag, box{self.box_id}, frame # {self.frames_received}={t - self.start_recording_time:.3f}s, CPU lag {lag2:.2f}s={self.CPU_lag_frames:.1f} frames, processing time = {lag2 - lag1:.4f}s, queue size {self.q.qsize()}",
                            print_to_screen=DEBUG)
                     last_warning_time = now
 
         if DEBUG:
-            printt(f"Box {self.box_id} exiting consumer thread.")
+            printt(f"Box {self.box_id} exiting consumer thread.\n")
 
     def release(self):
         self.status = 0

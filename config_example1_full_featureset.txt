@@ -17,6 +17,11 @@
 ; specified, will assume 30 fps.
 RECORD_FRAME_RATE = 10
 
+; If 1, records in BGR color. If 0, records in monochrome. Linux systems may ignore this, and
+; will always record in color regardless. Internet says this is likely to work on Windows
+; but this is not tested.
+; RECORD_COLOR = 0
+
 ; Codec type. Usually either h264 or mp4v.
 ; h264 is very efficient at compression (1-2MB/min) but somewhat CPU intensive.
 ; mp4v is less efficient (~5-10MB/min) but uses less CPU, allowing higher frame rates.
@@ -72,7 +77,7 @@ FORCE_CAMERA_FPS = 0
 ; DATA_FOLDER = //LABUNRAID/zfs48_share/behavior_videos/TJ_OfficePC;C:/Users/TomJhou/Videos/
 ; DATA_FOLDER = //tower/share_zfs48_home/behavior_videos_copy/TJ_HomePC;
 
-; Determines which buttons are shown on GUI. Can either show video recording, still snapshot, or both.
+; Determines which buttons are shown on GUI. Can either show video recording, still-frame snapshot, or both.
 SHOW_RECORD_BUTTON = 1
 SHOW_SNAPSHOT_BUTTON = 0
 

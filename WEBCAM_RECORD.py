@@ -19,7 +19,7 @@ from CamObj import CamObj, WIDTH, HEIGHT, \
     FONT_SCALE, printt, get_disk_free_space_GB, IS_LINUX, IS_PI, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO, \
     FOLDER_THIS_SESSION, IS_NETWORK_DRIVE, \
-    printt_immediate, text_queue, \
+    printt_immediate, text_queue, wait_flag, \
     setup_cam, FIRST_CAMERA_ID, make_unique_filename, TEMP_LOCAL_DIRECTORY
 from extra.get_hardware_info import *
 
@@ -343,7 +343,7 @@ def copy_file_cross_platform(source_file, destination_path):
         # If the destination is a directory, shutil.copy() uses the source's filename
         destination_path = shutil.copy2(src_path, dst_dir_path)
 
-        print(f"File successfully copied from {src_path} to: {destination_path}")
+        print(f"File successfully COPIED\n    FROM: {src_path}\n    TO:   {destination_path}")
         return True
 
     except shutil.SameFileError:
@@ -664,7 +664,6 @@ class RECORDER:
         time.sleep(2)
         self.show_disk_space()
 
-
     def copy_text_thread(self):
 
         self.cached_disk_space = get_disk_free_space_GB()
@@ -692,27 +691,35 @@ class RECORDER:
                     self.cached_disk_space = get_disk_free_space_GB()
 
             idx += 1
-            exit_flag.wait(5)
+            wait_flag.clear()
+            wait_flag.wait(5)
 
+        print('Exiting the copy text thread.')
 
     def copy_files_thread(self):
 
-        # When we start up, we look for any existing files that didn't copy over earlier.
         p = Path(TEMP_LOCAL_DIRECTORY)
-        # Use a list comprehension to iterate through items and filter for directories
-        for item in p.iterdir():
-            if item.is_file():
-                CamObj.file_queue.put(os.path.join(TEMP_LOCAL_DIRECTORY, item.name))
+        try:
+            # When we start up, we look for any existing files that didn't copy over earlier.
+            for item in p.iterdir():
+                if item.is_file():
+                    CamObj.file_queue.put(os.path.join(TEMP_LOCAL_DIRECTORY, item.name))
+        except Exception as e:
+            # On first run, directory may not yet exist. Just ignore errors in that case.
+            pass
 
         while not exit_flag.is_set():
+            # Run loop, periodically checking for files to copy to remote drive
+
             if self.pendingActionVar == self.PendingAction.Exiting:
+                # This is probably unnecessary now that we have exit_flag Event()
                 break
 
             while not CamObj.file_queue.empty():
-                # Peek the queue, but don't remove item yet
+                # Peek the file queue, but don't remove item yet
                 source_path = CamObj.file_queue.queue[0]
                 if source_path is None:
-                    # Since we know queue is non-empty, this should't happen, but we check to avoid crash
+                    # Since we know queue is non-empty, this shouldn't happen, but we check to avoid crash
                     continue
 
                 if not os.path.exists(source_path):
@@ -751,9 +758,14 @@ class RECORDER:
                     # Failed to copy. Break from inner loop so that outer loop can go back to waiting 30 seconds
                     break
 
-            # Wait 30 seconds or until exit_flag.set() is called
-            exit_flag.wait(30)
+            if DEBUG:
+                printt('Copy files thread about to sleep for 30 seconds...')
 
+            # Wait 30 seconds or until wait_flag.set() is called
+            wait_flag.clear()
+            wait_flag.wait(30)
+
+        print('Exiting the copy files thread.')
 
     def toggle_zoom(self):
 
@@ -1198,6 +1210,7 @@ class RECORDER:
 
         # This will cause threads to exit
         exit_flag.set()
+        wait_flag.set()
 
         # Delete the OpenCV window (where video is shown)
         cv2.destroyAllWindows()
