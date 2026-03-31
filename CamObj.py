@@ -190,48 +190,11 @@ if IS_LINUX:
 data_folder_list_string = camParser.get('options', 'DATA_FOLDER', fallback='.')
 DATA_FOLDER_LIST = data_folder_list_string.split(";")
 
-folder_exists = []
-FOLDER_THIS_SESSION: str | None = None
-IS_NETWORK_DRIVE = False
-BACKUP_DRIVE: str | None = None    # This is set if the main drive is a network drive
-
-# Find the first folder that exists in the config file list, and establish that as the folder to use until program quits
-for idx, d in enumerate(DATA_FOLDER_LIST):
-    if len(d) > 0 and d != ".":
-        if not (d.endswith("/") or d.endswith("\\")):
-            # To ensure that all candidate folders end in slash, we add one here if it is
-            # not already present. Make exception for empty string, which should not have slash
-            # appended, otherwise it will look like system root.
-            d += "/"
-
-    tmp_exists = check_exists(d)
-    folder_exists.append(tmp_exists)
-    if tmp_exists:
-        # Find the first folder that actually exists (or is creatable)
-        if FOLDER_THIS_SESSION is None:
-            FOLDER_THIS_SESSION = DATA_FOLDER_LIST[idx]
-            IS_NETWORK_DRIVE = FOLDER_THIS_SESSION.startswith("//") or FOLDER_THIS_SESSION.startswith("/mnt") or FOLDER_THIS_SESSION.startswith("\\\\")
-        elif BACKUP_DRIVE is None:
-            # Find the second folder that exists or is creatable
-            BACKUP_DRIVE = DATA_FOLDER_LIST[idx]
-            break
-
-if FOLDER_THIS_SESSION is None:
-    nl = "\n"
-    messagebox.showinfo(
-        title="Error",
-        message=f"Could not locate or create specified data folders:\n\n{nl.join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.\n\nFor now, will use program folder")
-
-    FOLDER_THIS_SESSION = ['./']
-
 # Native frame rate of camera(s). If not specified, will attempt to determine by profiling
 NATIVE_FRAME_RATE: float = camParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
 
 # This is the targeted RECORD frame rate, which may be lower than the camera's NATIVE frame rate
 RECORD_FRAME_RATE: float = camParser.getfloat('options', 'RECORD_FRAME_RATE', fallback=0)
-if RECORD_FRAME_RATE == 0:
-    # If the above is not found, then check old defunct config option
-    RECORD_FRAME_RATE: float = camParser.getfloat('options', 'FRAME_RATE_PER_SECOND', fallback=30)
 
 ResolutionString = camParser.get('options', 'RESOLUTION', fallback='')
 
@@ -324,18 +287,75 @@ def make_blank_frame(txt, resolution=None):
     return tmp
 
 
-filename_log = os.path.join(FOLDER_THIS_SESSION, get_date_string(include_time=False) + "_log.txt")
+class CopyManager():
+    def __init__(self, DATA_FOLDER_LIST):
 
-try:
-    # Create text file for frame timestamps. Note 'a' for appending.
-    fid_log = open(filename_log, 'a')
-    print("Logging events to file: \'" + filename_log + "\'")
-    fid_log.close()
-except:
-    print(
-        "Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and you have write permissions for it.")
+        self.file_queue = queue.Queue()
+        self.text_queue = queue.Queue()
 
-text_queue = queue.Queue()
+        folder_exists = []
+
+        if RECORD_FRAME_RATE == 0:
+            # Assume 30 fps if not specified in config file
+            self.record_frame_rate = 30
+        else:
+            self.record_frame_rate = RECORD_FRAME_RATE
+
+        self.MAX_DISPLAY_FRAMES_PER_SECOND = self.record_frame_rate
+
+        FOLDER_THIS_SESSION: str | None = None
+        self.IS_NETWORK_DRIVE = False
+        self.BACKUP_DRIVE: str | None = None  # This is set if the main drive is a network drive
+
+        # Find the first folder that exists in the config file list, and establish that as the folder to use until program quits
+        for idx, d in enumerate(DATA_FOLDER_LIST):
+            if len(d) > 0 and d != ".":
+                if not (d.endswith("/") or d.endswith("\\")):
+                    # To ensure that all candidate folders end in slash, we add one here if it is
+                    # not already present. Make exception for empty string, which should not have slash
+                    # appended, otherwise it will look like system root.
+                    d += "/"
+
+            if len(d) == 0:
+                # Semicolon at end sometimes causes parser to think there is an empty folder at end. Ignore.
+                continue
+
+            tmp_exists = check_exists(d)
+            folder_exists.append(tmp_exists)
+            if tmp_exists:
+                # Find the first folder that actually exists (or is creatable)
+                if FOLDER_THIS_SESSION is None:
+                    FOLDER_THIS_SESSION = DATA_FOLDER_LIST[idx]
+                    self.IS_NETWORK_DRIVE = FOLDER_THIS_SESSION.startswith("//") or FOLDER_THIS_SESSION.startswith(
+                        "/mnt") or FOLDER_THIS_SESSION.startswith("\\\\")
+                elif self.BACKUP_DRIVE is None:
+                    # Find the second folder that exists or is creatable
+                    self.BACKUP_DRIVE = DATA_FOLDER_LIST[idx]
+                    break
+
+        if FOLDER_THIS_SESSION is None:
+            nl = "\n"
+            messagebox.showinfo(
+                title="Error",
+                message=f"Could not locate or create specified data folders:\n\n{nl.join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.\n\nFor now, will use program folder")
+
+            FOLDER_THIS_SESSION = ['./']
+
+        self.FOLDER_THIS_SESSION = FOLDER_THIS_SESSION
+        self.filename_log = os.path.join(FOLDER_THIS_SESSION, get_date_string(include_time=False) + "_log.txt")
+        try:
+            # Create text file for frame timestamps. Note 'a' for appending.
+            fid_log = open(self.filename_log, 'a')
+            print("Logging events to file: \'" + self.filename_log + "\'")
+            fid_log.close()
+        except:
+            fid_log = None
+            print(
+                "Unable to create log file: \'" + self.filename_log + "\'.\n  Please make sure folder exists and you have write permissions for it.")
+
+
+
+copyMgr = CopyManager(DATA_FOLDER_LIST)
 
 
 # Write text to both log file and (optional) screen. Log file helps with retrospective troubleshooting
@@ -355,9 +375,9 @@ def printt(txt, omit_date_time=False, print_to_screen=True):
 
     if print_to_screen:
         print(s, flush=True, end='')
-    if IS_NETWORK_DRIVE:
+    if copyMgr.IS_NETWORK_DRIVE:
         # Use threaded write with queue, to avoid blocking if network drive is unavailable temporarily
-        text_queue.put(s)
+        copyMgr.text_queue.put(s)
         return True
     else:
         return printt_immediate(s)
@@ -366,7 +386,7 @@ def printt(txt, omit_date_time=False, print_to_screen=True):
 def printt_immediate(s):
     try:
         # Regenerate log filename in case date has changed
-        filename_log = os.path.join(FOLDER_THIS_SESSION, get_date_string(include_time=False) + "_log.txt")
+        filename_log = os.path.join(copyMgr.FOLDER_THIS_SESSION, get_date_string(include_time=False) + "_log.txt")
         fid_log = open(filename_log, 'a')
         fid_log.write(s)
         fid_log.close()
@@ -377,7 +397,7 @@ def printt_immediate(s):
 
 
 def get_disk_free_space_GB():
-    path = FOLDER_THIS_SESSION
+    path = copyMgr.FOLDER_THIS_SESSION
     if path == "":
         path = "./"
     if os.path.exists(path):
@@ -451,7 +471,10 @@ TEMP_LOCAL_DIRECTORY = "./tmp/"
 
 
 def get_initial_save_directory():
-    if IS_NETWORK_DRIVE:
+    if copyMgr.IS_NETWORK_DRIVE:
+        # If using network drive, then we first write to local folder
+        # If this is the Raspberry Pi SD card, then space will fill up
+        # quickly.
         return check_exists(TEMP_LOCAL_DIRECTORY)
     else:
         return verify_directory()
@@ -466,7 +489,7 @@ def verify_directory():
     date = '{}-{}-{}'.format(year, month, day)
 
     # Append subfolder with year, month day
-    target_path = os.path.join(FOLDER_THIS_SESSION, date)
+    target_path = os.path.join(copyMgr.FOLDER_THIS_SESSION, date)
 
     # Check if we have to make folder and/or set permissions
     if check_exists(target_path):
@@ -546,7 +569,6 @@ class CamObj:
 
     lock = None  # This lock object is local to this instance
     global_lock = threading.RLock()  # This lock is global to ALL instances, and is used to generate unique filenames
-    file_queue = queue.Queue()       # Queue for copying files to network drive. Must be global to all cameras.
 
     GPIO_active = 0  # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0  # Used to show dark red dot while waiting to see if double pulse is not a triple pulse
@@ -866,7 +888,7 @@ class CamObj:
         wait_interval_sec = 0.5
 
         # Calculate number of frames to show dark red "pending" dot
-        self.pending_start_timer = int(RECORD_FRAME_RATE * wait_interval_sec + 1)
+        self.pending_start_timer = int(copyMgr.record_frame_rate * wait_interval_sec + 1)
 
         time.sleep(wait_interval_sec)
 
@@ -958,7 +980,7 @@ class CamObj:
         else:
             return prefix_ending
 
-    def start_record(self, animal_ID: str = None, stress_test_mode: bool = False):
+    def start_record(self, animal_ID: str | None = None, stress_test_mode: bool = False):
         # If animal ID is not specified, will first look for TTL
         # transmission, and if that is also not present, will use camera
         # ID number.
@@ -1015,7 +1037,7 @@ class CamObj:
                         # Create video file
                         self.Writer = cv2.VideoWriter(self.filename_video,
                                                       self.codec,
-                                                      RECORD_FRAME_RATE,
+                                                      copyMgr.record_frame_rate,
                                                       self.resolution,
                                                       RECORD_COLOR == 1)
                 except Exception as e:
@@ -1090,7 +1112,7 @@ class CamObj:
                 self.need_update_button_state_flag = True
 
                 # If using remote drive, need to enter this file into queue for copying to final destination
-                if IS_NETWORK_DRIVE:
+                if copyMgr.IS_NETWORK_DRIVE:
                     pass
 
                 return True
@@ -1167,9 +1189,9 @@ class CamObj:
             if need_queue:
                 # Send files to queue for copying to destination
                 # Order from smallest file to largest
-                self.file_queue.put(self.filename_timestamp_TTL)
-                self.file_queue.put(self.filename_timestamp)
-                self.file_queue.put(self.filename_video)
+                copyMgr.file_queue.put(self.filename_timestamp_TTL)
+                copyMgr.file_queue.put(self.filename_timestamp)
+                copyMgr.file_queue.put(self.filename_video)
                 wait_flag.set()
 
     def profile_fps(self):
@@ -1297,13 +1319,17 @@ class CamObj:
         else:
             native_fps = NATIVE_FRAME_RATE
 
+        if copyMgr.record_frame_rate > native_fps:
+            copyMgr.record_frame_rate = native_fps
+            copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND = native_fps
+
         count_cycle = 0
         count_sent_frames = 0
 
         # Downsampling interval. Must be integer, hence use of ceiling function
-        count_interval = math.ceil(native_fps / RECORD_FRAME_RATE)
+        count_interval = math.ceil(native_fps / copyMgr.record_frame_rate)
 
-        printt(f'Will show/save every {count_interval} frames to achieve target record frame rate of {RECORD_FRAME_RATE} fps relative to native rate of {native_fps}.')
+        printt(f'Will show/save every {count_interval} frames to achieve target record frame rate of {copyMgr.record_frame_rate} fps relative to native rate of {native_fps}.')
 
         # Start CONSUMER thread that will process the frames sent by this loop.
         # This allows read_camera_continuous(), i.e. this thread, to
@@ -1458,7 +1484,7 @@ class CamObj:
                     frame = 1 - frame
 
             lag1 = time.time() - t
-            self.CPU_lag_frames = lag1 * RECORD_FRAME_RATE
+            self.CPU_lag_frames = lag1 * copyMgr.record_frame_rate
 
             if not self.IsRecording and lag1 > 2:
                 # CPU is lagging, and we are not recording. Skip frame to help catch up.
@@ -1473,7 +1499,7 @@ class CamObj:
             self.process_one_frame(frame, t, TTL, gap=gap)
 
             lag2 = time.time() - t
-            self.CPU_lag_frames = lag2 * RECORD_FRAME_RATE
+            self.CPU_lag_frames = lag2 * copyMgr.record_frame_rate
                 
             if lag2 > 2:
                 now = time.time()

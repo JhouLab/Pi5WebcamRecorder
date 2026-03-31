@@ -15,11 +15,10 @@ from datetime import datetime
 
 import numpy as np
 from CamObj import CamObj, WIDTH, HEIGHT, \
-    RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
+    NATIVE_FRAME_RATE, make_blank_frame,\
     FONT_SCALE, printt, get_disk_free_space_GB, IS_LINUX, IS_PI, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO, \
-    FOLDER_THIS_SESSION, IS_NETWORK_DRIVE, \
-    printt_immediate, text_queue, wait_flag, \
+    printt_immediate, wait_flag, copyMgr, \
     setup_cam, FIRST_CAMERA_ID, make_unique_filename, TEMP_LOCAL_DIRECTORY
 from extra.get_hardware_info import *
 from extra.check_exists import browse_data_folder, copy_file_cross_platform
@@ -70,7 +69,6 @@ else:
     # Newlines to help see session start in log file.
     printt("\n\n")
 
-MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
 
 if IS_PI:
     # Setup stuff that is specific to Raspberry Pi (as opposed to Windows):
@@ -260,12 +258,12 @@ for idx1, cam_obj1 in enumerate(cam_array):
         printt(f"Camera {FIRST_CAMERA_ID + idx1} has ID {cam_obj1.id_num}")
 
 
-if MAX_DISPLAY_FRAMES_PER_SECOND > RECORD_FRAME_RATE:
-    MAX_DISPLAY_FRAMES_PER_SECOND = RECORD_FRAME_RATE
+if copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND > copyMgr.record_frame_rate:
+    copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND = copyMgr.record_frame_rate
 
 
 print()
-printt(f"Display frame rate is {MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
+printt(f"Display frame rate is {copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND}. This might be different from camera frame rate")
 
 # Start both PRODUCER and CONSUMER threads. May also profile cameras to determine FPS if this is not already
 # specified in config file.
@@ -406,7 +404,7 @@ class RECORDER:
     pendingActionCameraIdx: int = -1
     pendingActionID: str = ""
 
-    def __init__(self, _cam_array: List[CamObj], root_window=None):
+    def __init__(self, _cam_array: List[CamObj | None], root_window=None):
 
         self.cached_disk_space = -1
         self.cached_frame = [None] * 4
@@ -510,7 +508,7 @@ class RECORDER:
         # Add another row of buttons to frame3
         b_list2 = [
             ("Stop all recording", partial(self.show_stop_dialog, -1)),
-            ("Browse data folder", partial(browse_data_folder, FOLDER_THIS_SESSION)),
+            ("Browse data folder", partial(browse_data_folder, copyMgr.FOLDER_THIS_SESSION)),
             ("        Close        ", self.show_quit_dialog),
         ]
 
@@ -534,7 +532,7 @@ class RECORDER:
 
         self.display_frame_count = 0
 
-        self.FRAME_INTERVAL = 1.0 / MAX_DISPLAY_FRAMES_PER_SECOND
+        self.FRAME_INTERVAL = 1.0 / copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND
 
         # Which camera to display initially. User can change this later with arrow keys.
         #
@@ -590,8 +588,8 @@ class RECORDER:
         self.next_frame = self.start + self.FRAME_INTERVAL
         self.update_image()
 
-        # Start thead that will monitor queue and
-        if IS_NETWORK_DRIVE:
+        # Start thread that will monitor queue and
+        if copyMgr.IS_NETWORK_DRIVE:
             self.thread_text = threading.Thread(target=self.copy_text_thread)
             self.thread_text.start()
             self.thread_copy = threading.Thread(target=self.copy_files_thread)
@@ -603,24 +601,28 @@ class RECORDER:
 
     def copy_text_thread(self):
 
+        # Cache initial value when thread first starts
         self.cached_disk_space = get_disk_free_space_GB()
         idx = 0
+
         while not exit_flag.is_set():
             if self.pendingActionVar == self.PendingAction.Exiting:
                 break
 
             text_to_write = ""
-            while not text_queue.empty():
+            while not copyMgr.text_queue.empty():
 
-                deque = text_queue.queue
+                # Make working copy of queue so we can peek its contents without removing items yet
+                deque = copyMgr.text_queue.queue
+
+                # Accumulate all queued text into a single string. But don't remove from queue yet
                 for idx in range(len(deque)):
                     text_to_write += deque[idx]   # Peek queue but don't remove item yet
+
                 if printt_immediate(text_to_write):
+                    # If writing to log file is successful, then remove items from queue
                     for idx in range(len(deque)):
-                        text_queue.get_nowait()   # Remove items from queue if successfully written to log file
-                else:
-                    # Failed write, possibly because network drive is unavailable
-                    break
+                        copyMgr.text_queue.get_nowait()
 
             # Cache desk free space if using network drive, This avoids deadlocking UI if
             # remote drive goes down for a while.
@@ -629,7 +631,7 @@ class RECORDER:
                 self.cached_disk_space = get_disk_free_space_GB()
             else:
                 if idx % 10 == 0:
-                    # If not recording, update every minute or so
+                    # If not recording, update every 50 seconds-ish
                     self.cached_disk_space = get_disk_free_space_GB()
 
             idx += 1
@@ -645,7 +647,7 @@ class RECORDER:
             # When we start up, we look for any existing files that didn't copy over earlier.
             for item in p.iterdir():
                 if item.is_file():
-                    CamObj.file_queue.put(os.path.join(TEMP_LOCAL_DIRECTORY, item.name))
+                    copyMgr.file_queue.put(os.path.join(TEMP_LOCAL_DIRECTORY, item.name))
         except Exception as e:
             # On first run, directory may not yet exist. Just ignore errors in that case.
             pass
@@ -657,9 +659,9 @@ class RECORDER:
                 # This is probably unnecessary now that we have exit_flag Event()
                 break
 
-            while not CamObj.file_queue.empty():
+            while not copyMgr.file_queue.empty():
                 # Peek the file queue, but don't remove item yet
-                source_path = CamObj.file_queue.queue[0]
+                source_path = copyMgr.file_queue.queue[0]
                 if source_path is None:
                     # Since we know queue is non-empty, this shouldn't happen, but we check to avoid crash
                     continue
@@ -668,7 +670,7 @@ class RECORDER:
                     # If file doesn't exist, then remove from queue. This should not happen, but might be a sign that
                     # the source drive has been removed, which is a rather serious issue that will likely require manual fixing.
                     printt(f"File '{source_path}' does not exist, unable to copy to network remote folder. Will skip - please check integrity of drives.")
-                    CamObj.file_queue.get_nowait()
+                    copyMgr.file_queue.get_nowait()
                     continue
 
                 # Generate destination file path
@@ -678,10 +680,10 @@ class RECORDER:
                     # Parse year, month, day from filename
                     dt = datetime.strptime(source_name[0:15], "%Y-%m-%d_%H%M")
 
-                    target_dir = os.path.join(FOLDER_THIS_SESSION, f"{dt.year}-{dt.month:02d}-{dt.day:02d}")
+                    target_dir = os.path.join(copyMgr.FOLDER_THIS_SESSION, f"{dt.year}-{dt.month:02d}-{dt.day:02d}")
                 except ValueError:
                     printt(f"Unable to parse datetime from file '{source_path}', placing into top level folder.")
-                    target_dir = FOLDER_THIS_SESSION
+                    target_dir = copyMgr.FOLDER_THIS_SESSION
 
                 destination_file, _ = make_unique_filename(target_dir, source_name)
                 err = copy_file_cross_platform(source_path, destination_file)
@@ -690,7 +692,7 @@ class RECORDER:
                     printt(f"File successfully COPIED\n    FROM: {source_path}\n    TO:   {destination_file}")
 
                     # Successful copy. Remove from queue and try to delete original file
-                    CamObj.file_queue.get_nowait()
+                    copyMgr.file_queue.get_nowait()
                     try:
                         os.remove(source_path)
                         printt(f"Successful deletion of file: '{source_path}'.")
@@ -893,12 +895,12 @@ class RECORDER:
                 tk.messagebox.showinfo("Warning", "Camera is not recording")
 
     def show_disk_space(self, msg=""):
-        if IS_NETWORK_DRIVE:
+        if copyMgr.IS_NETWORK_DRIVE:
             disk_space = self.cached_disk_space
         else:
             disk_space = get_disk_free_space_GB()
 
-        tmp_txt=f"Folder:{FOLDER_THIS_SESSION}\nFree disk space:"
+        tmp_txt=f"Folder:{copyMgr.FOLDER_THIS_SESSION}\nFree disk space:"
 
         if disk_space is None or disk_space < 0:
             self.disk_free_label.config(text=f"{tmp_txt} Free space unknown." + msg)
@@ -1086,7 +1088,7 @@ class RECORDER:
 
         # Now print status updates, such as elapsed recording time, file size.
         # This takes 2-5ms
-        if self.display_frame_count % MAX_DISPLAY_FRAMES_PER_SECOND == 0:
+        if self.display_frame_count % copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND == 0:
             # Print status once per second
 
             if VERBOSE:
@@ -1104,7 +1106,7 @@ class RECORDER:
                         w.StatusLabel.config(text=cam.final_status_string)
                         cam.final_status_string = None
 
-                if self.display_frame_count % (MAX_DISPLAY_FRAMES_PER_SECOND * 10) == 0:
+                if self.display_frame_count % (copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND * 10) == 0:
                     # Show total remaining disk space every 10 seconds
                     gb = self.show_disk_space()
                     if cam.IsRecording:

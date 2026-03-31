@@ -8,6 +8,6 @@
 
 [options]
 
-RECORD_FRAME_RATE = 10
+RECORD_FRAME_RATE = 5
 
 DATA_FOLDER = /home/
