@@ -55,13 +55,22 @@ RESOLUTION = (640, 480)
 ; depending on lighting conditions.
 FORCE_CAMERA_FPS = 0
 
-; Base folder for data storage. Make sure there is a trailing slash at the end of any directory.
+; Base folder for data storage.
+;
+; Make sure there is a trailing slash at the end of any directory.
+;
 ; If you want to store data in the program folder, use an empty string (Linux) or a single dot (Windows)
 ; Windows folders can use either backward or forward slash.
 ; If you want to specify multiple folders, separate them with a semicolon, and program will use the first
 ; one that exists.
-DATA_FOLDER = //LABUNRAID/zfs48_share/behavior_videos;/mnt/raid_share/behavior_videos;/media/jhoulab/FADD-49D1/Behavioral_Recordings
-; DATA_FOLDER = C:/Users/TomJhou/Videos/
+
+; Use the following example on Raspberry Pis, where remote folder is mounted to /mnt
+;DATA_FOLDER = /mnt/raid_share/behavior_videos;/media/jhoulab/FADD-49D1/Behavioral_Recordings
+;DATA_FOLDER = /mnt/raid_share/behavior_videos/mouse_rig2;/media/jhoulab/FADD-49D1/Behavioral_Recordings
+
+; Use the following examples on Windows PCs, where remote folder has SMB name
+; DATA_FOLDER = //LABUNRAID/zfs48_share/behavior_videos/TJ_OfficePC;C:/Users/TomJhou/Videos/
+; DATA_FOLDER = //tower/share_zfs48_home/behavior_videos_copy/TJ_HomePC;
 
 ; Determines which buttons are shown on GUI. Can either show video recording, still snapshot, or both.
 SHOW_RECORD_BUTTON = 1

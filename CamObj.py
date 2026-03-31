@@ -42,7 +42,7 @@ import configparser
 from ast import literal_eval as make_tuple  # Needed to parse resolution string in config
 
 from extra.get_hardware_info import get_cam_usb_port
-
+from extra.check_exists import check_exists
 
 PLATFORM = platform.system().lower()
 IS_LINUX = (PLATFORM == 'linux')
@@ -183,76 +183,25 @@ if IS_LINUX:
         # Mount SMB shared folder
         os.system(LINUX_START_SCRIPT)
 
+# Storage folder for this session
 data_folder_list_string = camParser.get('options', 'DATA_FOLDER', fallback='.')
 DATA_FOLDER_LIST = data_folder_list_string.split(";")
 
-if len(DATA_FOLDER_LIST) == 0:
-    messagebox.showinfo(
-        title="Error",
-        message=f"No data folders, please check config file.")
-
-    raise Exception("No data folders, please check config file.")
-
 folder_exists = []
+FOLDER_THIS_SESSION: str | None = None
+IS_NETWORK_DRIVE = False
+BACKUP_DRIVE: str | None = None    # This is set if the main drive is a network drive
+
+# Find the first folder that exists in the config file list, and establish that as the folder to use until program quits
 for idx, d in enumerate(DATA_FOLDER_LIST):
-    tmp_exists = os.path.isdir(d)
-    folder_exists.append(tmp_exists)
     if len(d) > 0 and d != ".":
         if not (d.endswith("/") or d.endswith("\\")):
             # To ensure that all candidate folders end in slash, we add one here if it is
             # not already present. Make exception for empty string, which should not have slash
             # appended, otherwise it will look like system root.
-            DATA_FOLDER_LIST[idx] = d + "/"
+            d += "/"
 
-if not any(folder_exists):
-    nl = "\n"
-    messagebox.showinfo(
-        title="Error",
-        message=f"Could not locate any of the following folders:\n\n{nl.join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.\n\nFor now, will use program folder")
-
-    DATA_FOLDER_LIST = ['./']
-#    raise Exception("No data folder present")
-
-
-# Storage folder for this session
-FOLDER_THIS_SESSION = None
-IS_NETWORK_DRIVE = False
-BACKUP_DRIVE = None    # This is set if the main drive is a network drive
-
-
-def check_exists(target_path):
-    # Check if folder exists, and if not, create it and set permissions to 777
-    if os.path.isdir(target_path):
-        # Path already exists
-        if IS_LINUX:
-            # check permissions
-            m = os.stat(target_path).st_mode & 0o777
-            if m != 0o777:
-                # Now make read/write/executable by owner, group, and other.
-                # This is necessary since these folders are often made by root, but accessed by others.
-                # os.chmod(target_path, mode=0o777) # This fails if created by root and we are not root
-                proc = subprocess.Popen(['sudo', 'chmod', '777', target_path])
-    else:
-        # Path doesn't exist, so we make it.
-        try:
-            os.mkdir(target_path,
-                 mode=0o777)  # Note linux umask is usually 755, which limits what permissions non-root can make
-        except Exception as ex:
-            print(f"Error while attempting to create folder {target_path}")
-            print("    Error type is: ", ex.__class__.__name__)
-            return ''    # Empty string will force use of current folder
-
-        if IS_LINUX:
-            # Make writeable by all users on Linux (we need this because when running as root,
-            # we need to make this folder accessible to non-root users also)
-            subprocess.Popen(['chmod', '777', target_path])  # This should always work
-        print("Folder was not found, but created at: ", target_path)
-
-    return target_path
-
-# Find the first folder that exists in the config file list, and establish that as the folder to use until program quits
-for idx, d in enumerate(DATA_FOLDER_LIST):
-    tmp_exists = check_exists(d)  # os.path.isdir(d)
+    tmp_exists = check_exists(d)
     folder_exists[idx] = tmp_exists
     if tmp_exists:
         # Find the first folder that actually exists (or is creatable)
@@ -265,8 +214,12 @@ for idx, d in enumerate(DATA_FOLDER_LIST):
             break
 
 if FOLDER_THIS_SESSION is None:
-    raise Exception("Data folder not available")
+    nl = "\n"
+    messagebox.showinfo(
+        title="Error",
+        message=f"Could not locate or create specified data folders:\n\n{nl.join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.\n\nFor now, will use program folder")
 
+    FOLDER_THIS_SESSION = ['./']
 
 # Native frame rate of camera(s). If not specified, will attempt to determine by profiling
 NATIVE_FRAME_RATE: float = camParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
@@ -367,17 +320,16 @@ def make_blank_frame(txt, resolution=None):
                 round(FONT_SCALE + 0.5))  # Line thickness
     return tmp
 
-
+filename_log = FOLDER_THIS_SESSION + get_date_string(include_time=False) + "_log.txt"
 
 try:
     # Create text file for frame timestamps. Note 'a' for appending.
-    filename_log = FOLDER_THIS_SESSION + get_date_string(include_time=False) + "_log.txt"
     fid_log = open(filename_log, 'a')
     print("Logging events to file: \'" + filename_log + "\'")
     fid_log.close()
 except:
     print(
-        "Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and that you have permission to write to it.")
+        "Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and you have write permissions for it.")
 
 text_queue = queue.Queue()
 
@@ -398,6 +350,7 @@ def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
     if IS_NETWORK_DRIVE:
         # Use threaded write with queue, to avoid blocking if network drive is unavailable temporarily
         text_queue.put(s)
+        return True
     else:
         return printt_immediate(s)
 
@@ -568,7 +521,7 @@ class CamObj:
     # Class variables related to TTL handling
     TTL_num = -1  # Counts how many TTLs (usually indicating trial starts) have occurred in this session
     TTL_binary_bits = 0  # Ensures that we receive 16 binary bits
-    current_animal_ID: [str | None] = None
+    current_animal_ID: str | None = None
     TTL_tmp_ID = 0  # Temporary ID while we are receiving bits
     TTL_mode = None
     TTL_debug_count = 0
@@ -608,10 +561,10 @@ class CamObj:
         self.q: Queue = Queue()   # Queue for camera frames. Must have one per camera object
 
         # Various file writer objects
-        self.Writer: [cv2.VideoWriter | None] = None  # Writer for video file
-        self.fid: [_io.TextIOWrapper | None] = None  # Writer for timestamp file
-        self.fid_TTL: [_io.TextIOWrapper | None] = None  # Writer for TTL timestamp file
-        self.fid_diagnostic: [_io.TextIOWrapper | None] = None  # Writer for debugging info
+        self.Writer: cv2.VideoWriter | None = None  # Writer for video file
+        self.fid: _io.TextIOWrapper | None = None  # Writer for timestamp file
+        self.fid_TTL: _io.TextIOWrapper | None = None  # Writer for TTL timestamp file
+        self.fid_diagnostic: _io.TextIOWrapper | None = None  # Writer for debugging info
         self.start_recording_time = time.time()  # Timestamp (in seconds) when session or recording started
         self.dropped_recording_frames = None
         self.last_frame_received_elapsed_time = 0
