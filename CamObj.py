@@ -33,6 +33,8 @@ from tkinter import messagebox
 from typing import List
 import os
 
+from pathlib import Path
+
 import psutil  # This is used to obtain disk free space
 import numpy as np
 import math
@@ -40,7 +42,6 @@ import configparser
 from ast import literal_eval as make_tuple  # Needed to parse resolution string in config
 
 from extra.get_hardware_info import get_cam_usb_port
-
 
 
 PLATFORM = platform.system().lower()
@@ -198,30 +199,74 @@ for idx, d in enumerate(DATA_FOLDER_LIST):
     folder_exists.append(tmp_exists)
     if len(d) > 0 and d != ".":
         if not (d.endswith("/") or d.endswith("\\")):
-            # Data folder doesn't end with either forward or backward slash
-            # Only append slash if data folder is not the empty string. Otherwise,
-            # just leave the empty string as is, so that we can default to the program directory.
+            # To ensure that all candidate folders end in slash, we add one here if it is
+            # not already present. Make exception for empty string, which should not have slash
+            # appended, otherwise it will look like system root.
             DATA_FOLDER_LIST[idx] = d + "/"
 
 if not any(folder_exists):
     nl = "\n"
     messagebox.showinfo(
         title="Error",
-        message=f"Could not locate any of the following folders:\n\n{nl.join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.")
+        message=f"Could not locate any of the following folders:\n\n{nl.join(DATA_FOLDER_LIST)}\n\nPlease check config file, and make sure drives are connected.\n\nFor now, will use program folder")
 
-    raise Exception("No data folder present")
+    DATA_FOLDER_LIST = ['./']
+#    raise Exception("No data folder present")
 
-# Function to dynamically return the first folder in the candidate list that is actually found.
-# This way, if cloud folder gets disconnected, will revert to local storage
-def get_storage_folder():
-    for idx, d in enumerate(DATA_FOLDER_LIST):
-        tmp_exists = os.path.isdir(d)
-        folder_exists[idx] = tmp_exists
-        if tmp_exists:
-            # Find the first folder that actually exists
-            return DATA_FOLDER_LIST[idx]
 
+# Storage folder for this session
+FOLDER_THIS_SESSION = None
+IS_NETWORK_DRIVE = False
+BACKUP_DRIVE = None    # This is set if the main drive is a network drive
+
+
+def check_exists(target_path):
+    # Check if folder exists, and if not, create it and set permissions to 777
+    if os.path.isdir(target_path):
+        # Path already exists
+        if IS_LINUX:
+            # check permissions
+            m = os.stat(target_path).st_mode & 0o777
+            if m != 0o777:
+                # Now make read/write/executable by owner, group, and other.
+                # This is necessary since these folders are often made by root, but accessed by others.
+                # os.chmod(target_path, mode=0o777) # This fails if created by root and we are not root
+                proc = subprocess.Popen(['sudo', 'chmod', '777', target_path])
+    else:
+        # Path doesn't exist, so we make it.
+        try:
+            os.mkdir(target_path,
+                 mode=0o777)  # Note linux umask is usually 755, which limits what permissions non-root can make
+        except Exception as ex:
+            print(f"Error while attempting to create folder {target_path}")
+            print("    Error type is: ", ex.__class__.__name__)
+            return ''    # Empty string will force use of current folder
+
+        if IS_LINUX:
+            # Make writeable by all users on Linux (we need this because when running as root,
+            # we need to make this folder accessible to non-root users also)
+            subprocess.Popen(['chmod', '777', target_path])  # This should always work
+        print("Folder was not found, but created at: ", target_path)
+
+    return target_path
+
+# Find the first folder that exists in the config file list, and establish that as the folder to use until program quits
+for idx, d in enumerate(DATA_FOLDER_LIST):
+    tmp_exists = check_exists(d)  # os.path.isdir(d)
+    folder_exists[idx] = tmp_exists
+    if tmp_exists:
+        # Find the first folder that actually exists (or is creatable)
+        if FOLDER_THIS_SESSION is None:
+            FOLDER_THIS_SESSION = DATA_FOLDER_LIST[idx]
+            IS_NETWORK_DRIVE = FOLDER_THIS_SESSION.startswith("//") or FOLDER_THIS_SESSION.startswith("/mnt") or FOLDER_THIS_SESSION.startswith("\\\\")
+        elif BACKUP_DRIVE is None:
+            # Find the second folder that exists or is creatable
+            BACKUP_DRIVE = DATA_FOLDER_LIST[idx]
+            break
+
+if FOLDER_THIS_SESSION is None:
     raise Exception("Data folder not available")
+
 
 # Native frame rate of camera(s). If not specified, will attempt to determine by profiling
 NATIVE_FRAME_RATE: float = camParser.getfloat('options', 'NATIVE_FRAME_RATE', fallback=0)
@@ -323,10 +368,10 @@ def make_blank_frame(txt, resolution=None):
     return tmp
 
 
-filename_log = get_storage_folder() + get_date_string(include_time=False) + "_log.txt"
 
 try:
     # Create text file for frame timestamps. Note 'a' for appending.
+    filename_log = FOLDER_THIS_SESSION + get_date_string(include_time=False) + "_log.txt"
     fid_log = open(filename_log, 'a')
     print("Logging events to file: \'" + filename_log + "\'")
     fid_log.close()
@@ -334,6 +379,7 @@ except:
     print(
         "Unable to create log file: \'" + filename_log + "\'.\n  Please make sure folder exists and that you have permission to write to it.")
 
+text_queue = queue.Queue()
 
 # Write text to both log file and (optional) screen. Log file helps with retrospective troubleshooting
 def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
@@ -349,17 +395,28 @@ def printt(txt, omit_date_time=False, close_file=False, print_to_screen=True):
         s = txt
     if print_to_screen:
         print(s, flush=True)
+    if IS_NETWORK_DRIVE:
+        # Use threaded write with queue, to avoid blocking if network drive is unavailable temporarily
+        text_queue.put(s)
+    else:
+        return printt_immediate(s)
+
+
+def printt_immediate(s):
     try:
-        filename_log = get_storage_folder() + get_date_string(include_time=False) + "_log.txt"
+        # Regenerate log filename in case date has changed
+        filename_log = FOLDER_THIS_SESSION + get_date_string(include_time=False) + "_log.txt"
         fid_log = open(filename_log, 'a')
         fid_log.write(s + "\n")
         fid_log.close()
-    except:
-        pass
+        return True
+    except Exception as e:
+        print(e)
+        return False
 
 
 def get_disk_free_space_GB():
-    path = get_storage_folder()
+    path = FOLDER_THIS_SESSION
     if path == "":
         path = "./"
     if os.path.exists(path):
@@ -374,16 +431,16 @@ def get_disk_free_space_GB():
 # If no camera found with that ID, will throw exception, which unfortunately is the only
 # way to enumerate what devices are connected. The caller needs to catch the exception and
 # handle it by excluding that ID from further consideration.
-def setup_cam(id, width=WIDTH, height=HEIGHT):
+def setup_cam(cam_id, width=WIDTH, height=HEIGHT):
     try:
         if platform.system() == "Windows":
-            tmp = cv2.VideoCapture(id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
+            tmp = cv2.VideoCapture(cam_id, cv2.CAP_DSHOW)  # On Windows, specifying CAP_DSHOW greatly speeds up detection
         else:
             if USE_MJPG:
-                tmp = cv2.VideoCapture(id,
+                tmp = cv2.VideoCapture(cam_id,
                                        cv2.CAP_V4L2)  # This is needed for MJPG mode to work, allowing higher frame rates
             else:
-                tmp = cv2.VideoCapture(id)
+                tmp = cv2.VideoCapture(cam_id)
     except Exception as ex:
         print(f"Error while attempting to connect camera")
         print("    Error type is: ", ex.__class__.__name__)
@@ -428,6 +485,14 @@ def setup_cam(id, width=WIDTH, height=HEIGHT):
 
     return tmp, fps
 
+TEMP_LOCAL_DIRECTORY = "./tmp/"
+
+def get_first_save_directory():
+    if IS_NETWORK_DRIVE:
+        return check_exists(TEMP_LOCAL_DIRECTORY)
+    else:
+        return verify_directory()
+
 
 def verify_directory():
     # get custom version of datetime for folder search/create
@@ -437,31 +502,41 @@ def verify_directory():
     day = '{:02d}'.format(now.day)
     date = '{}-{}-{}'.format(year, month, day)
 
-    target_path = os.path.join(get_storage_folder(), date)
+    # Append subfolder with year, month day
+    target_path = os.path.join(FOLDER_THIS_SESSION, date)
 
-    if os.path.isdir(target_path):
-        # check permissions
-        m = os.stat(target_path).st_mode & 0o777
-        if m != 0o777:
-            # Now make read/write/executable by owner, group, and other.
-            # This is necessary since these folders are often made by root, but accessed by others.
-            # os.chmod(target_path, mode=0o777) # This fails if created by root and we are not root
-            proc = subprocess.Popen(['sudo', 'chmod', '777', target_path])
+    # Check if we have to make folder and/or set permissions
+    if check_exists(target_path):
+        return target_path
     else:
-        try:
-            os.mkdir(target_path,
-                 mode=0o777)  # Note linux umask is usually 755, which limits what permissions non-root can make
-        except Exception as ex:
-            print(f"Error while attempting to create folder {target_path}")
-            print("    Error type is: ", ex.__class__.__name__)
-            return ''  # This will force file to go to program folder
+        return ''   # Empty string will force saving to current folder
 
-        if IS_LINUX:
-            # Make writeable by all users on Linux (we need this because when running as root,
-            # we need to make this folder accessible to non-root users also)
-            subprocess.Popen(['chmod', '777', target_path])  # This should always work
-        print("Folder was not found, but created at: ", target_path)
-    return target_path
+
+def make_unique_filename(folder, prefix, suffix_final=""):
+
+    suffix_count = 0
+    suffix_unique = ''
+
+    if not check_exists(folder):
+        raise Exception(f"Folder {folder} does not exist and cannot be created.")
+
+    if prefix.endswith(".avi"):
+        prefix = Path(prefix).stem
+        suffix_final = ".avi"
+
+    while True:
+        # Iterate until we get a unique filename
+        if suffix_count > 0:
+            # After first pass, we append suffixes _1, _2, _3, ...
+            suffix_unique = f"_{suffix_count}"
+
+        filename_video = prefix + suffix_unique + suffix_final
+
+        if not os.path.isfile(os.path.join(folder, filename_video)):
+            # We have now confirmed that file doesn't already exist, and can proceed
+            return os.path.join(folder, filename_video), suffix_unique
+
+        suffix_count += 1
 
 
 class CamObj:
@@ -508,6 +583,7 @@ class CamObj:
 
     lock = None  # This lock object is local to this instance
     global_lock = threading.RLock()  # This lock is global to ALL instances, and is used to generate unique filenames
+    file_queue = queue.Queue()       # Queue for copying files to network drive. Must be global to all cameras.
 
     GPIO_active = 0  # Use this to add blue dot to frames when GPIO is detected
     pending_start_timer = 0  # Used to show dark red dot while waiting to see if double pulse is not a triple pulse
@@ -529,7 +605,7 @@ class CamObj:
         self.GPIO_pin = GPIO_pin
         self.lock = threading.RLock()  # Reentrant lock, so same thread can acquire more than once.
         self.TTL_mode = self.TTL_type.Normal
-        self.q: Queue = Queue()
+        self.q: Queue = Queue()   # Queue for camera frames. Must have one per camera object
 
         # Various file writer objects
         self.Writer: [cv2.VideoWriter | None] = None  # Writer for video file
@@ -904,12 +980,7 @@ class CamObj:
 
     # Creates directory with current date in yyyy-mm-dd format.
     # Then verifies that directory exists, and if not, creates it
-
-    def get_filename_prefix(self, animal_ID=None, add_date=True, join_path=True):
-
-        # Find recommended storage directory. Will create if it doesn't already exist, e.g. if we have new month/day
-        path = verify_directory()
-
+    def make_filename_stem(self, add_date=True):
         if self.current_animal_ID is not None:
             prefix_ending = f"Box{self.box_id}_" + str(self.current_animal_ID)
         else:
@@ -917,14 +988,9 @@ class CamObj:
             prefix_ending = f"Box{self.box_id}"
 
         if add_date:
-            filename = get_date_string() + "_" + prefix_ending
+            return get_date_string() + "_" + prefix_ending
         else:
-            filename = prefix_ending
-
-        if join_path:
-            return os.path.join(path, filename)
-        else:
-            return path, filename
+            return prefix_ending
 
     def start_record(self, animal_ID: str = None, stress_test_mode: bool = False):
         # If animal ID is not specified, will first look for TTL
@@ -946,13 +1012,13 @@ class CamObj:
         # However, start_record is usually called from either the main GUI thread,
         # or the GPIO callback thread. So need to acquire locks to make sure
         # the three threads don't conflict.
-        with self.lock:
+        with (self.lock):
             if not self.IsRecording:
                 self.frames_received = 0
                 self.frames_recorded = 0
                 self.TTL_num = 0
 
-                prefix_unique = ""
+                suffix_unique = ""
                 suffix_count = 0
 
                 try:
@@ -968,34 +1034,17 @@ class CamObj:
                         # to generate a "folder exists" error, causing file to save to program directory.
                         if stress_test_mode:
                             # Stress test saves to same location every time, ignoring date and animal ID.
-                            prefix = os.path.join(get_storage_folder(), f"stress_test_cam{self.box_id}")
+                            prefix = f"stress_test_cam{self.box_id}"
                             self.current_animal_ID = "StressTest"
+                            self.filename_video = os.path.join(get_first_save_directory(), prefix + ".avi")
                         else:
                             # Generate filename prefix, which will be date string plus animal ID (or box ID
                             # if no animal ID is available).
                             if animal_ID is not None:
                                 # This will overwrite any TTL-derived ID value.
                                 self.current_animal_ID = animal_ID
-                            prefix = self.get_filename_prefix()
-
-                        while True:
-                            # Iterate until we get a unique filename
-                            if suffix_count > 0:
-                                # After first pass, we append suffixes _1, _2, _3, ...
-                                prefix_unique = f"_{suffix_count}"
-
-                            self.filename_video = prefix + prefix_unique + "_Video.avi"
-
-                            if stress_test_mode:
-                                # In stress test mode, don't need to check if filename is unique,
-                                # as we intend to overwrite previous files.
-                                break
-
-                            if not os.path.isfile(self.filename_video):
-                                # We have now confirmed that file doesn't already exist, and can proceed
-                                break
-
-                            suffix_count += 1
+                            prefix = self.make_filename_stem()
+                            self.filename_video, suffix_unique = make_unique_filename(get_first_save_directory(), prefix, suffix_final="_Video.avi")
 
                         # Create video file
                         self.Writer = cv2.VideoWriter(self.filename_video,
@@ -1010,8 +1059,8 @@ class CamObj:
                     tkinter.messagebox.showinfo("Error", str1)
                     return False
 
-                self.filename_timestamp = prefix + prefix_unique + "_Frames.txt"
-                self.filename_timestamp_TTL = prefix + prefix_unique + "_TTLs.txt"
+                self.filename_timestamp = prefix + suffix_unique + "_Frames.txt"
+                self.filename_timestamp_TTL = prefix + suffix_unique + "_TTLs.txt"
 
                 if not self.Writer.isOpened():
                     # If codec is missing, we might get here. Usually OpenCV will have reported the error already.
@@ -1020,7 +1069,7 @@ class CamObj:
                     str1 = f"ERROR: unable to create video file:\n\n'{self.filename_video}'\n\nMake sure you have permission to write file and that codec is installed."
                     printt(str1)
                     tkinter.messagebox.showinfo("Error", str1)
-                    # return False
+                    return False
 
                 try:
                     # Create text file for frame timestamps
@@ -1057,7 +1106,7 @@ class CamObj:
                     try:
                         # Create text file for diagnostic info
 
-                        self.fid_diagnostic = open(prefix + prefix_unique + "_diagnostic.txt", 'w')
+                        self.fid_diagnostic = open(prefix + suffix_unique + "_diagnostic.txt", 'w')
                         self.fid_diagnostic.write('Time\tGPIO_lag1\tGPIO_lag2\n')
                     except Exception as e:
                         str1 = "ERROR creating diagnostic text file:\n   " + str(e)
@@ -1074,15 +1123,19 @@ class CamObj:
                 # This allows us to change button state
                 self.need_update_button_state_flag = True
 
+                # If using remote drive, need to enter this file into queue for copying to final destination
+                if IS_NETWORK_DRIVE:
+                    pass
+
                 return True
 
     def stop_record(self, force=False):
-
+        # Set flag to stop at the next available opportunity
         with self.lock:
             if force:
                 self.pending = self.PendingAction.ForceStop
             else:
-                # Set time flag so that recording will stop when frame exceeds this value.
+                # Set time flag so that recording will call __stop_recording_now() when frame exceeds this value.
                 # This allows already-queued frames to get recorded, even if not processed until later.
                 self.pending_stop_record_time = time.time()
             # stop_record() overrides any pending starts.
@@ -1090,7 +1143,7 @@ class CamObj:
                 self.pending = self.PendingAction.Nothing
 
     def __stop_recording_now(self):
-
+        # Any stoppage of recording will come here.
         # Close and release all file writers immediately.
         with self.lock:
 
@@ -1099,6 +1152,8 @@ class CamObj:
 
             self.current_animal_ID = None
 
+            need_queue = False
+
             if self.IsRecording:
                 self.IsRecording = False
                 self.final_status_string = self.get_elapsed_time_string()
@@ -1106,6 +1161,8 @@ class CamObj:
                 if self.dropped_recording_frames > 0:
                     str1 += f", >= {self.dropped_recording_frames} dropped frames"
                 printt(str1)
+
+                need_queue = True
 
             self.need_update_button_state_flag = True
             self.frames_received = 0
@@ -1140,6 +1197,10 @@ class CamObj:
                     except:
                         pass
                     self.fid_diagnostic = None
+
+            if need_queue:
+                # Send to queue for copying to destination
+                self.file_queue.put(self.filename_video)
 
     def profile_fps(self):
 
@@ -1620,8 +1681,8 @@ class CamObj:
                 # Snapshot prefix is usually just camera number
                 # We also add a numerical suffix 1, 2, 3, ... to make every snapshot filename
                 # unique
-                fpath = self.get_filename_prefix(add_date=False) + "_" + str(index) + ".png"
-                
+                fpath = os.path.join(verify_directory(), self.make_filename_stem(add_date=False) + "_" + str(index) + ".png")
+
                 if not os.path.exists(fpath):
                     # Found a filename not already used
                     break

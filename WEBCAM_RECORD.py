@@ -4,6 +4,8 @@ from typing import List
 import time
 import os
 import sys
+import threading
+from datetime import datetime
 
 # We no longer need PIL, since we are using OpenCV to render images, which is MUCH faster.
 #
@@ -14,9 +16,11 @@ import sys
 import numpy as np
 from CamObj import CamObj, WIDTH, HEIGHT, \
     RECORD_FRAME_RATE, NATIVE_FRAME_RATE, make_blank_frame,\
-    FONT_SCALE, printt, get_storage_folder, get_disk_free_space_GB, IS_LINUX, IS_PI, IS_WINDOWS, \
+    FONT_SCALE, printt, get_disk_free_space_GB, IS_LINUX, IS_PI, IS_WINDOWS, \
     SHOW_SNAPSHOT_BUTTON, SHOW_RECORD_BUTTON, SHOW_ZOOM_BUTTON, DEBUG, SAVE_ON_SCREEN_INFO, \
-    setup_cam, FIRST_CAMERA_ID, LINUX_START_SCRIPT
+    FOLDER_THIS_SESSION, IS_NETWORK_DRIVE, \
+    printt_immediate, text_queue, \
+    setup_cam, FIRST_CAMERA_ID, make_unique_filename, TEMP_LOCAL_DIRECTORY
 from extra.get_hardware_info import *
 
 # Note that
@@ -52,6 +56,7 @@ if IS_LINUX:
 
 sys.setswitchinterval(0.001)
 interval = sys.getswitchinterval()
+exit_flag = threading.Event()
 
 # Expand window for stereotaxic camera?
 # Isn't practical because window becomes too big.
@@ -289,7 +294,7 @@ def get_key():
 def browse_data_folder():
     p = platform.system()
     if p == "Windows":
-        os.startfile(os.path.normpath(get_storage_folder()))  # Need normpath to convert forward slahes to backslashes
+        os.startfile(os.path.normpath(FOLDER_THIS_SESSION))  # Need normpath to convert forward slahes to backslashes
     elif p == "Linux":
         # Open data folder in the Pi's file manager, PCMan.
         # Must use subprocess.Popen() rather than os.system(), as the latter blocks until the window is closed.
@@ -314,11 +319,43 @@ def browse_data_folder():
                     acct = 'jhoulab'
             # Run file manager after first restoring the original user's XDG_RUNTIME_DIR, which we saved
             # when we called this file from RUN_AS_ROOT.py
-            subprocess.Popen(f"sudo XDG_RUNTIME_DIR=$XDG_TMP -i -u {acct} pcmanfm \"{get_storage_folder()}\"", shell=True)
+            subprocess.Popen(f"sudo XDG_RUNTIME_DIR=$XDG_TMP -i -u {acct} pcmanfm \"{FOLDER_THIS_SESSION}\"", shell=True)
         else:
             # Open folder in file manager
-            subprocess.Popen(f"pcmanfm \"{get_storage_folder()}\"", shell=True)
+            subprocess.Popen(f"pcmanfm \"{FOLDER_THIS_SESSION}\"", shell=True)
 
+
+import shutil
+from pathlib import Path
+
+
+def copy_file_cross_platform(source_file, destination_path):
+    try:
+        # Create Path objects for OS-agnostic path handling
+        src_path = Path(source_file)
+        dst_dir_path = Path(destination_path)
+
+        # Ensure the destination directory exists; create if not
+        parent_dir = Path(destination_path).parent
+        parent_dir.mkdir(exist_ok=True, parents=True)
+
+        # Define the full destination path including the file name
+        # If the destination is a directory, shutil.copy() uses the source's filename
+        destination_path = shutil.copy2(src_path, dst_dir_path)
+
+        print(f"File successfully copied from {src_path} to: {destination_path}")
+        return True
+
+    except shutil.SameFileError:
+        print("Source and destination represent the same file.")
+    except PermissionError:
+        print("Permission denied.")
+    except FileNotFoundError:
+        print("The source file was not found.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    return False
 
 class RECORDER:
     class PendingAction(Enum):
@@ -434,6 +471,7 @@ class RECORDER:
 
     def __init__(self, _cam_array: List[CamObj], root_window=None):
 
+        self.cached_disk_space = -1
         self.cached_frame = [None] * 4
         self.cam_array = _cam_array
 
@@ -468,7 +506,7 @@ class RECORDER:
         frame1 = tk.Frame(self.top_window)  # , borderwidth=1, relief="solid")
         frame1.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # Frame2 holds a vertical stack of up to 4 status labels
+        # Frame2 holds a vertical stack of up to 4 status labels, one per camera. They are very wide.
         frame2 = tk.Frame(frame1, borderwidth=1, relief="solid")
         frame2.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
 
@@ -479,6 +517,8 @@ class RECORDER:
 
             if cam_obj is None or cam_obj.cam is None:
                 continue
+
+            # Make a mini-frame that fits inside frame2
             f3 = tk.Frame(frame2)
             f3.pack(fill=tk.X)
             
@@ -494,20 +534,26 @@ class RECORDER:
                 b = tk.Button(f3, text=f"Snapshot cam #{FIRST_CAMERA_ID + idx}", command=partial(self.snapshot, idx))
                 b.pack(side=tk.LEFT, ipadx=2)
                 w.SnapshotButton = b
-                
+
+            # place label inside mini-frame, just after the record/stop buttons
+            # Width is 75 "text units", not pixels.
             l = tk.Label(f3, text=f"", width=75, anchor=tk.W)
             l.pack(side=tk.LEFT, fill=tk.X)
             w.StatusLabel = l
 
-        # Add disk free status line
-        self.disk_free_label = tk.Label(frame1, text=f"")  # , borderwidth=1, relief="solid")
+        # Frame2B is the right side, and contains disk free space on the top, and buttons on the bottom.
+        frame2B = tk.Frame(frame1)
+        frame2B.pack(side=tk.RIGHT, fill=tk.BOTH, expand=1)
+
+        # Add disk space free status line to the top of 2B
+        self.disk_free_label = tk.Label(frame2B, width=55, text=f"", anchor="center")  # , borderwidth=1, relief="solid")
         self.disk_free_label.pack(side=tk.TOP, fill=tk.X, expand=True, pady=5)
 
-        self.show_disk_space()
+        # frame3 holds button panel, and is packed into bottom of frame2B
+        frame3 = tk.Frame(frame2B)
+        frame3.pack(side=tk.BOTTOM, fill=tk.X, expand=True, anchor="center")
 
-        # frame3 holds top rows of buttons
-        frame3 = tk.Frame(frame1)
-        frame3.pack(side=tk.TOP, fill=tk.X, expand=True)
+        # Tell the columns inside this widget to be all the same width
         frame3.columnconfigure("all", weight=1, uniform="1")
 
         b_list1 = [
@@ -524,7 +570,7 @@ class RECORDER:
         for idx, _b in enumerate(b_list1):
             tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=0, column=idx, ipadx=5, ipady=5, sticky="ew")
 
-        # frame3b holds next rows of buttons
+        # Add another row of buttons to frame3
         b_list2 = [
             ("Stop all recording", partial(self.show_stop_dialog, -1)),
             ("Browse data folder", browse_data_folder),
@@ -540,7 +586,7 @@ class RECORDER:
             tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=1, column=idx, columnspan=colspan, ipadx=5, ipady=5, sticky="ew")
 
         if DEBUG:
-            # Extra row of buttons in debug mode
+            # In debug mode, frame3 has yet another row of buttons
             b_list_debug = [
                 ("STRESS TEST (record all cams)", partial(self.show_start_record_dialog, self.CAM_VALS.ALL))
             ]
@@ -606,6 +652,108 @@ class RECORDER:
         # This is actually target time for the frame AFTER the next, since the next one will be read immediately
         self.next_frame = self.start + self.FRAME_INTERVAL
         self.update_image()
+
+        # Start thead that will monitor queue and
+        if IS_NETWORK_DRIVE:
+            self.thread_text = threading.Thread(target=self.copy_text_thread)
+            self.thread_text.start()
+            self.thread_copy = threading.Thread(target=self.copy_files_thread)
+            self.thread_copy.start()
+
+        # Show disk space after giving thread a couple of seconds the work
+        time.sleep(2)
+        self.show_disk_space()
+
+
+    def copy_text_thread(self):
+
+        self.cached_disk_space = get_disk_free_space_GB()
+        idx = 0
+        while not exit_flag.is_set():
+            if self.pendingActionVar == self.PendingAction.Exiting:
+                break
+
+            while not text_queue.empty():
+                text_to_write = text_queue.queue[0]
+                if printt_immediate(text_to_write):
+                    text_queue.get_nowait()
+                else:
+                    # Failed write, possibly because network drive is unavailable
+                    break
+
+            # Cache desk free space if using network drive, This avoids deadlocking UI if
+            # remote drive goes down for a while.
+            if any_camera_recording(self.cam_array):
+                # If recording, update cache every 5 seconds
+                self.cached_disk_space = get_disk_free_space_GB()
+            else:
+                if idx % 10 == 0:
+                    # If not recording, update every minute or so
+                    self.cached_disk_space = get_disk_free_space_GB()
+
+            idx += 1
+            exit_flag.wait(5)
+
+
+    def copy_files_thread(self):
+
+        # When we start up, we look for any existing files that didn't copy over earlier.
+        p = Path(TEMP_LOCAL_DIRECTORY)
+        # Use a list comprehension to iterate through items and filter for directories
+        for item in p.iterdir():
+            if item.is_file():
+                CamObj.file_queue.put(os.path.join(TEMP_LOCAL_DIRECTORY, item.name))
+
+        while not exit_flag.is_set():
+            if self.pendingActionVar == self.PendingAction.Exiting:
+                break
+
+            while not CamObj.file_queue.empty():
+                # Peek the queue, but don't remove item yet
+                source_path = CamObj.file_queue.queue[0]
+                if source_path is None:
+                    # Since we know queue is non-empty, this should't happen, but we check to avoid crash
+                    continue
+
+                if not os.path.exists(source_path):
+                    # If file doesn't exist, then remove from queue. This should not happen, but might be a sign that
+                    # the source drive has been removed, which is a rather serious issue that will likely require manual fixing.
+                    printt(f"File '{source_path}' does not exist, unable to copy to network remote folder. Will skip - please check integrity of drives.")
+                    CamObj.file_queue.get_nowait()
+                    continue
+
+                # Generate destination file path
+                source_name = Path(source_path).name
+
+                try:
+                    # Parse year, month, day from filename
+                    dt = datetime.strptime(source_name[0:15], "%Y-%m-%d_%H%M")
+
+                    target_dir = os.path.join(FOLDER_THIS_SESSION, f"{dt.year}-{dt.month:02d}-{dt.day:02d}")
+                except ValueError:
+                    printt(f"Unable to parse datetime from file '{source_path}', placing into top level folder.")
+                    target_dir = FOLDER_THIS_SESSION
+
+                destination_file, _ = make_unique_filename(target_dir, source_name)
+                if copy_file_cross_platform(source_path, destination_file):
+                    # Successful copy. Remove from queue and try to delete original file
+                    CamObj.file_queue.get_nowait()
+                    try:
+                        os.remove(source_path)
+                        print(f"File '{source_path}' has been deleted.")
+                    except FileNotFoundError:
+                        print(f"Error while deleting file '{source_path}': does not exist.")
+                    except PermissionError:
+                        print(f"Permission denied to delete the file '{source_path}'.")
+                    except Exception as e:
+                        print(f"Error occurred: {e}")
+                else:
+                    # Failed to copy. Break from inner loop so that outer loop can go back to waiting 30 seconds
+                    break
+
+            # Wait 30 seconds or until exit_flag.set() is called
+            exit_flag.wait(30)
+
 
     def toggle_zoom(self):
 
@@ -788,18 +936,23 @@ class RECORDER:
                 tk.messagebox.showinfo("Warning", "Camera is not recording")
 
     def show_disk_space(self, msg=""):
-        disk_space = get_disk_free_space_GB()
-        if disk_space is not None:
-            tmp_txt=f"Folder:{get_storage_folder()}\nFree disk space:"
-            if any_camera_recording(self.cam_array):
-                # Increase precision when recording
-                self.disk_free_label.config(text=f"{tmp_txt} {get_disk_free_space_GB():.3f} GB" + msg)
-            else:
-                self.disk_free_label.config(text=f"{tmp_txt} {get_disk_free_space_GB():.1f} GB" + msg)
-            return disk_space
+        if IS_NETWORK_DRIVE:
+            disk_space = self.cached_disk_space
         else:
-            self.disk_free_label.config(text=f"Disk path \"{get_storage_folder()}\" invalid.")
-            return 0
+            disk_space = get_disk_free_space_GB()
+
+        tmp_txt=f"Folder:{FOLDER_THIS_SESSION}\nFree disk space:"
+
+        if disk_space is None or disk_space < 0:
+            self.disk_free_label.config(text=f"{tmp_txt} Free space unknown." + msg)
+            return None
+
+        if any_camera_recording(self.cam_array):
+            # Increase precision when recording
+            self.disk_free_label.config(text=f"{tmp_txt} {disk_space:.3f} GB" + msg)
+        else:
+            self.disk_free_label.config(text=f"{tmp_txt} {disk_space:.1f} GB" + msg)
+        return disk_space
 
     def add_id_string(self, cached_frame, idx, IsRecording, zoom_level=0):
         id_string = str(FIRST_CAMERA_ID + idx)
@@ -1042,6 +1195,9 @@ class RECORDER:
             w.StopButton["state"] = tk.NORMAL if isRecording else tk.DISABLED
 
     def cleanup(self):
+
+        # This will cause threads to exit
+        exit_flag.set()
 
         # Delete the OpenCV window (where video is shown)
         cv2.destroyAllWindows()
