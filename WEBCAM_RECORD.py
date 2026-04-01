@@ -440,16 +440,16 @@ class RECORDER:
         frame1 = tk.Frame(self.top_window)  # , borderwidth=1, relief="solid")
         frame1.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # Frame 1B holds disk status and camera status labels
-        frame1B = tk.Frame(frame1, borderwidth=1, relief="solid")
-        frame1B.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
+        # Frame 1B occupies the entire left side, and holds disk status (on top) and camera status labels (on bottom)
+        frameLEFT = tk.Frame(frame1, borderwidth=1, relief="solid")
+        frameLEFT.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
 
-        # Add disk space free status line to the top of 2B
-        self.disk_free_label = tk.Label(frame1B, width=55, text=f"", anchor="center")  # , borderwidth=1, relief="solid")
+        # Add disk space free status line to the top of 1B
+        self.disk_free_label = tk.Label(frameLEFT, width=75, text=f"", anchor="center")  # , borderwidth=1, relief="solid")
         self.disk_free_label.pack(side=tk.TOP, fill=tk.X, expand=True, pady=5)
 
-        # Frame2 holds a vertical stack of up to 4 status labels, one per camera. They are very wide.
-        frame2 = tk.Frame(frame1B, borderwidth=1, relief="solid")
+        # Add vertical stack of up to 4 camera status labels to the bottom
+        frame2 = tk.Frame(frameLEFT, borderwidth=1, relief="solid")
         frame2.pack(side=tk.TOP, expand=1, fill=tk.X, padx=2, pady=2)
 
         # Add up to four status lines, one for each camera. Each line also has two buttons to start/stop recording.
@@ -483,12 +483,12 @@ class RECORDER:
             l.pack(side=tk.LEFT, fill=tk.X)
             w.StatusLabel = l
 
-        # Frame2B is the right side, and contains disk free space on the top, and buttons on the bottom.
-        frame2B = tk.Frame(frame1)
-        frame2B.pack(side=tk.RIGHT, fill=tk.BOTH, expand=1)
+        # Frame for the entire right side, holds buttons
+        frameRIGHT = tk.Frame(frame1)
+        frameRIGHT.pack(side=tk.RIGHT, fill=tk.BOTH, expand=0)
 
         # frame3 holds button panel, and is packed into bottom of frame2B
-        frame3 = tk.Frame(frame2B)
+        frame3 = tk.Frame(frameRIGHT)
         frame3.pack(side=tk.BOTTOM, fill=tk.X, expand=True, anchor="center")
 
         # Tell the columns inside this widget to be all the same width
