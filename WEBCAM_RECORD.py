@@ -897,17 +897,22 @@ class RECORDER:
     def show_disk_space(self, msg=""):
         if copyMgr.IS_NETWORK_DRIVE:
             disk_space = self.cached_disk_space
+            disk_space2 = copyMgr.get_disk_free_space_GB(secondary_storage=True)
         else:
             disk_space = copyMgr.get_disk_free_space_GB()
+            disk_space2 = 0
 
-        tmp_txt=f"Folder:{copyMgr.FOLDER_THIS_SESSION}\nFree disk space:"
+        tmp_txt=f"{copyMgr.FOLDER_THIS_SESSION}: "
 
         if disk_space is None or disk_space < 0:
             self.disk_free_label.config(text=f"{tmp_txt} Free space unknown." + msg)
             return None
 
+        if copyMgr.IS_NETWORK_DRIVE:
+            msg += f"\nSecondary: {copyMgr.TEMP_LOCAL_DIRECTORY}: {disk_space2:.3f} GB"
+
         if any_camera_recording(self.cam_array):
-            # Increase precision when recording
+            # Increase precision when recording and show secondary if applicable
             self.disk_free_label.config(text=f"{tmp_txt} {disk_space:.3f} GB" + msg)
         else:
             self.disk_free_label.config(text=f"{tmp_txt} {disk_space:.1f} GB" + msg)
@@ -1106,15 +1111,25 @@ class RECORDER:
                         w.StatusLabel.config(text=cam.final_status_string)
                         cam.final_status_string = None
 
-                if self.display_frame_count % (copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND * 10) == 0:
-                    # Show total remaining disk space every 10 seconds
-                    gb = self.show_disk_space()
-                    if cam.IsRecording:
-                        if gb < .02:
-                            print(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, stopping recording.")
-                            cam.stop_record(True)
-                        elif gb < .10:
-                            print(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, will stop recording when < 20MB")
+            if self.display_frame_count % (copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND * 10) == 0:
+                # Check storage every 10 seconds
+                if copyMgr.IS_NETWORK_DRIVE:
+                    gb1 = self.cached_disk_space
+                    gb2 = copyMgr.get_disk_free_space_GB(secondary_storage=True)
+
+                    # When using network drive, we must stop if either primary or secondary drives are full.
+                    # Get the smaller of the two numbers
+                    gb = min(gb1, gb2)
+                else:
+                    gb = copyMgr.get_disk_free_space_GB()
+
+                if any_camera_recording(cam_array):
+                    if gb < .05:
+                        printt(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, stopping recording.")
+                        cam.stop_record(True)
+                    elif gb < .25:
+                        # 250MB warning
+                        printt(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, will stop recording when < 50MB")
 
 
                 if key != -1:

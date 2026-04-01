@@ -112,8 +112,11 @@ class CopyManager():
             print(e)
             return False
 
-    def get_disk_free_space_GB(self):
-        path = self.FOLDER_THIS_SESSION
+    def get_disk_free_space_GB(self, secondary_storage=False):
+        if secondary_storage:
+            path = self.TEMP_LOCAL_DIRECTORY
+        else:
+            path = self.FOLDER_THIS_SESSION
         if path == "":
             path = "./"
         if os.path.exists(path):
