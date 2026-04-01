@@ -222,7 +222,11 @@ From the command line, install both:
     curl -fsSL https://tailscale.com/install.sh | sh
     sudo tailscale up
 
-When you run this, it should open a firefox window into which you should log into the lab tailscale account.
+When you run this, it should open a browser window into which you should log
+into the lab tailscale account. If not, you will see a link that you can
+manually follow to log in. It might take a couple of tries for this to work.
+When done, the console window should report "Success." and return you to the
+prompt. If you don't see that, it didn't work yet.
 
 After this, it will automatically reconnect when rebooting Pi, and you don't need to restart it again.
 
