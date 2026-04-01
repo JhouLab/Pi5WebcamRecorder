@@ -440,9 +440,17 @@ class RECORDER:
         frame1 = tk.Frame(self.top_window)  # , borderwidth=1, relief="solid")
         frame1.pack(side=tk.BOTTOM, fill=tk.X)
 
+        # Frame 1B holds disk status and camera status labels
+        frame1B = tk.Frame(frame1, borderwidth=1, relief="solid")
+        frame1B.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
+
+        # Add disk space free status line to the top of 2B
+        self.disk_free_label = tk.Label(frame1B, width=55, text=f"", anchor="center")  # , borderwidth=1, relief="solid")
+        self.disk_free_label.pack(side=tk.TOP, fill=tk.X, expand=True, pady=5)
+
         # Frame2 holds a vertical stack of up to 4 status labels, one per camera. They are very wide.
-        frame2 = tk.Frame(frame1, borderwidth=1, relief="solid")
-        frame2.pack(side=tk.LEFT, expand=1, fill=tk.X, padx=2, pady=2)
+        frame2 = tk.Frame(frame1B, borderwidth=1, relief="solid")
+        frame2.pack(side=tk.TOP, expand=1, fill=tk.X, padx=2, pady=2)
 
         # Add up to four status lines, one for each camera. Each line also has two buttons to start/stop recording.
         for idx, cam_obj in enumerate(_cam_array):
@@ -478,10 +486,6 @@ class RECORDER:
         # Frame2B is the right side, and contains disk free space on the top, and buttons on the bottom.
         frame2B = tk.Frame(frame1)
         frame2B.pack(side=tk.RIGHT, fill=tk.BOTH, expand=1)
-
-        # Add disk space free status line to the top of 2B
-        self.disk_free_label = tk.Label(frame2B, width=55, text=f"", anchor="center")  # , borderwidth=1, relief="solid")
-        self.disk_free_label.pack(side=tk.TOP, fill=tk.X, expand=True, pady=5)
 
         # frame3 holds button panel, and is packed into bottom of frame2B
         frame3 = tk.Frame(frame2B)
@@ -902,14 +906,14 @@ class RECORDER:
             disk_space = copyMgr.get_disk_free_space_GB()
             disk_space2 = 0
 
-        tmp_txt=f"{copyMgr.FOLDER_THIS_SESSION}: "
+        tmp_txt=f"Disk free space: {copyMgr.FOLDER_THIS_SESSION}: "
 
         if disk_space is None or disk_space < 0:
             self.disk_free_label.config(text=f"{tmp_txt} Free space unknown." + msg)
             return None
 
         if copyMgr.IS_NETWORK_DRIVE:
-            msg += f"\nSecondary: {copyMgr.TEMP_LOCAL_DIRECTORY}: {disk_space2:.3f} GB"
+            msg += f"\nSecondary disk (holding area): {copyMgr.TEMP_LOCAL_DIRECTORY}: {disk_space2:.3f} GB"
 
         if any_camera_recording(self.cam_array):
             # Increase precision when recording and show secondary if applicable
