@@ -33,7 +33,6 @@ from functools import partial
 import tkinter as tk
 from tkinter import messagebox
 
-
 # If true, will print extra diagnostics, such as a running frame count and FPS calculations
 VERBOSE = False
 
@@ -526,7 +525,7 @@ class RECORDER:
         if DEBUG:
             # In debug mode, frame3 has yet another row of buttons
             b_list_debug = [
-                ("STRESS TEST (record all cams)", partial(self.show_start_record_dialog, self.CAM_VALS.ALL))
+                ("STRESS TEST (record all cams with rapid flashing)", partial(self.show_start_record_dialog, self.CAM_VALS.ALL))
             ]
 
             for idx, _b in enumerate(b_list_debug):
@@ -647,7 +646,8 @@ class RECORDER:
 
         p = Path(copyMgr.TEMP_LOCAL_DIRECTORY)
         try:
-            # When we start up, we look for any existing files that didn't copy over earlier.
+            # When we start up, we look for any existing files that didn't copy over earlier,
+            # and enter them into queue
             for item in p.iterdir():
                 if item.is_file():
                     if item.name.endswith('.avi') or item.name.endswith('.txt'):
@@ -677,19 +677,27 @@ class RECORDER:
                     copyMgr.file_queue.get_nowait()
                     continue
 
-                # Generate destination file path
+                # Remove folder (e.g. ./tmp_video) and extract just the actual filename, since the
+                # destination path will have a new folder
                 source_name = Path(source_path).name
 
-                try:
-                    # Parse year, month, day from filename
-                    dt = datetime.strptime(source_name[0:15], "%Y-%m-%d_%H%M")
 
-                    target_dir = os.path.join(copyMgr.FINAL_DESTINATION_FOLDER, f"{dt.year}-{dt.month:02d}-{dt.day:02d}")
-                except ValueError:
-                    printt(f"Unable to parse datetime from file '{source_path}', placing into top level folder.")
-                    target_dir = copyMgr.FINAL_DESTINATION_FOLDER
+                if source_name.startswith('stress_test'):
+                    # Don't try to make stress_test files have unique name, since we want old ones to be overwritten
+                    destination_file = os.path.join(copyMgr.FINAL_DESTINATION_FOLDER, source_name)
+                else:
+                    try:
+                        # Parse year, month, day from filename
+                        dt = datetime.strptime(source_name[0:15], "%Y-%m-%d_%H%M")
 
-                destination_file, _ = make_unique_filename(target_dir, source_name)
+                        target_dir = os.path.join(copyMgr.FINAL_DESTINATION_FOLDER,
+                                                  f"{dt.year}-{dt.month:02d}-{dt.day:02d}")
+                    except ValueError:
+                        printt(f"Unable to parse datetime from file '{source_path}', placing into top level folder.")
+                        target_dir = copyMgr.FINAL_DESTINATION_FOLDER
+
+                    destination_file, _ = make_unique_filename(target_dir, source_name)
+
                 err = copy_file_cross_platform(source_path, destination_file)
 
                 if err is None:

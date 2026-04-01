@@ -22,7 +22,7 @@ import datetime
 import platform
 import threading
 import subprocess
-from sys import gettrace
+import sys
 from enum import Enum
 from queue import Queue
 
@@ -96,8 +96,8 @@ if IS_PI:
 os.environ[
     "OPENCV_LOG_LEVEL"] = "FATAL"  # Suppress warnings that occur when camera id not found. This statement must occur before importing cv2
 
-# This returns true if you ran the program in debug mode from the IDE
-DEBUG = gettrace() is not None
+# This returns true if program is run in debug mode from the IDE. gettrace() doesn't work in PyCharm, so have to detect _pydevd_bundle instead
+DEBUG = (sys.gettrace() is not None) or ('_pydevd_bundle' in sys.modules)
 
 # OpenCV install instructions:
 #
@@ -116,6 +116,7 @@ DEBUG = gettrace() is not None
 #   python on your machine, you can use: py -m pip install opencv-python.
 #   If multiple installations, must pick the correct one, e.g.:
 #   c:/users/<user>/AppData/Local/Microsoft/WindowsApps/python3.11.exe -m pip install opencv-python 
+
 import cv2
 
 # If true, will print extra diagnostics, such as GPIO on/off times and consecutive TTL counter
@@ -892,7 +893,7 @@ class CamObj:
                             # Stress test saves to same location every time, ignoring date and animal ID.
                             prefix = f"stress_test_cam{self.box_id}"
                             self.current_animal_ID = "StressTest"
-                            self.filename_video = os.path.join(save_dir, prefix + ".avi")
+                            self.filename_video = os.path.join(save_dir, prefix + "_Video.avi")
                         else:
                             # Generate filename prefix, which will be date string plus animal ID (or box ID
                             # if no animal ID is available).
