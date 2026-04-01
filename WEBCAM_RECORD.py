@@ -598,7 +598,7 @@ class RECORDER:
             self.thread_copy = threading.Thread(target=self.copy_files_thread)
             self.thread_copy.start()
 
-        # Show disk space after giving thread a couple of seconds the work
+        # Show disk space after giving thread a couple of seconds to work
         time.sleep(2)
         self.show_disk_space()
 
@@ -1116,7 +1116,10 @@ class RECORDER:
                         cam.final_status_string = None
 
             if self.display_frame_count % (copyMgr.MAX_DISPLAY_FRAMES_PER_SECOND * 10) == 0:
+
                 # Check storage every 10 seconds
+                self.show_disk_space()
+
                 if copyMgr.IS_NETWORK_DRIVE:
                     gb1 = self.cached_disk_space
                     gb2 = copyMgr.get_disk_free_space_GB(secondary_storage=True)
