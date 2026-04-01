@@ -22,29 +22,13 @@ FOURCC = h264
 RESOLUTION = (640, 480)
 
 
-; Use the following example on Raspberry Pis, where remote folder is mounted to /mnt
-;DATA_FOLDER = /mnt/raid_share/behavior_videos;/media/jhoulab/FADD-49D1/Behavioral_Recordings
 DATA_FOLDER = /mnt/raid_share/behavior_videos/mouse_rig3;/media/jhoulab/B718-5C98/Behavioral_Recordings
 
-; Use the following examples on Windows PCs, where remote folder has SMB name
-; DATA_FOLDER = //LABUNRAID/zfs48_share/behavior_videos/TJ_OfficePC;C:/Users/TomJhou/Videos/
-; DATA_FOLDER = //tower/share_zfs48_home/behavior_videos_copy/TJ_HomePC;
-
 TMP_LOCAL_FOLDER = /media/jhoulab/B718-5C98/Behavioral_Recordings
-
-; Determines which buttons are shown on GUI. Can either show video recording, still-frame snapshot, or both.
-SHOW_RECORD_BUTTON = 1
-SHOW_SNAPSHOT_BUTTON = 0
-
-; Determines whether button appears to zoom into center of video. This does not affect recording/snapshot
-SHOW_ZOOM_BUTTON = 0
 
 ; If 1, save frame number and animal ID to recorded video. This info will show in real-time display regardless
 ; of this setting.
 SAVE_ON_SCREEN_INFO = 1
-
-; If 1, then video is rotated 180 degrees
-ROTATE180 = 0
 
 ; If 1, then recording will stop if camera disconnects. Otherwise will retry connection every 5 seconds,
 ; and resume recording when successful.

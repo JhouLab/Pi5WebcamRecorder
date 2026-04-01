@@ -511,7 +511,7 @@ class RECORDER:
         # Add another row of buttons to frame3
         b_list2 = [
             ("Stop all recording", partial(self.show_stop_dialog, -1)),
-            ("Browse data folder", partial(browse_data_folder, copyMgr.FOLDER_THIS_SESSION)),
+            ("Browse data folder", partial(browse_data_folder, copyMgr.FINAL_DESTINATION_FOLDER)),
             ("        Close        ", self.show_quit_dialog),
         ]
 
@@ -684,10 +684,10 @@ class RECORDER:
                     # Parse year, month, day from filename
                     dt = datetime.strptime(source_name[0:15], "%Y-%m-%d_%H%M")
 
-                    target_dir = os.path.join(copyMgr.FOLDER_THIS_SESSION, f"{dt.year}-{dt.month:02d}-{dt.day:02d}")
+                    target_dir = os.path.join(copyMgr.FINAL_DESTINATION_FOLDER, f"{dt.year}-{dt.month:02d}-{dt.day:02d}")
                 except ValueError:
                     printt(f"Unable to parse datetime from file '{source_path}', placing into top level folder.")
-                    target_dir = copyMgr.FOLDER_THIS_SESSION
+                    target_dir = copyMgr.FINAL_DESTINATION_FOLDER
 
                 destination_file, _ = make_unique_filename(target_dir, source_name)
                 err = copy_file_cross_platform(source_path, destination_file)
@@ -906,14 +906,17 @@ class RECORDER:
             disk_space = copyMgr.get_disk_free_space_GB()
             disk_space2 = 0
 
-        tmp_txt=f"Disk free space: {copyMgr.FOLDER_THIS_SESSION}: "
+        tmp_txt=f"Disk free space: {copyMgr.FINAL_DESTINATION_FOLDER}: "
 
         if disk_space is None or disk_space < 0:
-            self.disk_free_label.config(text=f"{tmp_txt} Free space unknown." + msg)
-            return None
+            tmp_txt = f"{tmp_txt} Free space UNKNOWN." + msg
 
         if copyMgr.IS_NETWORK_DRIVE:
-            msg += f"\nSecondary disk (holding area): {copyMgr.TEMP_LOCAL_DIRECTORY}: {disk_space2:.3f} GB"
+            # Add secondary storage if primary is a network drive
+            if disk_space2 is None or disk_space2 < 0:
+                msg += f"\nSecondary disk (holding area): {copyMgr.TEMP_LOCAL_DIRECTORY}: disk space UNKNOWN"
+            else:
+                msg += f"\nSecondary disk (holding area): {copyMgr.TEMP_LOCAL_DIRECTORY}: {disk_space2:.3f} GB"
 
         if any_camera_recording(self.cam_array):
             # Increase precision when recording and show secondary if applicable
@@ -1126,18 +1129,28 @@ class RECORDER:
 
                     # When using network drive, we must stop if either primary or secondary drives are full.
                     # Get the smaller of the two numbers
-                    gb = min(gb1, gb2)
+                    if gb1 is None or gb1 < 0:
+                        gb = gb2
+                    elif gb2 is None or gb2 < 0:
+                        gb = gb1
+                    else:
+                        gb = min(gb1, gb2)
                 else:
                     gb = copyMgr.get_disk_free_space_GB()
 
-                if any_camera_recording(cam_array):
+                if gb < 0:
+                    gb = None
+
+                # If space is unknown, should we issue warning? This would be a sign that something is seriously wrong,
+                # e.g. multiple drive failures.
+
+                if any_camera_recording(cam_array) and gb is not None:
                     if gb < .05:
                         printt(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, stopping recording.")
                         cam.stop_record(True)
                     elif gb < .25:
                         # 250MB warning
                         printt(f"WARNING: only {gb * 1000:0.2f} MB disk space remaining, will stop recording when < 50MB")
-
 
                 if key != -1:
                     self.handle_keypress(key, key >> 16, CV2KEY=True)
