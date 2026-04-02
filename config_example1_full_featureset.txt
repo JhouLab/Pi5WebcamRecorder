@@ -77,6 +77,9 @@ FORCE_CAMERA_FPS = 0
 ; DATA_FOLDER = //LABUNRAID/zfs48_share/behavior_videos/TJ_OfficePC;C:/Users/TomJhou/Videos/
 ; DATA_FOLDER = //tower/share_zfs48_home/behavior_videos_copy/TJ_HomePC;
 
+; Holding area if main drive is network drive
+; TMP_LOCAL_FOLDER = /media/jhoulab/FADD-49D1/tmp_videos/
+
 ; Determines which buttons are shown on GUI. Can either show video recording, still-frame snapshot, or both.
 SHOW_RECORD_BUTTON = 1
 SHOW_SNAPSHOT_BUTTON = 0
