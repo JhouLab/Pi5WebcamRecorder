@@ -1,0 +1,23 @@
+[options]
+
+; The following are for version 1.5 and later
+NATIVE_FRAME_RATE = 30
+RECORD_FRAME_RATE = 30
+
+; The following are for back-compatibility to version 1.4.1 and earlier
+; FRAME_RATE_PER_SECOND = 10  
+
+DATA_FOLDER = /mnt/raid_share/behavior_videos/mouse_rig1;/media/jhoulab/FADD-49D1/Behavioral_Recordings/
+;DATA_FOLDER = /media/jhoulab/FADD-49D1/Behavioral_Recordings/
+
+TMP_LOCAL_FOLDER = /media/jhoulab/FADD-49D1/tmp_videos/
+
+; The following allows debugging comments to show even when running at elevated priority
+; DEBUG = 1
+
+; The following determines whether animal ID and frame number are saved to the recorded video.
+SAVE_ON_SCREEN_INFO = 1
+
+; Mount SMB share
+LINUX_START_SCRIPT = sudo mkdir -p /mnt/raid_share && sudo mount -t cifs //labunraid/zfs48_share /mnt/raid_share -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000 && sudo mkdir -p /mnt/raid_share/behavior_videos/mouse_rig1
+; LINUX_START_SCRIPT = sudo mkdir /mnt/teams_share; sudo mount -t cifs //tomoffice2025/Pi_Behavior_Videos /mnt/teams_share -o user="tomjhou@gmail.com",pass="freezE59!"
