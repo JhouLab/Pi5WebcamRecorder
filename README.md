@@ -203,30 +203,29 @@ To install, follow these three steps:
   but works well enough. For other ways to install OpenCV, see here:
   https://qengineering.eu/install%20opencv%20on%20raspberry%20pi%205.html
 
-## STEP 3: Install rpi-lpgio (only needed if controlling from external GPIOs)
-  Annoyingly, the Pi5 uses different GPIO hardware than the Pi4, but the default GPIO library still assumes
-  the old hardware. To work around this, use the following two commands to replace the standard library
-  with python3-rpi-lpgio, a drop-in replacement:
+## STEP 3: Install rpi-lpgio (needed for older Pi's, prior to bookworm OS, if controlling from external GPIOs)
+  The Pi5 uses different GPIO hardware than the Pi4, but the default GPIO library up to 2023 assumed
+  the old hardware, requiring one to manually replace it with python3-rpi-lpgio. Starting in late 2023 with
+  Bookworm OS, this is no longer required as it is included by default:
 
     sudo apt remove  python3-rpi.gpio
     sudo apt install python3-rpi-lgpio
 
-At this point, you should be able to launch the app and see live video on the screen.
-
-## STEP 4: If saving to network storage, need to also add SMB client and tailscale
+## STEP 4: If saving to network storage, need to add SMB client and tailscale
 
 From the command line, install both:
 
-    sudo apt update
+    sudo apt upgrade
     sudo apt install cifs-utils smbclient -y
     curl -fsSL https://tailscale.com/install.sh | sh
     sudo tailscale up
 
 When you run this, it should open a browser window into which you should log
 into the lab tailscale account. If not, you will see a link that you can
-manually follow to log in. It might take a couple of tries for this to work.
-When done, the console window should report "Success." and return you to the
-prompt. If you don't see that, it didn't work yet.
+right click to manually open. Then sign into your tailscale account.
+It might take a couple of tries for this to work. When done, the console
+window should report "Success." and return you to the Linux prompt. If
+you don't see that, it didn't work yet.
 
 After this, it will automatically reconnect when rebooting Pi, and you don't need to restart it again.
 
@@ -234,13 +233,13 @@ Optional: can use this to prevent tailscale up from requiring sudo
 
 	sudo tailscale set --operator=$USER
 
-Now install smb client, and create a new folder:
+Now install smb client:
 
-	apt-get install  samba-common smbclient samba-common-bin smbclient  cifs-utils
+	sudo apt-get install  samba-common smbclient samba-common-bin smbclient  cifs-utils
+    
+Make folder and mount shared folder there. The mount does not persist after Pi restart:
+
 	sudo mkdir /mnt/share_name_here
-
-Mount shared folder. This does not persist after Pi restart.
-
 	sudo mount -t cifs //labunraid/zfs48_share /mnt/share_name_here -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000
 
 To ensure this works every time, add the following line to config.txt:
