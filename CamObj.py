@@ -595,7 +595,7 @@ class CamObj:
         self.GPIO_active = 1
 
         if elapsed_pause > 0.1:
-            # Burst TTLs should have 50ms gap. Allow 50ms leeway up to 100ms.
+            # Burst TTLs should have 50ms gap. Allow 50ms leeway up to 100ms, but after that, register TTLs as individual rather than part of a group
             self.num_consec_TTLs = 0
             if VERBOSE:
                 printt(f'Rising edge, consec TTLs=0')
@@ -615,6 +615,7 @@ class CamObj:
             elif elapsed_pause >= 0.25:
                 printt(f'Box {self.box_id} detected very long pause of {elapsed_pause}s to end binary mode (should be 0.2s to switch to checksum)')
                 self.TTL_mode = self.TTL_type.Normal
+                self.current_animal_ID = "Unknown"    # Need this otherwise will show "pending" forever. 
         elif self.TTL_mode == self.TTL_type.Debug:
             # In debug mode, all gaps should be 25ms
             elapsed_pause = self.most_recent_gpio_rising_edge_time - self.most_recent_gpio_falling_edge_time
@@ -672,7 +673,7 @@ class CamObj:
                     if DEBUG:
                         printt('Starting binary mode')
                     self.TTL_mode = self.TTL_type.Binary
-                    self.current_animal_ID = "Pending"
+                    self.current_animal_ID = "Receiving"
                     self.TTL_tmp_ID = 0
                     self.TTL_binary_bits = 0
                     self.TTL_checksum = 0
