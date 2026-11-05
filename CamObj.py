@@ -287,6 +287,12 @@ MAKE_DEBUG_DIAGNOSTIC_GPIO_LAG_TEXT_FILE = False
 # Number of seconds to discriminate between binary 0 and 1
 BINARY_BIT_PULSE_THRESHOLD = 0.1
 
+# If animal ID transmission (binary mode) is in progress but no TTL edge has arrived for this many seconds,
+# we assume transmission was interrupted, and abandon it. Pulses within a transmission are at most ~0.5s apart.
+# Without this, an interrupted transmission leaves the ID stuck on "Receiving", and later pulses (including
+# the ones that start and stop sessions) get misread as ID bits.
+HANDSHAKE_TIMEOUT_SEC = 1.0
+
 # This allows font sizes to grow and shrink with camera resolution
 FONT_SCALE = HEIGHT / 480
 
@@ -904,6 +910,15 @@ class CamObj:
         # the three threads don't conflict.
         with (self.lock):
             if not self.IsRecording:
+                if self.TTL_mode == self.TTL_type.Binary or self.TTL_mode == self.TTL_type.Checksum:
+                    # Animal ID transmission is supposed to finish before session starts. If it hasn't, then the
+                    # ID is meaningless, and we must not stay in binary mode, or session-stop pulses will be
+                    # misread as ID bits and the recording would never stop.
+                    printt(f"Warning: camera {self.box_id} is starting to record while animal ID transmission is unfinished. Abandoning it.")
+                    self.TTL_mode = self.TTL_type.Normal
+                    if self.current_animal_ID == "Receiving":
+                        self.current_animal_ID = "Unknown"
+
                 self.frames_received = 0
                 self.frames_recorded = 0
                 self.TTL_num = 0
@@ -1470,6 +1485,8 @@ class CamObj:
             if self.cam is None or not self.cam.isOpened():
                 return
 
+            self.abandon_stalled_handshake()
+
             time_elapsed = timestamp - self.start_recording_time
             self.last_frame_received_elapsed_time = time_elapsed
 
@@ -1554,6 +1571,22 @@ class CamObj:
                 except:
                     print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
                     self.__stop_recording_now()
+
+    def abandon_stalled_handshake(self):
+        # Animal ID is sent as a burst of binary-coded TTL pulses. If that burst is interrupted, we would stay
+        # in binary mode forever, with ID showing as "Receiving". Check for that here, since it can only be
+        # detected by the absence of TTL edges, so can't be handled in the GPIO edge handlers.
+        if self.TTL_mode != self.TTL_type.Binary and self.TTL_mode != self.TTL_type.Checksum:
+            return
+
+        last_edge_time = max(self.most_recent_gpio_rising_edge_time, self.most_recent_gpio_falling_edge_time)
+        if time.time() - last_edge_time <= HANDSHAKE_TIMEOUT_SEC:
+            return
+
+        printt(f"Box {self.box_id}: animal ID transmission was interrupted (no TTL for {HANDSHAKE_TIMEOUT_SEC:g}s), abandoning it.")
+        self.TTL_mode = self.TTL_type.Normal
+        if self.current_animal_ID == "Receiving":
+            self.current_animal_ID = "Unknown"
 
     def maybe_start_new_segment(self, time_elapsed):
         # Starts a new video file if the current one has grown to the maximum size.
