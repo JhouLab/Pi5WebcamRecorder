@@ -22,6 +22,9 @@ from CamObj import CamObj, WIDTH, HEIGHT, \
     setup_cam, FIRST_CAMERA_ID, make_unique_filename
 from extra.get_hardware_info import *
 from extra.check_exists import browse_data_folder, copy_file_cross_platform
+from extra.config_edit import update_config_option
+import CamObj as camobj_module   # Module itself (not just the class), so Settings dialog can change its limits
+from CamObj import configFilePath
 
 # Note that
 import cv2     # Install opencv-python. Note that it may want to use an older version of numpy
@@ -504,6 +507,8 @@ class RECORDER:
                 ("Zoom center", self.toggle_zoom),
             )
 
+        b_list1.append(("Settings", self.show_settings_dialog))
+
         for idx, _b in enumerate(b_list1):
             tk.Button(frame3, text=_b[0], command=_b[1]).grid(row=0, column=idx, ipadx=5, ipady=5, sticky="ew")
 
@@ -927,6 +932,81 @@ class RECORDER:
             else:
                 tk.messagebox.showinfo("Warning", "Camera is not recording")
 
+    def limits_text(self):
+        hours = camobj_module.MAX_SESSION_HOURS
+        return "\nMax session length: " + (f"{hours:g} hours" if hours > 0 else "no limit")
+
+    def show_settings_dialog(self):
+        # Lets user change recording limits. Changes apply immediately (even to recordings in progress),
+        # and are saved to config.txt so they persist after restart.
+
+        w = tk.Toplevel(self.top_window)
+        w.title("Recording limits")
+
+        w.resizable(False, False)  # Remove maximize button
+        if platform.system() == "Windows":
+            w.attributes("-toolwindow", True)  # Remove minimize button
+
+        f = tk.Frame(w)
+        f.pack(side=tk.TOP, fill=tk.X, padx=15, pady=10)
+
+        max_gb = camobj_module.MAX_SEGMENT_GB_LIMIT
+
+        # (label, config key, current value, spinbox min, spinbox max, spinbox step)
+        rows = [
+            ("Maximum session length, hours (0 = no limit):", "MAX_SESSION_HOURS",
+             camobj_module.MAX_SESSION_HOURS, 0, 1000, 1),
+            ("Start a new video file every ... minutes (0 = never):", "SEGMENT_MINUTES",
+             camobj_module.SEGMENT_MINUTES, 0, 10000, 5),
+            (f"Start a new video file at ... GB (0.1 to {max_gb:g}):", "MAX_SEGMENT_GB",
+             camobj_module.MAX_SEGMENT_GB, 0.1, max_gb, 0.5),
+        ]
+
+        svars = {}
+        for r, (label, key, value, lo, hi, step) in enumerate(rows):
+            tk.Label(f, text=label, anchor="e").grid(row=r, column=0, sticky="e", pady=4)
+            sv = tk.StringVar(value=f"{value:g}")
+            tk.Spinbox(f, from_=lo, to=hi, increment=step, textvariable=sv, width=8).grid(row=r, column=1, padx=8)
+            svars[key] = sv
+
+        tk.Label(f, justify=tk.LEFT,
+                 text="Changes take effect immediately and are saved to config.txt.\n"
+                      "Long recordings are split into several video files, which are copied\n"
+                      "to the network drive as they are completed.").grid(row=len(rows), column=0, columnspan=2, pady=8)
+
+        def on_ok():
+            try:
+                hours = float(svars["MAX_SESSION_HOURS"].get())
+                minutes = float(svars["SEGMENT_MINUTES"].get())
+                gb = float(svars["MAX_SEGMENT_GB"].get())
+            except ValueError:
+                tk.messagebox.showinfo("Error", "Please enter numbers only.", parent=w)
+                return
+            if hours < 0 or minutes < 0 or not (0.1 <= gb <= max_gb):
+                tk.messagebox.showinfo("Error", f"Values must not be negative, and file size must be between 0.1 and {max_gb:g} GB.", parent=w)
+                return
+
+            camobj_module.set_recording_limits(hours, minutes, gb)
+            printt(f"Recording limits changed: max session {hours:g} hours, new video file every {minutes:g} minutes or {gb:g} GB.")
+
+            try:
+                update_config_option(configFilePath, "MAX_SESSION_HOURS", f"{hours:g}")
+                update_config_option(configFilePath, "SEGMENT_MINUTES", f"{minutes:g}")
+                update_config_option(configFilePath, "MAX_SEGMENT_GB", f"{gb:g}")
+            except Exception as e:
+                tk.messagebox.showinfo(
+                    "Warning",
+                    f"New limits are in effect, but could not be saved to '{configFilePath}', so they will be "
+                    f"lost when the program restarts.\n\n{e}", parent=w)
+            w.destroy()
+
+        f1 = tk.Frame(w)
+        f1.pack(side=tk.TOP, pady=(0, 10))
+        b = tk.Button(f1, text="   OK   ", command=on_ok)
+        b.pack(padx=5, pady=5, ipadx=10, ipady=5, side=tk.LEFT)
+        b = tk.Button(f1, text="Cancel", command=w.destroy)
+        b.pack(padx=5, pady=5, ipadx=5, ipady=5, side=tk.LEFT)
+
     def show_disk_space(self, msg=""):
         if copyMgr.IS_NETWORK_DRIVE:
             disk_space = self.cached_disk_space
@@ -949,9 +1029,9 @@ class RECORDER:
 
         if any_camera_recording(self.cam_array):
             # Increase precision when recording and show secondary if applicable
-            self.disk_free_label.config(text=f"{tmp_txt} {disk_space:.3f} GB" + msg)
+            self.disk_free_label.config(text=f"{tmp_txt} {disk_space:.3f} GB" + msg + self.limits_text())
         else:
-            self.disk_free_label.config(text=f"{tmp_txt} {disk_space:.1f} GB" + msg)
+            self.disk_free_label.config(text=f"{tmp_txt} {disk_space:.1f} GB" + msg + self.limits_text())
         return disk_space
 
     def add_id_string(self, cached_frame, idx, IsRecording, zoom_level=0):

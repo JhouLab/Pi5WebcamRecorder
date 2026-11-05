@@ -172,6 +172,9 @@ for k in parse_dict.keys():
                  'save_on_screen_info',
                  'use_mjpg',
                  'use_callback_for_gpio',
+                 'max_session_hours',
+                 'segment_minutes',
+                 'max_segment_gb',
                  'stop_recording_on_disconnect',
                  'tmp_local_folder',
                  ]:
@@ -248,6 +251,33 @@ ROTATE180: int = camParser.getint('options', 'ROTATE180', fallback=0)
 
 # Whether to stop recording if camera disconnects (default no)
 STOP_RECORDING_ON_DISCONNECT: int = camParser.getint('options', 'STOP_RECORDING_ON_DISCONNECT', fallback=0)
+
+# Safety limits on recording. These can be changed from the Settings dialog, which also saves them to config.txt.
+#
+# Maximum length of one recording session, in hours (0 = no limit). A session that long usually means that a
+# stop signal was missed, so recording is stopped automatically.
+MAX_SESSION_HOURS: float = camParser.getfloat('options', 'MAX_SESSION_HOURS', fallback=12)
+
+# A new video file ("segment") is started when the current one reaches this many minutes (0 = never) ...
+SEGMENT_MINUTES: float = camParser.getfloat('options', 'SEGMENT_MINUTES', fallback=60)
+
+# ... or this many GB. AVI files cannot exceed 4GB (OpenCV silently stops writing at that point), so this is
+# always limited to 3.5GB, and 0 (or any larger value) means 3.5GB.
+MAX_SEGMENT_GB_LIMIT = 3.5
+MAX_SEGMENT_GB: float = camParser.getfloat('options', 'MAX_SEGMENT_GB', fallback=2)
+
+
+def set_recording_limits(max_session_hours: float, segment_minutes: float, max_segment_gb: float):
+    # Changes limits while program is running. Takes effect immediately, including for recordings in progress.
+    global MAX_SESSION_HOURS, SEGMENT_MINUTES, MAX_SEGMENT_GB
+    MAX_SESSION_HOURS = max(0.0, float(max_session_hours))
+    SEGMENT_MINUTES = max(0.0, float(segment_minutes))
+    MAX_SEGMENT_GB = float(max_segment_gb)
+    if MAX_SEGMENT_GB <= 0 or MAX_SEGMENT_GB > MAX_SEGMENT_GB_LIMIT:
+        MAX_SEGMENT_GB = MAX_SEGMENT_GB_LIMIT
+
+
+set_recording_limits(MAX_SESSION_HOURS, SEGMENT_MINUTES, MAX_SEGMENT_GB)
 
 DEBUG = DEBUG or is_debug == 1
 
@@ -425,6 +455,13 @@ class CamObj:
     TTL_num = -1  # Counts how many TTLs (usually indicating trial starts) have occurred in this session
     TTL_binary_bits = 0  # Ensures that we receive 16 binary bits
     current_animal_ID: str | None = None
+
+    # State for splitting a long recording into multiple video files ("segments")
+    segment_num: int = 1  # Number of segment currently being written. First is 1.
+    segment_start_elapsed: float = 0  # Session time (seconds) when current segment started
+    segment_stem: str | None = None  # Path and name of video file, minus the "_Video.avi" ending. None disables splitting.
+    filename_segments: str | None = None  # Text file listing segments. Only created if a session is split.
+    segment_rotation_failed: bool = False  # If True, we gave up trying to start new segments
     TTL_tmp_ID = 0  # Temporary ID while we are receiving bits
     TTL_mode = None
     TTL_debug_count = 0
@@ -973,6 +1010,16 @@ class CamObj:
                 self.start_recording_time = time.time()
                 self.dropped_recording_frames = 0
 
+                self.segment_num = 1
+                self.segment_start_elapsed = 0
+                self.segment_rotation_failed = False
+                self.filename_segments = None
+                if stress_test_mode:
+                    # Stress test always overwrites the same file, so don't split it
+                    self.segment_stem = None
+                else:
+                    self.segment_stem = os.path.join(save_dir, prefix + suffix_unique)
+
                 # Set this flag last
                 self.IsRecording = True
 
@@ -1059,6 +1106,8 @@ class CamObj:
             if need_queue:
                 # Send files to queue for copying to destination
                 # Order from smallest file to largest
+                if self.filename_segments is not None:
+                    copyMgr.file_queue.put(self.filename_segments)
                 copyMgr.file_queue.put(self.filename_timestamp_TTL)
                 copyMgr.file_queue.put(self.filename_timestamp)
                 copyMgr.file_queue.put(self.filename_video)
@@ -1430,6 +1479,12 @@ class CamObj:
             time_elapsed = timestamp - self.start_recording_time
             self.last_frame_received_elapsed_time = time_elapsed
 
+            if self.IsRecording and MAX_SESSION_HOURS > 0 and time_elapsed >= MAX_SESSION_HOURS * 3600:
+                # A session this long almost certainly means that a stop signal was missed.
+                printt(f"WARNING: camera {self.box_id} reached the maximum session length of {MAX_SESSION_HOURS:g} hours. "
+                       f"Stopping recording. (This limit can be changed with the Settings button.)")
+                self.__stop_recording_now()
+
             if self.IsRecording and time_elapsed >= 0:
                 # Check if time_elapsed > 0, otherwise first couple of frames might be negative
                 self.frames_received += gap
@@ -1494,6 +1549,9 @@ class CamObj:
                         self.__stop_recording_now()
                         return
 
+                if self.segment_stem is not None and not self.segment_rotation_failed:
+                    self.maybe_start_new_segment(time_elapsed)
+
                 try:
                     # Write frame to AVI video file if possible
                     if self.Writer is not None:
@@ -1502,6 +1560,80 @@ class CamObj:
                 except:
                     print(f"Unable to write video file for camera {self.box_id}. Will stop recording")
                     self.__stop_recording_now()
+
+    def maybe_start_new_segment(self, time_elapsed):
+        # Starts a new video file if the current one has been recording too long or has grown too large.
+        # Must be called with self.lock held.
+        if self.Writer is None:
+            return
+
+        start_new = False
+        if SEGMENT_MINUTES > 0 and time_elapsed - self.segment_start_elapsed >= SEGMENT_MINUTES * 60:
+            start_new = True
+        elif self.frames_recorded % 100 == 0:
+            # Checking file size is cheap, but there is no need to do it on every frame
+            try:
+                start_new = os.stat(self.filename_video).st_size >= MAX_SEGMENT_GB * 1024 ** 3
+            except OSError:
+                pass
+
+        if start_new:
+            self.start_new_segment(time_elapsed)
+
+    def start_new_segment(self, time_elapsed):
+        # Closes the current video file and continues recording into a new one. There is still only one
+        # frame timestamp file and one TTL file per session, with continuous frame numbers and times.
+        # The _Segments.txt file records which frame each video file starts at.
+        new_num = self.segment_num + 1
+        old_filename = self.filename_video
+        new_filename = f"{self.segment_stem}_Video_part{new_num:03d}.avi"
+
+        try:
+            new_writer = cv2.VideoWriter(new_filename,
+                                         self.codec,
+                                         copyMgr.record_frame_rate,
+                                         self.resolution,
+                                         RECORD_COLOR == 1)
+            opened = new_writer.isOpened()
+        except Exception:
+            new_writer = None
+            opened = False
+
+        if not opened:
+            printt(f"ERROR: camera {self.box_id} was unable to start new video file '{new_filename}'. "
+                   f"Will keep writing to the current file, which stops accepting frames at 4GB.")
+            self.segment_rotation_failed = True
+            return
+
+        try:
+            if self.filename_segments is None:
+                # First time this session was split, so create the segment list and add segment 1 to it
+                self.filename_segments = self.segment_stem + "_Segments.txt"
+                with open(self.filename_segments, 'w') as f:
+                    f.write('Segment\tVideo_file\tFirst_frame_number\tStart_time_seconds\n')
+                    f.write(f"1\t{os.path.basename(old_filename)}\t1\t0\n")
+            with open(self.filename_segments, 'a') as f:
+                f.write(f"{new_num}\t{os.path.basename(new_filename)}\t{self.frames_received}\t{time_elapsed}\n")
+        except Exception as e:
+            printt(f"Warning: unable to write segment list for camera {self.box_id}: {e}")
+
+        old_writer = self.Writer
+        self.Writer = new_writer
+        try:
+            old_writer.release()
+        except Exception:
+            pass
+
+        self.filename_video = new_filename
+        self.segment_num = new_num
+        self.segment_start_elapsed = time_elapsed
+
+        printt(f"Camera {self.box_id} started video segment {new_num}: '{new_filename}'")
+
+        if copyMgr.IS_NETWORK_DRIVE:
+            # Finished segment can be copied now, rather than waiting for end of session
+            copyMgr.file_queue.put(old_filename)
+            wait_flag.set()
 
     def get_elapsed_time_string(self):
 
