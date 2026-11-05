@@ -173,7 +173,6 @@ for k in parse_dict.keys():
                  'use_mjpg',
                  'use_callback_for_gpio',
                  'max_session_hours',
-                 'segment_minutes',
                  'max_segment_gb',
                  'stop_recording_on_disconnect',
                  'tmp_local_folder',
@@ -258,26 +257,23 @@ STOP_RECORDING_ON_DISCONNECT: int = camParser.getint('options', 'STOP_RECORDING_
 # stop signal was missed, so recording is stopped automatically.
 MAX_SESSION_HOURS: float = camParser.getfloat('options', 'MAX_SESSION_HOURS', fallback=12)
 
-# A new video file ("segment") is started when the current one reaches this many minutes (0 = never) ...
-SEGMENT_MINUTES: float = camParser.getfloat('options', 'SEGMENT_MINUTES', fallback=60)
-
-# ... or this many GB. AVI files cannot exceed 4GB (OpenCV silently stops writing at that point), so this is
-# always limited to 3.5GB, and 0 (or any larger value) means 3.5GB.
+# When the video file reaches this many GB, recording continues in a new video file ("segment"). AVI files cannot
+# exceed 4GB (OpenCV silently stops writing at that point), so this is always limited to 3.5GB, and 0 (or any
+# larger value) means 3.5GB.
 MAX_SEGMENT_GB_LIMIT = 3.5
-MAX_SEGMENT_GB: float = camParser.getfloat('options', 'MAX_SEGMENT_GB', fallback=2)
+MAX_SEGMENT_GB: float = camParser.getfloat('options', 'MAX_SEGMENT_GB', fallback=3)
 
 
-def set_recording_limits(max_session_hours: float, segment_minutes: float, max_segment_gb: float):
+def set_recording_limits(max_session_hours: float, max_segment_gb: float):
     # Changes limits while program is running. Takes effect immediately, including for recordings in progress.
-    global MAX_SESSION_HOURS, SEGMENT_MINUTES, MAX_SEGMENT_GB
+    global MAX_SESSION_HOURS, MAX_SEGMENT_GB
     MAX_SESSION_HOURS = max(0.0, float(max_session_hours))
-    SEGMENT_MINUTES = max(0.0, float(segment_minutes))
     MAX_SEGMENT_GB = float(max_segment_gb)
     if MAX_SEGMENT_GB <= 0 or MAX_SEGMENT_GB > MAX_SEGMENT_GB_LIMIT:
         MAX_SEGMENT_GB = MAX_SEGMENT_GB_LIMIT
 
 
-set_recording_limits(MAX_SESSION_HOURS, SEGMENT_MINUTES, MAX_SEGMENT_GB)
+set_recording_limits(MAX_SESSION_HOURS, MAX_SEGMENT_GB)
 
 DEBUG = DEBUG or is_debug == 1
 
@@ -458,7 +454,6 @@ class CamObj:
 
     # State for splitting a long recording into multiple video files ("segments")
     segment_num: int = 1  # Number of segment currently being written. First is 1.
-    segment_start_elapsed: float = 0  # Session time (seconds) when current segment started
     segment_stem: str | None = None  # Path and name of video file, minus the "_Video.avi" ending. None disables splitting.
     filename_segments: str | None = None  # Text file listing segments. Only created if a session is split.
     segment_rotation_failed: bool = False  # If True, we gave up trying to start new segments
@@ -1011,7 +1006,6 @@ class CamObj:
                 self.dropped_recording_frames = 0
 
                 self.segment_num = 1
-                self.segment_start_elapsed = 0
                 self.segment_rotation_failed = False
                 self.filename_segments = None
                 if stress_test_mode:
@@ -1562,22 +1556,21 @@ class CamObj:
                     self.__stop_recording_now()
 
     def maybe_start_new_segment(self, time_elapsed):
-        # Starts a new video file if the current one has been recording too long or has grown too large.
+        # Starts a new video file if the current one has grown to the maximum size.
         # Must be called with self.lock held.
         if self.Writer is None:
             return
 
-        start_new = False
-        if SEGMENT_MINUTES > 0 and time_elapsed - self.segment_start_elapsed >= SEGMENT_MINUTES * 60:
-            start_new = True
-        elif self.frames_recorded % 100 == 0:
-            # Checking file size is cheap, but there is no need to do it on every frame
-            try:
-                start_new = os.stat(self.filename_video).st_size >= MAX_SEGMENT_GB * 1024 ** 3
-            except OSError:
-                pass
+        # Checking file size is cheap, but there is no need to do it on every frame
+        if self.frames_recorded % 100 != 0:
+            return
 
-        if start_new:
+        try:
+            too_large = os.stat(self.filename_video).st_size >= MAX_SEGMENT_GB * 1024 ** 3
+        except OSError:
+            return
+
+        if too_large:
             self.start_new_segment(time_elapsed)
 
     def start_new_segment(self, time_elapsed):
@@ -1626,7 +1619,6 @@ class CamObj:
 
         self.filename_video = new_filename
         self.segment_num = new_num
-        self.segment_start_elapsed = time_elapsed
 
         printt(f"Camera {self.box_id} started video segment {new_num}: '{new_filename}'")
 

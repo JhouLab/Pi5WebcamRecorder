@@ -102,18 +102,15 @@ ROTATE180 = 0
 ; and resume recording when successful.
 STOP_RECORDING_ON_DISCONNECT = 0
 
-; Safety limits on recording. All three can also be changed with the Settings button, which saves them here.
+; Safety limits on recording. Both can also be changed with the Settings button, which saves them here.
 ;
 ; Recording stops automatically after this many hours (0 = no limit). A session this long almost always means
 ; that a stop signal was missed.
 MAX_SESSION_HOURS = 12
 
-; Long recordings are split into several video files. A new video file is started after this many minutes
-; (0 = never) ...
-SEGMENT_MINUTES = 60
-
-; ... or when the video file reaches this size in GB. AVI files stop accepting frames at 4GB, so the maximum is 3.5.
-MAX_SEGMENT_GB = 2
+; When the video file reaches this size in GB, recording continues in a new video file. AVI files stop accepting
+; frames at 4GB, so the maximum is 3.5.
+MAX_SEGMENT_GB = 3
 
 ; Use this to run commands on Raspberry Pi. The line below mounts a shared SMB directory with specific user as owner (otherwise only root will be able to modify files)
 LINUX_START_SCRIPT = sudo mkdir -p /mnt/raid_share && sudo mount -t cifs //labunraid/zfs48_share /mnt/raid_share -o user=tomjhou,pass=ithaca55,uid=1000,gid=1000 && sudo mkdir -p /mnt/raid_share/behavior_videos/mouse_rig3

@@ -956,8 +956,6 @@ class RECORDER:
         rows = [
             ("Maximum session length, hours (0 = no limit):", "MAX_SESSION_HOURS",
              camobj_module.MAX_SESSION_HOURS, 0, 1000, 1),
-            ("Start a new video file every ... minutes (0 = never):", "SEGMENT_MINUTES",
-             camobj_module.SEGMENT_MINUTES, 0, 10000, 5),
             (f"Start a new video file at ... GB (0.1 to {max_gb:g}):", "MAX_SEGMENT_GB",
              camobj_module.MAX_SEGMENT_GB, 0.1, max_gb, 0.5),
         ]
@@ -971,27 +969,24 @@ class RECORDER:
 
         tk.Label(f, justify=tk.LEFT,
                  text="Changes take effect immediately and are saved to config.txt.\n"
-                      "Long recordings are split into several video files, which are copied\n"
-                      "to the network drive as they are completed.").grid(row=len(rows), column=0, columnspan=2, pady=8)
+                      "A recording that reaches the file size limit continues in a new video file.").grid(row=len(rows), column=0, columnspan=2, pady=8)
 
         def on_ok():
             try:
                 hours = float(svars["MAX_SESSION_HOURS"].get())
-                minutes = float(svars["SEGMENT_MINUTES"].get())
                 gb = float(svars["MAX_SEGMENT_GB"].get())
             except ValueError:
                 tk.messagebox.showinfo("Error", "Please enter numbers only.", parent=w)
                 return
-            if hours < 0 or minutes < 0 or not (0.1 <= gb <= max_gb):
-                tk.messagebox.showinfo("Error", f"Values must not be negative, and file size must be between 0.1 and {max_gb:g} GB.", parent=w)
+            if hours < 0 or not (0.1 <= gb <= max_gb):
+                tk.messagebox.showinfo("Error", f"Session length must not be negative, and file size must be between 0.1 and {max_gb:g} GB.", parent=w)
                 return
 
-            camobj_module.set_recording_limits(hours, minutes, gb)
-            printt(f"Recording limits changed: max session {hours:g} hours, new video file every {minutes:g} minutes or {gb:g} GB.")
+            camobj_module.set_recording_limits(hours, gb)
+            printt(f"Recording limits changed: max session {hours:g} hours, new video file at {gb:g} GB.")
 
             try:
                 update_config_option(configFilePath, "MAX_SESSION_HOURS", f"{hours:g}")
-                update_config_option(configFilePath, "SEGMENT_MINUTES", f"{minutes:g}")
                 update_config_option(configFilePath, "MAX_SEGMENT_GB", f"{gb:g}")
             except Exception as e:
                 tk.messagebox.showinfo(
