@@ -47,31 +47,51 @@ def check_exists(target_path):
 
 
 def copy_file_cross_platform(source_file, destination_path):
+    # Copies using plain chunked read/write rather than shutil.copy2. On Linux, shutil uses os.sendfile(),
+    # which can fail with [Errno 75] "Value too large for defined data type" on large (>=4GB) files
+    # copied to CIFS/SMB network mounts. We copy to a temporary ".part" file and rename on success, so a
+    # failed copy never leaves a partial file under the final name.
+    tmp_path = None
     try:
-        # Create Path objects for OS-agnostic path handling
         src_path = Path(source_file)
-        dst_dir_path = Path(destination_path)
+        dst_path = Path(destination_path)
 
         # Ensure the destination directory exists; create if not
-        parent_dir = Path(destination_path).parent
-        parent_dir.mkdir(exist_ok=True, parents=True)
+        dst_path.parent.mkdir(exist_ok=True, parents=True)
 
-        # Define the full destination path including the file name
-        # If the destination is a directory, shutil.copy() uses the source's filename
-        destination_path = shutil.copy2(src_path, dst_dir_path)
+        if src_path.resolve() == dst_path.resolve():
+            return "Source and destination represent the same file."
 
+        tmp_path = str(dst_path) + ".part"
+        with open(src_path, 'rb') as fsrc, open(tmp_path, 'wb') as fdst:
+            shutil.copyfileobj(fsrc, fdst, length=8 * 1024 * 1024)
+            fdst.flush()
+            os.fsync(fdst.fileno())
+
+        # Best effort to preserve timestamps; not essential, so ignore failures
+        try:
+            st = os.stat(src_path)
+            os.utime(tmp_path, ns=(st.st_atime_ns, st.st_mtime_ns))
+        except Exception:
+            pass
+
+        os.replace(tmp_path, dst_path)
+        tmp_path = None
         return None
 
-    except shutil.SameFileError:
-        return "Source and destination represent the same file."
     except PermissionError:
         return "Permission denied."
     except FileNotFoundError:
         return "The source file was not found."
     except Exception as e:
         return f"Copy error: {e}"
-
-    return False
+    finally:
+        # If copy failed, remove the partial file so it doesn't pile up on the network drive
+        if tmp_path is not None:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
 
 def browse_data_folder(start_folder):

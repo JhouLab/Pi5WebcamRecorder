@@ -656,6 +656,12 @@ class RECORDER:
             # On first run, directory may not yet exist. Just ignore errors in that case.
             pass
 
+        # Remember the destination name chosen for each source file, so that retries after a failed copy
+        # reuse the same name instead of generating a new _1, _2, _3... name every time.
+        dest_for_source = {}
+        fail_counts = {}
+        MAX_COPY_ATTEMPTS = 5
+
         while not exit_flag.is_set():
             # Run loop, periodically checking for files to copy to remote drive
 
@@ -696,7 +702,11 @@ class RECORDER:
                         printt(f"Unable to parse datetime from file '{source_path}', placing into top level folder.")
                         target_dir = copyMgr.FINAL_DESTINATION_FOLDER
 
-                    destination_file, _ = make_unique_filename(target_dir, source_name)
+                    if source_path in dest_for_source:
+                        destination_file = dest_for_source[source_path]
+                    else:
+                        destination_file, _ = make_unique_filename(target_dir, source_name)
+                        dest_for_source[source_path] = destination_file
 
                 err = copy_file_cross_platform(source_path, destination_file)
 
@@ -705,6 +715,8 @@ class RECORDER:
 
                     # Successful copy. Remove from queue and try to delete original file
                     copyMgr.file_queue.get_nowait()
+                    dest_for_source.pop(source_path, None)
+                    fail_counts.pop(source_path, None)
                     try:
                         os.remove(source_path)
                         printt(f"Successful deletion of file: '{source_path}'.")
@@ -717,6 +729,15 @@ class RECORDER:
                 else:
                     # Failed to copy. Break from inner loop so that outer loop can go back to waiting 30 seconds
                     printt(f"Error {err} when copying:\n    FROM: {source_path}\n    TO:   {destination_file}")
+                    fail_counts[source_path] = fail_counts.get(source_path, 0) + 1
+                    if fail_counts[source_path] >= MAX_COPY_ATTEMPTS:
+                        # Give up on this file so it doesn't block all later files. It stays in the local
+                        # folder, and will be queued again the next time the program starts.
+                        printt(f"Giving up on '{source_path}' after {MAX_COPY_ATTEMPTS} failed attempts. File remains in local folder.")
+                        copyMgr.file_queue.get_nowait()
+                        dest_for_source.pop(source_path, None)
+                        fail_counts.pop(source_path, None)
+                        continue
                     break
 
             # Clear flag in case a session end set it last time around
