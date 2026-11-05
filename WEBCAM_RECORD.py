@@ -963,8 +963,8 @@ class RECORDER:
         svars = {}
         for r, (label, key, value, lo, hi, step) in enumerate(rows):
             tk.Label(f, text=label, anchor="e").grid(row=r, column=0, sticky="e", pady=4)
-            sv = tk.StringVar(value=f"{value:g}")
-            tk.Spinbox(f, from_=lo, to=hi, increment=step, textvariable=sv, width=8).grid(row=r, column=1, padx=8)
+            sv = tk.StringVar(value=f"{value:.2f}")
+            tk.Spinbox(f, from_=lo, to=hi, increment=step, format="%.2f", textvariable=sv, width=8).grid(row=r, column=1, padx=8)
             svars[key] = sv
 
         tk.Label(f, justify=tk.LEFT,
@@ -975,6 +975,12 @@ class RECORDER:
             try:
                 hours = float(svars["MAX_SESSION_HOURS"].get())
                 gb = float(svars["MAX_SEGMENT_GB"].get())
+                # Keep up to 2 decimal places. A tiny nonzero session length must not round down to 0 (= no limit)
+                hours_rounded = round(hours, 2)
+                if hours > 0 and hours_rounded == 0:
+                    hours_rounded = 0.01
+                hours = hours_rounded
+                gb = round(gb, 2)
             except ValueError:
                 tk.messagebox.showinfo("Error", "Please enter numbers only.", parent=w)
                 return
