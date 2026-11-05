@@ -1690,6 +1690,10 @@ class CamObj:
 
         str1 += f", {file_size / (1024 * 1024):.2f}MB"
 
+        if self.segment_num > 1:
+            # Recording has rolled over to a new video file because the previous one reached the size limit
+            str1 += f" (file {self.segment_num})"
+
         if self.dropped_recording_frames > 0:
             str1 += f", >={self.dropped_recording_frames} dropped frames"
 
